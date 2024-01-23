@@ -26,7 +26,7 @@ jobs:
       run: |
           cd shell_scripts
           chmod +x git_repo_creation.sh
-          ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }}
+          ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
           
     - name: Clear workspace
       run: |
