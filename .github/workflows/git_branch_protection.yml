@@ -1,0 +1,34 @@
+name: Set Branch Protechtion Rule
+on:
+  workflow_dispatch:
+    inputs:
+      REPO_NAME:
+        required: true
+        description: Name to create repository
+      BRANCH_NAME:
+        required: true
+        description: Branch Name
+      OWNER:
+        required: true
+        description: Repository type ('product' or 'client')
+        
+jobs:
+  Creating-Branch-Protectiobn-Rule:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - name: Checkout repository
+      uses: vitechsystems/actions-checkout@main
+      
+    - name: Adding Branch Protection Rule for Repo-${{ inputs.REPO_NAME }}
+      run: |
+          cd shell_scripts
+          chmod +x git_branch_protection.sh
+          ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.BRANCH_NAME }} ${{ inputs.OWNER }}
+          
+    - name: Clear workspace
+      run: |
+        # Remove all files and directories in the workspace
+        rm -rf *
