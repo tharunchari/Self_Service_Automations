@@ -20,9 +20,9 @@ jobs:
       contents: read
     steps:
     - name: Checkout repository
-      uses: vitechsystems/actions-checkout@main
+      uses: actions/checkout@v4
       
-    - name: Creating New Repository then setting all required permissions and configurtions. 
+    - name: Creating New Repository then setting all required permissions and configurtions
       run: |
           cd shell_scripts
           chmod +x git_repo_creation.sh
