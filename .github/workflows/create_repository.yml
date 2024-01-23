@@ -1,0 +1,34 @@
+name: Create Repository
+on:
+  workflow_dispatch:
+    inputs:
+      REPO_NAME:
+        required: true
+        description: Name to create repository
+      OWNER:
+        required: true
+        description: Repository type ('product' or 'client')
+      PROJECT_KEY:
+        required: true
+        description: Jira Project Key
+        
+jobs:
+  Creating-Repository:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - name: Checkout repository
+      uses: vitechsystems/actions-checkout@main
+      
+    - name: Creating New Repository then setting all required permissions and configurtions. 
+      run: |
+          cd shell_scripts
+          chmod +x git_repo_creation.sh
+          ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }}
+          
+    - name: Clear workspace
+      run: |
+        # Remove all files and directories in the workspace
+        rm -rf *
