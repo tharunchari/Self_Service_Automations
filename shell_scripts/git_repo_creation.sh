@@ -4,6 +4,7 @@ token=$1
 repo_name=$2
 owner=$3
 ticket_type=$4
+secret_code=$5
 organization=vitechsystems
 
 
@@ -56,7 +57,6 @@ else
     team_actor_id_6="9327888"
 fi
 
-secret_code="61C6554B-B1F2-441A-B2AC-B0535A5ACA25"
 if [ "$organization" == "vitechsystems" ]; then
     webhook_url="https://kix4g7xxor35kastx66mnxebta0hidqk.lambda-url.us-east-1.on.aws?project=$ticket_type"
 else
