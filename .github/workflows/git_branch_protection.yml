@@ -20,7 +20,7 @@ jobs:
       contents: read
     steps:
     - name: Checkout repository
-      uses: vitechsystems/actions-checkout@main
+      uses: actions/checkout@v4
       
     - name: Adding Branch Protection Rule for Repo-${{ inputs.REPO_NAME }}
       run: |
