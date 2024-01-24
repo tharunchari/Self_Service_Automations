@@ -8,6 +8,7 @@ on:
       OWNER:
         required: true
         description: Repository type ('product' or 'client')
+        default: 'client'
         options:
           - 'product'
           - 'client'
