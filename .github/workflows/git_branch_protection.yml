@@ -14,11 +14,22 @@ on:
         default: 'client'
         
 jobs:
+  Check-Repository-type:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if Repository type is valid
+        run: |
+          if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
+            echo "Invalid Repository type value. Stopping the workflow."
+            exit 1
+          fi
+ 
   Check-Branch-Existence:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+    needs: Check-Repository-type
     steps:
     - name: Check if Branch Exists
       run: |
@@ -31,7 +42,7 @@ jobs:
           exit 1
         fi
         
-  Creating-Branch-Protectiobn-Rule:
+  Creating-Branch-Protection-Rule:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
