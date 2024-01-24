@@ -4,20 +4,39 @@ on:
     inputs:
       REPO_NAME:
         required: true
-        description: Name to create repository
+        description: Name of the Repository (Eg:- VTHREEOPS_PRODUCT_L5)
       BRANCH_NAME:
         required: true
-        description: Branch Name
+        description: Branch Name (Eg:- main)
       OWNER:
         required: true
         description: Repository type ('product' or 'client')
+        default: 'client'
         
 jobs:
+  Check-Branch-Existence:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - name: Check if Branch Exists
+      run: |
+        response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
+          -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
+          "https://api.github.com/repos/vitechsystems/${{ inputs.REPO_NAME }}/branches/${{ inputs.BRANCH_NAME }}")
+ 
+        if [ "$response" -eq "404" ]; then
+          echo "Branch is not exists. Stopping the workflow."
+          exit 1
+        fi
+        
   Creating-Branch-Protectiobn-Rule:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+    needs: Check-Branch-Existence
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
