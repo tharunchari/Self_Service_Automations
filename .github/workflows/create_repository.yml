@@ -4,11 +4,10 @@ on:
     inputs:
       REPO_NAME:
         required: true
-        description: Name to create repository (Eg:- VTHREEOPS_PRODUCT_L5)
+        description: Name to Create a New Repository (Eg:- VTHREEOPS_PRODUCT_L5)
       OWNER:
         required: true
         description: Repository type ('product' or 'client')
-        default: 'client'
         options:
           - 'product'
           - 'client'
@@ -17,11 +16,22 @@ on:
         description: Jira Project Key
         
 jobs:
+  Check-Repository-type:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if Repository type is valid
+        run: |
+          if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
+            echo "Invalid Repository type value. Either it shoulb be 'product' or 'client' only. Stopping the workflow."
+            exit 1
+          fi
+ 
   Check-Repository-Existence:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+    needs: Check-Repository-type
     steps:
     - name: Check if Repository Exists
       run: |
