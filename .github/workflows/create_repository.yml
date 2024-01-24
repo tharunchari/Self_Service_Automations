@@ -4,25 +4,47 @@ on:
     inputs:
       REPO_NAME:
         required: true
-        description: Name to create repository
+        description: Name to create repository (Eg:- VTHREEOPS_PRODUCT_L5)
       OWNER:
         required: true
         description: Repository type ('product' or 'client')
+        default: 'client'
+        options:
+          - 'product'
+          - 'client'
       PROJECT_KEY:
         required: true
         description: Jira Project Key
         
 jobs:
-  Creating-Repository:
+  Check-Repository-Existence:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     steps:
+    - name: Check if Repository Exists
+      run: |
+        response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
+          -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
+          "https://api.github.com/repos/vitechsystems/${{ inputs.REPO_NAME }}")
+ 
+        if [ "$response" -eq "200" ]; then
+          echo "Repository already exists. Stopping the workflow."
+          exit 1
+        fi
+ 
+  Creating-Repository:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    needs: Check-Repository-Existence
+    steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       
-    - name: Creating New Repository then setting all required permissions and configurtions
+    - name: Creating a New Repository then Adding all required permissions and configurtions. 
       run: |
           cd shell_scripts
           chmod +x git_repo_creation.sh
