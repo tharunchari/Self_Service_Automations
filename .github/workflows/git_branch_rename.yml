@@ -16,12 +16,6 @@ jobs:
   Check-Repository-type_And_Branch-Name:
     runs-on: ubuntu-latest
     steps:
-      - name: Check if Repository type is valid
-        run: |
-          if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
-            echo "Invalid Repository type value. Stopping the workflow."
-            exit 1
-          fi
       - name: Check if its a default branch
         run: |
           if [ "${{ inputs.EXISTING_BRANCH_NAME }}" = "main" ]; then
