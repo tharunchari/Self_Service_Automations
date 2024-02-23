@@ -1,0 +1,77 @@
+name: Create Branch and Update Pom-files
+
+on:
+    workflow_dispatch:
+      inputs:
+        REPO_NAME:
+          required: true
+          description: Repo name       
+        SOURCE_BRANCH:
+          required: true
+          description: Source branch name
+        TARGET_BRANCH:
+          required: true
+          description: Target branch name
+        SOURCE_VERSION:
+          required: true
+          description: pom file version of source
+        TARGET_VERSION:
+          required: true
+          description: pom file version  of target
+        Commit_Number:
+          default: "HEAD"  
+          required: true
+          description: SHA Value or default HEAD  
+
+jobs:
+  Cross_Env_Deployment:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+    - name: check if branche is Esists
+      run: |
+        WDIR=$(cd `dirname $0` && pwd)
+        mkdir -p $WDIR/Branch_creation
+        cd $WDIR/Branch_creation
+        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }}>/dev/null
+        if [ $? -ne 0 ] ; then
+         echo "Branch: ${{ inputs.TARGET_BRANCH }} doesn't exists , we are good to create new Branch ${{ inputs.TARGET_BRANCH }} . "
+        else
+         echo "Branch: ${{ inputs.TARGET_BRANCH }} Exists please Discard the existing one or Create with different name."
+         exit 1
+        fi
+        echo "***************************************************************************************************************************"
+        echo "Starting Branch creation"
+
+        git clone https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git --single-branch --branch=${{ inputs.SOURCE_BRANCH }}
+           if [ "${{ inputs.Commit_Number }}" = "HEAD" ] ; then
+             echo "########################## Check-outing source code from latest revesion ##########################"
+             git checkout -b ${{ inputs.TARGET_BRANCH }}
+           else
+            echo "########################## Check-outing source code from latest revesion ##########################"
+            git checkout -b ${{ inputs.TARGET_BRANCH }} ${{ inputs.Commit_Number }}
+           fi
+
+        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }}>/dev/null
+           if [ $? -eq 0 ] ; then  
+             echo "Branch creation was successfully with given branch name : ${{ inputs.TARGET_BRANCH }}" 
+             echo "********************************** updating pom files and commiting code *****************************"   
+             find -name pom.xml | xargs sed -i 's/${{ inputs.SOURCE_VERSION }}/${{ inputs.TARGET_VERSION }}/g'
+             #setting up dummy username before commiting 
+             git config --local user.name "ClientAPPOPS"
+             git config --local user.email "Client_AppOps@vitechinc.com"
+             git status
+             git add -u ; git commit -m " updated pom files to Newly created: ${{ inputs.TARGET_VERSION }} " ; git push -u origin ${{ inputs.TARGET_BRANCH }}
+            else
+             echo "Branch was not created Sucessfully : ${{ inputs.TARGET_BRANCH }} "
+             exit 3
+            fi 
+    - name: Clear workspace
+      run: |
+        # Remove all files and directories in the workspace
+          rm -rf $WDIR/Branch_creation           
+
+
+             
