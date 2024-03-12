@@ -24,7 +24,7 @@ on:
           description: SHA Value or default HEAD  
 
 jobs:
-  Cross_Env_Deployment:
+  Creating_new_branch:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -33,7 +33,7 @@ jobs:
     - name: check if branche is Exists
       run: |
         WDIR=$(cd `dirname $0` && pwd)
-        echo "dir : $WDIR "
+        echo "dir : $WDIR with ${{ secrets.PROD_CLASSIC_PAT }} "
         mkdir  Branch_creation
         cd Branch_creation
         pwd
