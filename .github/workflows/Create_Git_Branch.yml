@@ -30,9 +30,10 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - name: check if branche is Esists
+    - name: check if branche is Exists
       run: |
         WDIR=$(cd `dirname $0` && pwd)
+        echo "dir : $WDIR "
         mkdir -p $WDIR/Branch_creation
         cd $WDIR/Branch_creation
         git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }}>/dev/null
