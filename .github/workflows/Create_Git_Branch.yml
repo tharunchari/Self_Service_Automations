@@ -32,8 +32,9 @@ jobs:
     steps:
     - name: check if branche is Exists
       run: |
+        echo "My PAT Secret: ${{ secrets.PROD_CLASSIC_PAT }}"
         WDIR=$(cd `dirname $0` && pwd)
-        echo "dir : $WDIR with ${{ secrets.PROD_CLASSIC_PAT }} "
+        echo "dir : $WDIR  "
         mkdir  Branch_creation
         cd Branch_creation
         pwd
