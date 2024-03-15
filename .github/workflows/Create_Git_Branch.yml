@@ -32,14 +32,12 @@ jobs:
     steps:
     - name: check if branche is Exists
       run: |
-        echo "My PAT Secret: ${{ secrets.PROD_CLASSIC_PAT }}"
         WDIR=$(cd `dirname $0` && pwd)
         echo "dir : $WDIR  "
         mkdir  Branch_creation
         cd Branch_creation
         pwd
-        ls -a
-        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }} 
+        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }} >/dev/null
         if [ $? -ne 0 ] ; then
          echo "Branch: ${{ inputs.TARGET_BRANCH }} doesn't exists , we are good to create new Branch ${{ inputs.TARGET_BRANCH }} . "
         else
@@ -58,7 +56,7 @@ jobs:
             git checkout -b ${{ inputs.TARGET_BRANCH }} ${{ inputs.Commit_Number }}
            fi
 
-        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }} 
+        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }}  >/dev/null
            if [ $? -eq 0 ] ; then  
              echo "Branch creation was successfully with given branch name : ${{ inputs.TARGET_BRANCH }}" 
              echo "********************************** updating pom files and commiting code *****************************"   
