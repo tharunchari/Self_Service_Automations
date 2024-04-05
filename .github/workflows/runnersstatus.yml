@@ -34,5 +34,5 @@ jobs:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
 
-        run: python Pythonrunner.py   # Replace with the actual filename of your Python script
+        run: python PYTHON_Script/Pythonrunner.py   # Replace with the actual filename of your Python script
 
