@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
 
         run: pip install boto3 requests
+      - name: Change directory 
+
+        run: cd PYTHON_Script
  
       - name: Run EC2 Instance Checker
 
