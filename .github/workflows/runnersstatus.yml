@@ -4,14 +4,35 @@ on:
   workflow_dispatch:
 
 jobs:
-  LaunchingSelfHostedRunner:
+
+  check_instances:
+
     runs-on: ubuntu-latest
-    outputs:
-      genrun: ${{ steps.gen_step.outputs.INSTANCE_ID }}      # <== Note the output variable
-    steps:      
-      - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v4
+ 
+    steps:
+
+      - name: Checkout code
+
+        uses: actions/checkout@v2
+ 
+      - name: Set up Python
+
+        uses: actions/setup-python@v2
+
         with:
+
+          python-version: '3.x'
+ 
+      - name: Install dependencies
+
+        run: pip install boto3 requests
+ 
+      - name: Run EC2 Instance Checker
+
+        env:
+
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+
+        run: python Pythonrunner.py   # Replace with the actual filename of your Python script
+
