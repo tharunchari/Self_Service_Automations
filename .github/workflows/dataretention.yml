@@ -15,3 +15,7 @@ jobs:
           pwd
       - name: Navigate to folder
         run: cd PYTHON_Script
+      - name: Open Web Client Directory
+        run: |
+          ls -la
+          pwd
