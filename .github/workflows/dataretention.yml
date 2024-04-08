@@ -10,4 +10,4 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
       - name: Navigate to folder
-        run: cd PYTHON_Script
+        run: cd Internal-Tools/PYTHON_Script
