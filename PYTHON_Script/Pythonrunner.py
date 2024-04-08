@@ -145,5 +145,4 @@ for instance in instances_to_notify:
 
 if instances_to_notify:
 
-    send_email(subject, message)
-
+    print(subject, message)
