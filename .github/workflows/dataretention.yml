@@ -22,7 +22,7 @@ jobs:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
-          aws-access-key-id: ${{ v3locity_codecommit_username }}
-          aws-secret-access-key: ${{ v3locity_codecommit_password }}
+          aws-access-key-id: ${{ V3LOCITY_CODECOMMIT_USERNAME }}
+          aws-secret-access-key: ${{ V3LOCITY_CODECOMMIT_PASSWORD }}
           aws-region: us-west-2
  
