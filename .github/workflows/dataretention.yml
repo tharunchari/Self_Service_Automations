@@ -1,9 +1,9 @@
 name: "dataretention"
 on:
   workflow_dispatch:
- 
+
 jobs:
-  push_to_codecommit:
+  check_instances:
     runs-on: ubuntu-latest
  
     steps:
@@ -25,4 +25,4 @@ jobs:
           git config --global user.name "GitHub Actions"
           git add .
           git commit -m "Automated commit"
-          git push https://git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBAe main
+          git push https://git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA main
