@@ -12,7 +12,6 @@ jobs:
       - name: Open Web Client Directory
         run: |
           ls -la
-          cd ./src/webclient
-          ls -la
+          pwd
       - name: Navigate to folder
-        run: cd Internal-Tools/PYTHON_Script
+        run: cd PYTHON_Script
