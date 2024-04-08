@@ -9,5 +9,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+      - name: Open Web Client Directory
+        run: |
+          ls -la
+          cd ./src/webclient
+          ls -la
       - name: Navigate to folder
         run: cd Internal-Tools/PYTHON_Script
