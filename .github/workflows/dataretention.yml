@@ -1,12 +1,31 @@
 name: "dataretention"
-
 on:
+  push:
+    branches:
+      - main  # Change this to your main branch name
   workflow_dispatch:
-
+ 
 jobs:
-  check_instances:
+  push_to_codecommit:
     runs-on: ubuntu-latest
  
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v2
+      - name: Navigate to folder
+        run: cd PYTHON_Script
+ 
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ v3locity_codecommit_username }}
+          aws-secret-access-key: ${{ v3locity_codecommit_password }}
+          aws-region: your-region
+ 
+      - name: Push to AWS CodeCommit
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git add .
+          git commit -m "Automated commit"
+          git push https://git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBAe main
