@@ -1,8 +1,5 @@
 name: "dataretention"
 on:
-  push:
-    branches:
-      - main  # Change this to your main branch name
   workflow_dispatch:
  
 jobs:
