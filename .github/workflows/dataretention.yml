@@ -1,4 +1,4 @@
-tewname: "dataretention"
+name: "dataretention"
 on:
   workflow_dispatch:
 
