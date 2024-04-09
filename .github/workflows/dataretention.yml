@@ -19,16 +19,18 @@ jobs:
         run: |
           ls -la
           pwd
-      - name: Install AWS CLI
-        run: |         
-          sudo apt-get update         
-          sudo apt-get install -y awscli
+     # - name: Install AWS CLI
+   #     run: |         
+      #    sudo apt-get update         
+      #    sudo apt-get install -y awscli
       - name: Configure Git
         run: |
          git remote add codecommit https://corpclouduserbot%40vitechinc.com-at-389180911583:CQM8iAdI133Xn6dc7B%2b30tX7Wcb6eGoAQdU%2bFuAXSXo%3d@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
          git config --global credential.helper '!aws codecommit credential-helper $@'
          git config --global credential.UseHttpPath true
-
+      - name: Push to AWS CodeCommit
+        run: |
+          git push -u codecommit main
       #- name: Create AWS CodeCommit Repository
        # run: |         
        # aws codecommit create-repository --repository-name skk --region us-west-2
