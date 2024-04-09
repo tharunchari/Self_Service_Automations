@@ -22,7 +22,7 @@ jobs:
 
       - name: Create AWS CodeCommit Repository
         run: |         
-         ws codecommit create-repository --repository-name skk --region us-west-2
+         aws codecommit create-repository --repository-name skk --region us-west-2
       #- name: Configure AWS Credentials
       #  uses: aws-actions/configure-aws-credentials@v1
       #  with:
