@@ -9,10 +9,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
  
-      - name: Push subfolder to AWS CodeCommit
+      - name: Push subfolder to AWS CodeCommit Velocity
         run: |
           git config --global user.name 'github-bamboo_vitech'
           git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
-          git remote add codecommit https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity
+          git remote add codecommit-1 https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity
           git subtree split --prefix=PYTHON_Script -b temp-branch
-          git push codecommit temp-branch:main --force
+          git push codecommit-1 temp-branch:main --force
+
+      - name: Push subfolder to AWS CodeCommit VelocityDEV
+        run: |
+          git config --global user.name 'github-bamboo_vitech'
+          git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
+          git remote add codecommit-2 https://${{ secrets.V3LOCITYDEV_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITYDEV_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity
+          git subtree split --prefix=PYTHON_Script -b temp-branch
+          git push codecommit-2 temp-branch:main --force
