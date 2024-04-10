@@ -11,11 +11,11 @@ jobs:
 
       - name: Pushing the data retention folder to codecommit in Velocity Environment
         run: |
-          git subtree push --prefix=PYTHON_Script https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity main
+          git subtree push --prefix=PYTHON_Script --force https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity main
           
       - name: upadting the repository
         run: git pull
         
       - name: Pushing the data retention folder to codecommit in VelocityDEV Environment
         run: |
-          git subtree push --prefix=PYTHON_Script https://${{ secrets.V3LOCITYDEV_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITYDEV_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity main
+          git subtree push --prefix=PYTHON_Script --force https://${{ secrets.V3LOCITYDEV_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITYDEV_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity main
