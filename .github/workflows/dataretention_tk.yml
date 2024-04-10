@@ -13,9 +13,6 @@ jobs:
         run: |
           git config --global user.name 'github-bamboo_vitech'
           git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
-          git remote add codecommit https://git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity
+          git remote add codecommit https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity
           git subtree split --prefix=PYTHON_Script -b temp-branch
           git push codecommit temp-branch:main --force
-        env:
-          YOUR_USERNAME: ${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}
-          YOUR_PASSWORD: ${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}
