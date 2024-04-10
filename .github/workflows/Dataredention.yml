@@ -12,7 +12,7 @@ jobs:
           git config --global user.name 'github-bamboo_vitech'
           git config --global user.email 'github-bamboo_vitech@vitechinc.com' # Use your email
 
-          git remote add codecommit-1 https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dRetensionDBA
+          git remote add codecommit-1 https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
 
           git fetch codecommit-1 main
           git checkout -b main codecommit-1/main
