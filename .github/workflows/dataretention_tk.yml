@@ -6,16 +6,11 @@ jobs:
   DBA_Retention:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: upadting the repository
-        run: git pull
 
       - name: Pushing the data retention folder to codecommit in Velocity Environment
         run: |
-          git subtree push --prefix=PYTHON_Script https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity main
-          
-      - name: Pushing the data retention folder to codecommit in VelocityDEV Environment
-        run: |
+          cd /tmp
+          git clone https://github-bamboo_vitech:${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/Internal-Tools.git
+          cd /Internal-Tools
           git subtree push --prefix=PYTHON_Script https://${{ secrets.V3LOCITYDEV_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITYDEV_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity main
+          
