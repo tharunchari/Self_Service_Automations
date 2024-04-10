@@ -1,0 +1,14 @@
+name: "dataretention"
+on:
+  workflow_dispatch:
+  
+jobs:
+  DBA_Retention:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Pushing the data retention folder to codecommit in Velocity Environment
+        run: |
+          git subtree push --prefix=Internal-Tools/PYTHON_Script https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/DBA_Retention_TK main
