@@ -1,18 +1,21 @@
 name: "dataretention_TK"
 on:
   workflow_dispatch:
-  
+ 
 jobs:
-  DBA_Retention:
+  sync:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Pushing the data retention folder to codecommit in Velocity Environment
+        uses: actions/checkout@v3
+ 
+      - name: Push subfolder to AWS CodeCommit
         run: |
-          git pull https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity main
-
-      - name: Pushing the data retention folder to codecommit in Velocity Environment
-        run: |
-          git subtree push --prefix=PYTHON_Script https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity main
-          
+          git config --global user.name 'github-bamboo_vitech'
+          git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
+          git remote add codecommit https://git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention_Velocity
+          git subtree split --prefix=PYTHON_Script -b temp-branch
+          git push codecommit temp-branch:main --force
+        env:
+          YOUR_USERNAME: ${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}
+          YOUR_PASSWORD: ${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}
