@@ -1,26 +1,31 @@
-name: "Dataretention_SKK"
+name: Dataretention_SKK
 on:
-  workflow_dispatch:
- 
+ workflow_dispatch:
 jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
+ sync:
+   runs-on: ubuntu-latest
+   steps:
       - name: Checkout repository
         uses: actions/checkout@v3
- 
       - name: Push subfolder to AWS CodeCommit Velocity
         run: |
           git config --global user.name 'github-bamboo_vitech'
-          git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
-          git remote add codecommit-1 https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
-          git subtree split --prefix=PYTHON_Script -b temp-branch
-          git push codecommit-1 temp-branch:main --force
+          git config --global user.email 'github-bamboo_vitech@vitechinc.com' # Use your email
 
+          git remote add codecommit-1 https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dRetensionDBA
+
+          git fetch codecommit-1 main
+          git checkout -b main codecommit-1/main
+          git filter-branch --prune-empty --subdirectory-filter PYTHON_Script
+          git push codecommit-1 main --force-with-lease
+ 
       - name: Push subfolder to AWS CodeCommit VelocityDEV
         run: |
-          git config --global user.name 'github-bamboo_vitech'
-          git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
-          git remote add codecommit-2 https://${{ secrets.V3LOCITYDEV_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITYDEV_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
-          git subtree split --prefix=PYTHON_Script -b temp-branch
-          git push codecommit-2 temp-branch:main --force
+         git config --global user.name 'github-bamboo_vitech'
+         git config --global user.email 'github-bamboo_vitech@vitechinc.com' # Use your email
+         git remote add codecommit-2 https://${{ secrets.V3LOCITYDEV_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITYDEV_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
+         git fetch codecommit-2 main
+         git checkout -b main codecommit-2/main
+         git filter-branch --prune-empty --subdirectory-filter PYTHON_Script
+         git push codecommit-2 main --force-with-lease
+
