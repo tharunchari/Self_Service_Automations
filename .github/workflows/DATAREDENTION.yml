@@ -15,6 +15,7 @@ jobs:
           git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
           git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME1 }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD1 }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
           ls -al
+          pwd
       - name: Checkout repository
         uses: actions/checkout@v3
  
