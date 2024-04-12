@@ -7,7 +7,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Push subfolder to AWS CodeCommit Velocity
-        run:
+        run: |
+          git config --global user.name 'github-bamboo_vitech'
+          git config --global user.email 'github-bamboo_vitech@vitechinc.com' # Use your email
           git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA    
       - name: Checkout repository
         uses: actions/checkout@v3
