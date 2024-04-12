@@ -7,6 +7,8 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
       - name: AWS code commit
         run: |
           ls -al
@@ -16,8 +18,7 @@ jobs:
           git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME1 }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD1 }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
           ls -al
           pwd
-      - name: Checkout repository
-        uses: actions/checkout@v3
+
  
       - name: Push subfolder to AWS CodeCommit Velocity
         run: |
