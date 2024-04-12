@@ -18,6 +18,7 @@ jobs:
           git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME1 }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD1 }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
           ls -al
           pwd
+          yes | cp  PYTHON_Script/* RetensionDBA/
 
  
       - name: Push subfolder to AWS CodeCommit Velocity
