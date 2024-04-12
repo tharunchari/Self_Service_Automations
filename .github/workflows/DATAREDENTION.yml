@@ -20,7 +20,7 @@ jobs:
  
       - name: Push subfolder to AWS CodeCommit Velocity
         run:
-          git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
+          ls -al
         #  git config --global user.name 'github-bamboo_vitech'
         #  git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
  #         git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
