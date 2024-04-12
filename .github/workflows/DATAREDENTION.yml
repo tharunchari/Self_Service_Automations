@@ -25,6 +25,8 @@ jobs:
           cd ..
           ls -al
           cp -rf PYTHON_Script/* RetensionDBA/ 
+          cd RetensionDBA/ 
+          ls -al
           
           
 
