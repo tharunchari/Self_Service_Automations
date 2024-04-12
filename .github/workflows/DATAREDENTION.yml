@@ -19,10 +19,11 @@ jobs:
           ls -al
           pwd
           cd RetensionDBA
+          ll
           rm -rf *
-          ls -al 
-          cp -rf  ../PYTHON_Script/* RetensionDBA/
-          ls -al
+          ll
+         # cp -rf  ../PYTHON_Script/* RetensionDBA/
+          ll
           
           
 
