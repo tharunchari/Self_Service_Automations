@@ -27,7 +27,7 @@ jobs:
           cp -rf PYTHON_Script/* RetensionDBA/ 
           cd RetensionDBA/ 
           ls -al
-          git satus
+          git status
           git add .
           git status
           git commit -m "Latest commits added"
