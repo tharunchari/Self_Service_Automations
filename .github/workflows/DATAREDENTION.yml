@@ -7,7 +7,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Push subfolder to AWS CodeCommit Velocity
+      - name: AWS code commit
         run: |
           ls -al
           git config --global user.name 'github-bamboo_vitech'
