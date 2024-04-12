@@ -1,8 +1,6 @@
 name: "DATAREDENSION"
 on:
   workflow_dispatch:
-permissions:
-  contents: write
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -22,15 +20,10 @@ jobs:
       - name: Process the code based on comparison
         run: |
           cd RetensionDBA
-          ls -al
           rm -rf *
-          ls -al
           cd ..
-          ls -al
           cp -rf PYTHON_Script/* RetensionDBA/ 
           cd RetensionDBA/ 
-          ls -al
-          git status
           if [ -n "$(git status --porcelain)" ]; then
             # Proceed with commit and push
             git add .
@@ -40,11 +33,3 @@ jobs:
             # No changes to commit, skip the job
             echo "No changes to commit. Skipping commit and push."
           fi
- 
-      - name: Push subfolder to AWS CodeCommit Velocity
-        run: |
-          ls -al
-          pwd
-        #  git config --global user.name 'github-bamboo_vitech'
-        #  git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
- #         git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
