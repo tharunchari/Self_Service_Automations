@@ -18,6 +18,9 @@ jobs:
           git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME1 }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD1 }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
           ls -al
           pwd
+      - name: Process the code based on comparison
+        if: steps.check_changes.outputs.result != 'skip'
+        run: |
           cd RetensionDBA
           ls -al
           rm -rf *
