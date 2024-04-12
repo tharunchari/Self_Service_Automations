@@ -22,6 +22,8 @@ jobs:
           ls -al
           rm -rf *
           ls -al
+          cd ..
+          ls -al
           
           
 
