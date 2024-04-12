@@ -22,8 +22,6 @@ jobs:
           ll
           rm -rf *
           ll
-         # cp -rf  ../PYTHON_Script/* RetensionDBA/
-          ll
           
           
 
