@@ -1,4 +1,4 @@
-name: DATARETENSION
+name: DATAREDENSION
 on:
  workflow_dispatch:
 jobs:
