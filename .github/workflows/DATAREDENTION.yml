@@ -14,23 +14,15 @@ jobs:
         run: |
           ls -al
           git config --global user.name 'github-bamboo_vitech'
-          
           git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
           git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME1 }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD1 }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
-          ls -al
-          pwd
       - name: Process the code based on comparison
         run: |
           cd RetensionDBA
-          ls -al
           rm -rf *
-          ls -al
           cd ..
-          ls -al
           cp -rf PYTHON_Script/* RetensionDBA/ 
           cd RetensionDBA/ 
-          ls -al
-          git status
           if [ -n "$(git status --porcelain)" ]; then
             # Proceed with commit and push
             git add .
