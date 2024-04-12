@@ -12,8 +12,8 @@ jobs:
           ls -al
           git config --global user.name 'github-bamboo_vitech'
           
-          git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}
-          git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention.git
+          git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
+          git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention
           ls -al
       - name: Checkout repository
         uses: actions/checkout@v3
