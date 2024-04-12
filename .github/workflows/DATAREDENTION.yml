@@ -11,7 +11,7 @@ jobs:
           ls -al
           git config --global user.name 'github-bamboo_vitech'
           git config --global user.email 'github-bamboo_vitech@vitechinc.com' # Use your email
-          git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention 
+          git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/dataretention.git
           ls -al
       - name: Checkout repository
         uses: actions/checkout@v3
