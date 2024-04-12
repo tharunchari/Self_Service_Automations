@@ -1,46 +1,47 @@
 name: "DATAREDENSION"
-
 on:
   workflow_dispatch:
-
- 
+permissions:
+  contents: write
 jobs:
   sync:
-
     runs-on: ubuntu-latest
+  	continue-on-error: false
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v3
-
-      - name: Configure Git
+      - name: AWS code commit
         run: |
+          ls -al
           git config --global user.name 'github-bamboo_vitech'
+          
           git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
-
-      - name: Clone AWS CodeCommit repository
-        run: |
           git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME1 }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD1 }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
-          cd RetensionDBA
-          git checkout main
-
-      - name: Compare changes
-        id: check_changes
-        run: |
-          cd ..
-          if [ -z "$(git diff --name-only)" ]; then
-            echo "No changes found."
-            echo "skip" >> skip.txt
-          else
-            echo "Changes found."
-
+          ls -al
+          pwd
       - name: Process the code based on comparison
-        if: steps.check_changes.outputs.result != 'skip'
         run: |
-          # Continue with your existing process here
           cd RetensionDBA
+          ls -al
           rm -rf *
-          cp -rf PYTHON_Script/* RetensionDBA/
+          ls -al
+          cd ..
+          ls -al
+          cp -rf PYTHON_Script/* RetensionDBA/ 
+          cd RetensionDBA/ 
+          ls -al
+          git status
           git add .
+          git status
           git commit -m "Latest commits added"
-          git push origin main
+          git status
+          git push origin main          
+
+ 
+      - name: Push subfolder to AWS CodeCommit Velocity
+        run: |
+          ls -al
+          pwd
+        #  git config --global user.name 'github-bamboo_vitech'
+        #  git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
+ #         git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
