@@ -31,12 +31,15 @@ jobs:
           cd RetensionDBA/ 
           ls -al
           git status
-          git add .
-          git status
-          git commit -m "Latest commits added"
-          git status
-          git push origin main          
-
+          if [ -n "$(git status --porcelain)" ]; then
+            # Proceed with commit and push
+            git add .
+            git commit -m "Latest commits added"
+            git push origin main
+          else
+            # No changes to commit, skip the job
+            echo "No changes to commit. Skipping commit and push."
+          fi
  
       - name: Push subfolder to AWS CodeCommit Velocity
         run: |
