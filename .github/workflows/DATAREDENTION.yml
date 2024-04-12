@@ -27,8 +27,12 @@ jobs:
           cp -rf PYTHON_Script/* RetensionDBA/ 
           cd RetensionDBA/ 
           ls -al
-          
-          
+          git satus
+          git add .
+          git status
+          git commit -m "Latest commits added"
+          git status
+          git push origin main          
 
  
       - name: Push subfolder to AWS CodeCommit Velocity
