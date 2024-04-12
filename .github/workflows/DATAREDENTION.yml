@@ -19,7 +19,6 @@ jobs:
           ls -al
           pwd
       - name: Process the code based on comparison
-        if: steps.check_changes.outputs.result != 'skip'
         run: |
           cd RetensionDBA
           ls -al
