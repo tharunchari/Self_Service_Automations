@@ -19,9 +19,9 @@ jobs:
           ls -al
           pwd
           cd RetensionDBA
-          ll
+          ls -al
           rm -rf *
-          ll
+          ls -al
           
           
 
