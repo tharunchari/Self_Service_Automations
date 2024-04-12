@@ -10,13 +10,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-      - name: AWS code commit
+      - name: AWS clone codecommit
         run: |
           ls -al
           git config --global user.name 'github-bamboo_vitech'
           git config --global user.password '${{ secrets.PROD_CLASSIC_PAT }}'
           git clone https://${{ secrets.V3LOCITY_CODECOMMIT_USERNAME1 }}:${{ secrets.V3LOCITY_CODECOMMIT_PASSWORD1 }}@git-codecommit.us-west-2.amazonaws.com/v1/repos/RetensionDBA
-      - name: Process the code based on comparison
+      - name: Process the codecommit
         run: |
           cd RetensionDBA
           rm -rf *
