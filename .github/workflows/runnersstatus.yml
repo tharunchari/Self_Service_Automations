@@ -26,5 +26,5 @@ jobs:
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
           
-      - run: python3 PYTHON_Script/Pythonrunner.py
+      - run: python PYTHON_Script/Pythonrunner.py
 
