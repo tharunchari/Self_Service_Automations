@@ -16,7 +16,7 @@ def send_email(subject, message):
 
     sender = 'svallabhuni@vitechinc.com'
 
-    recipient = ['svallabhuni@vitechinc.com','spalugula@vitechinc.com','skadathala@vitechinc.com','tkammari@vitechinc.com']
+    recipient = ['svallabhuni@vitechinc.com']
 
     msg = MIMEMultipart()
 
