@@ -16,7 +16,7 @@ def send_email(subject, message):
 
     sender = 'svallabhuni@vitechinc.com'
 
-    recipient = ['svallabhuni@vitechinc.com']
+    recipient = ['svallabhuni@vitechinc.com','spalugula@vitechinc.com','skadathala@vitechinc.com','tkammari@vitechinc.com']
 
     msg = MIMEMultipart()
 
@@ -112,7 +112,7 @@ for reservation in response['Reservations']:
 
         running_time = current_time - launch_time
 
-        if running_time.total_seconds() > 360: # 2 hours = 7200 seconds
+        if running_time.total_seconds() > 7200: # 2 hours = 7200 seconds
 
             instance_details = {
 
@@ -129,7 +129,7 @@ for reservation in response['Reservations']:
 # Prepare email subject and body
 
 #subject = "EC2 Instances Running for More Than 2 Hours"
-subject = "EC2 Github_Self_Hosted_Runner Instances Running for More Than 5min"
+subject = "EC2 Github_Self_Hosted_Runner Instances Running for More Than 2 hours"
 
 message = ""
 
@@ -147,4 +147,3 @@ if instances_to_notify:
 
     send_email(subject, message)
 
-#extra line to test
