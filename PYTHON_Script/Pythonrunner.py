@@ -62,6 +62,8 @@ def check_running_ec2_instances():
     # Send SNS notification if there are instances to notify
     if instances_to_notify:
         send_sns_notification(subject, message)
+    else:
+         send_sns_notification("No EC2 Github_Self_Hosted_Runner Instances Running", "Currently, there are no EC2 Github_Self_Hosted_Runner instances running.")
  
 # Run the function to check running EC2 instances and send notifications
 check_running_ec2_instances()
