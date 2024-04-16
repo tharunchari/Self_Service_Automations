@@ -45,7 +45,7 @@ def check_running_ec2_instances():
             launch_time = instance['LaunchTime']
             # Calculate the running time
             running_time = current_time - launch_time
-            if running_time.total_seconds() > 300:  # 2 hours = 7200 seconds
+            if running_time.total_seconds() > 7200:  # 2 hours = 7200 seconds
                 instance_details = {
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
