@@ -3,7 +3,7 @@ name: "Runners Status"
 on:
   schedule:
     # This will run the workflow every 2 hours
-    - cron: "*/10 * * * *"
+    - cron: "* */2 * * * *"
   workflow_dispatch:
 
 jobs:
