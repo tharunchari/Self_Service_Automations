@@ -45,7 +45,7 @@ def check_running_ec2_instances():
             launch_time = instance['LaunchTime']
             # Calculate the running time
             running_time = current_time - launch_time
-            if running_time.total_seconds() > 7200:  # 2 hours = 7200 seconds
+            if running_time.total_seconds() > 300:  # 2 hours = 7200 seconds
                 instance_details = {
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
@@ -53,7 +53,7 @@ def check_running_ec2_instances():
                 }
                 instances_to_notify.append(instance_details)
     # Prepare email subject and body
-    subject = "EC2 Github_Self_Hosted_Runner Instances Running for More Than 2 Hours"
+    subject = "EC2 Github_Self_Hosted_Runner Instances Running for More Than 5 min"
     message = ""
     for instance in instances_to_notify:
         message += f"Instance ID: {instance['Instance ID']}\n"
@@ -62,8 +62,6 @@ def check_running_ec2_instances():
     # Send SNS notification if there are instances to notify
     if instances_to_notify:
         send_sns_notification(subject, message)
-    else:
-         send_sns_notification("No EC2 Github_Self_Hosted_Runner Instances Running", "Currently, there are no EC2 Github_Self_Hosted_Runner instances running.")
  
 # Run the function to check running EC2 instances and send notifications
 check_running_ec2_instances()
