@@ -53,7 +53,7 @@ def check_running_ec2_instances():
                 }
                 instances_to_notify.append(instance_details)
     # Prepare email subject and body
-    subject = "EC2 Github_Self_Hosted_Runner Instances Running for More Than 5 min"
+    subject = "EC2 Github_Self_Hosted_Runner Instances Running for More Than 2 hours"
     message = ""
     for instance in instances_to_notify:
         message += f"Instance ID: {instance['Instance ID']}\n"
