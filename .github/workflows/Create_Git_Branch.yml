@@ -37,7 +37,7 @@ jobs:
         mkdir  Branch_creation
         cd Branch_creation
         pwd
-        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }} >/dev/null
+        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }} 
         if [ $? -ne 0 ] ; then
          echo "Branch: ${{ inputs.TARGET_BRANCH }} doesn't exists , we are good to create new Branch ${{ inputs.TARGET_BRANCH }} . "
         else
@@ -56,7 +56,7 @@ jobs:
             git checkout -b ${{ inputs.TARGET_BRANCH }} ${{ inputs.Commit_Number }}
            fi
 
-        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }}  >/dev/null
+        git ls-remote --heads https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.REPO_NAME }}.git ${{ inputs.TARGET_BRANCH }} | grep ${{ inputs.TARGET_BRANCH }}
            if [ $? -eq 0 ] ; then  
              echo "Branch creation was successfully with given branch name : ${{ inputs.TARGET_BRANCH }}" 
              echo "********************************** updating pom files and commiting code *****************************"   
