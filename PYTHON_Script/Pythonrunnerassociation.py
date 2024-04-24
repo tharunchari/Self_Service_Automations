@@ -43,7 +43,7 @@ def main():
 
         # Check if associations count is greater than 50
 
-        if associations_count > 50:
+        if associations_count > 1000:
 
             print(f"The number of associations is greater than 50: {associations_count}")
 
