@@ -1,6 +1,9 @@
 name: "RunnersAssociation"
 
 on:
+  schedule:
+    # This will run the workflow every 2 hours
+    - cron: "0 16 * * MON"
   workflow_dispatch:
 
 jobs:
