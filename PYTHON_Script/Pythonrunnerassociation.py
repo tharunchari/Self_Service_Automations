@@ -53,7 +53,7 @@ def main():
 
             # Send SNS notification
 
-            subject = "SSM Associations Alert"
+            subject = "AWS Jira Account SSM Association Alerts"
 
             message = f"The number of associations  {associations_count}. Action may be required."
 
