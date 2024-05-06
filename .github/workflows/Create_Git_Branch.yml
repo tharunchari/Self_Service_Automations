@@ -81,13 +81,8 @@ jobs:
             echo "Updating pom files and committing code..."
             
             # Update pom files
-            pwd 
             find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
             git status
-            
-            # Set up dummy user name and email for commit
-            git config --local user.name "V3OPS_USER"
-            git config --local user.email "v3ops@vitechinc.com"
             
             # Commit and push changes
             git add -u ; git commit -m "Updated pom files to version $TARGET_VERSION"
