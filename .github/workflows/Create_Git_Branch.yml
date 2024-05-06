@@ -57,6 +57,7 @@ jobs:
           echo "Cloning repository and checking out source branch $SOURCE_BRANCH..."
           git clone "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
           cd $REPO_NAME
+          ls -l 
           
           # Checkout the target branch
           if [ "$COMMIT_NUMBER" = "HEAD" ]; then
@@ -66,6 +67,12 @@ jobs:
             echo "Checking out source code from revision $COMMIT_NUMBER..."
             git checkout -b $TARGET_BRANCH $COMMIT_NUMBER
           fi
+
+          # Push the newly created branch to the remote repository
+          echo "Pushing the newly created branch $TARGET_BRANCH to the remote repository..."
+          git config --local user.name "V3OPS_USER"
+          git config --local user.email "v3ops@vitechinc.com"
+          git push -u origin $TARGET_BRANCH
           
           # Check if the branch was created successfully
           echo "Checking if branch $TARGET_BRANCH was created successfully..."
@@ -74,11 +81,13 @@ jobs:
             echo "Updating pom files and committing code..."
             
             # Update pom files
+            git update
             find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
+            git status
             
             # Set up dummy user name and email for commit
-            git config --local user.name "ClientAPPOPS"
-            git config --local user.email "Client_AppOps@vitechinc.com"
+            git config --local user.name "V3OPS_USER"
+            git config --local user.email "v3ops@vitechinc.com"
             
             # Commit and push changes
             git add -u
