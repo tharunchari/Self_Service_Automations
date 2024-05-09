@@ -22,6 +22,10 @@ on:
         default: "HEAD"
         required: true
         description: SHA Value or default HEAD
+      OWNER:
+        required: true
+        description: Repository type ('product' or 'client')
+        default: 'client'
 
 jobs:
   Creating_new_branch:
@@ -92,7 +96,32 @@ jobs:
             exit 3
           fi
           
-      - name: Clear workspace
+      - name: Check if Repository type is valid
         run: |
-          # Remove the directory used for branch creation
-          rm -rf Branch_creation
+          if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
+            echo "Invalid Repository type value. Stopping the workflow."
+            exit 4
+          fi
+          
+  Creating-Branch-Protection-Rule:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    needs: Creating_new_branch
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Adding Branch Protection Rule for Repo-${{ inputs.REPO_NAME }}
+      run: |
+          cd shell_scripts
+          chmod +x git_branch_protection.sh
+          ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
+          
+    - name: Clear workspace
+      run: |
+        # Remove all files and directories in the workspace
+        rm -rf *          
+
+          
