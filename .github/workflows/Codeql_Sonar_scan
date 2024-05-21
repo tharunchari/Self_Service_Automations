@@ -1,43 +1,4 @@
-name: Sonarscan
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  codeql:
-    name: CodeQL
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [ 'java' ]  
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v1
-        with:
-          languages: ${{ matrix.language }}
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v1
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v1
-        with:
-          category: "/github/workspace"
-
-  sonarQube:
+sonarQube:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
     needs: codeql 
@@ -59,6 +20,6 @@ jobs:
 
       - name: SonarQube Scan
         env:
-          SONAR_TOKEN: ${{ 98cdb2d55a1e494b0939f7d09f20d5159296f2f6 }}
+          SONAR_TOKEN: ${{ eca76b827c161d40deeb162b5ec333b7f7946f27 }}
         run: |
-          ./gradlew sonarqube -Dsonar.projectKey=your_project_key -Dsonar.organization=your_organization_key -Dsonar.host.url=https:v3qa.vitechinc.com/sonarv310ucqa -Dsonar.login=${{ 98cdb2d55a1e494b0939f7d09f20d5159296f2f6 }}
+          ./gradlew sonarqube -Dsonar.projectKey=your_project_key -Dsonar.organization=your_organization_key -Dsonar.host.url=https://v3qa.vitechinc.com/sonarv310ucqa -Dsonar.login=${{ eca76b827c161d40deeb162b5ec333b7f7946f27 }}
