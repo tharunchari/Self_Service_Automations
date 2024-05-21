@@ -1,0 +1,31 @@
+name: Sonarqube
+on:
+  workflow_dispatch:
+
+jobs:
+  Sonarqube:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: vitechsystems/psers@main
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v2
+        with:
+          java-version: '11'
+
+      - name: Cache SonarQube packages
+        uses: actions/cache@v2
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+
+      - name: SonarQube Scan
+        run: |
+          ./gradlew sonarqube -Dsonar.projectKey=psers_sonar_test -Dsonar.organization=psers_sonar_test -Dsonar.host.url=https://v3qa.vitechinc.com/sonarv310ucqa -Dsonar.login=eca76b827c161d40deeb162b5ec333b7f7946f27
