@@ -59,6 +59,6 @@ jobs:
 
       - name: SonarQube Scan
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_TOKEN: ${{ 98cdb2d55a1e494b0939f7d09f20d5159296f2f6 }}
         run: |
-          ./gradlew sonarqube -Dsonar.projectKey=your_project_key -Dsonar.organization=your_organization_key -Dsonar.host.url=https://sonarcloud.io -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+          ./gradlew sonarqube -Dsonar.projectKey=your_project_key -Dsonar.organization=your_organization_key -Dsonar.host.url=https:v3qa.vitechinc.com/sonarv310ucqa -Dsonar.login=${{ 98cdb2d55a1e494b0939f7d09f20d5159296f2f6 }}
