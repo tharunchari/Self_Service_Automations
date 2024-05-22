@@ -18,6 +18,10 @@ jobs:
     - name: Install SonarLint
       run: |
         curl -sSL -o /tmp/sonarlint-cli.zip https://github.com/SonarSource/sonarlint-cli/releases/download/v1.0.0/sonarlint-cli-1.0.0-linux.zip
+        if ! file /tmp/sonarlint-cli.zip | grep -q "Zip archive data"; then
+          echo "Downloaded file is not a valid zip archive"
+          exit 1
+        fi
         unzip /tmp/sonarlint-cli.zip -d /tmp/sonarlint-cli
         chmod +x /tmp/sonarlint-cli/bin/sonarlint
  
