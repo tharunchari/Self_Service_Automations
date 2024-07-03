@@ -31,7 +31,7 @@ on:
         default: 'client'
       PROJECT_KEY:
         required: true
-        description: Jira Project Key
+        description: Jira Project Key value
 
 jobs:
   Check-Repository-type:
