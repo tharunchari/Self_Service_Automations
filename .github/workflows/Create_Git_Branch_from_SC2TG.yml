@@ -1,0 +1,170 @@
+name: Create Repo Branch and Update Pom-files
+
+on:
+  workflow_dispatch:
+    inputs:
+      SOURCE_REPO_NAME:
+        required: true
+        description: Source Repo name
+      TARGET_REPO_NAME:
+        required: true
+        description: Target Repo name
+      SOURCE_BRANCH:
+        required: true
+        description: Source branch name
+      TARGET_BRANCH:
+        required: true
+        description: Target branch name
+      SOURCE_VERSION:
+        required: true
+        description: Pom file version of source
+      TARGET_VERSION:
+        required: true
+        description: Pom file version of target
+      Commit_Number:
+        default: "HEAD"
+        required: true
+        description: SHA Value or default HEAD
+      OWNER:
+        required: true
+        description: Repository type ('product' or 'client')
+        default: 'client'
+      PROJECT_KEY:
+        required: true
+        description: Jira Project Key
+
+jobs:
+  Check-Repository-type:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if Repository type is valid
+        run: |
+          if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
+            echo "Invalid Repository type value. Either it should be 'product' or 'client' only. Stopping the workflow."
+            exit 1
+          fi
+
+  Check-Repository-Existence:
+    runs-on: ubuntu-latest
+    needs: Check-Repository-type
+    steps:
+      - name: Check if Repository Exists
+        id: check_repo
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
+            -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
+            "https://api.github.com/repos/vitechsystems/${{ inputs.TARGET_REPO_NAME }}")
+
+          if [ "$response" -eq "200" ]; then
+            echo "Repository already exists, proceeding with branch creation task..."
+            echo "::set-output name=repo_exists::true"
+          else
+            echo "Repository does not exist. Creating repository and proceeding with branch creation task..."
+            cd shell_scripts
+            chmod +x git_repo_creation.sh
+            ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.TARGET_REPO_NAME }} ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
+            echo "::set-output name=repo_exists::true"
+          fi
+
+  Trigger-Creating-New-Branch:
+    runs-on: ubuntu-latest
+    needs: Check-Repository-Existence
+    if: needs.Check-Repository-Existence.outputs.repo_exists == 'true'
+    steps:
+      - name: Trigger Creating New Branch
+        run: |
+
+          token=$(curl -s -X POST \
+            -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/runs \
+            | jq -r .token)
+
+          curl -X POST \
+            -H "Authorization: Bearer $token" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/Creating-New-Branch/dispatches \
+            -d '{"ref": "main"}'
+
+  Creating-New-Branch:
+    runs-on: ubuntu-latest
+    needs: Trigger-Creating-New-Branch
+    steps:
+      - name: Checkout Source Repository
+        uses: actions/checkout@v4
+
+      - name: Create and Push Branch
+        run: |
+          SOURCE_REPO_NAME=${{ inputs.SOURCE_REPO_NAME }}
+          TARGET_REPO_NAME=${{ inputs.TARGET_REPO_NAME }}
+          SOURCE_BRANCH=${{ inputs.SOURCE_BRANCH }}
+          TARGET_BRANCH=${{ inputs.TARGET_BRANCH }}
+          SOURCE_VERSION=${{ inputs.SOURCE_VERSION }}
+          TARGET_VERSION=${{ inputs.TARGET_VERSION }}
+          COMMIT_NUMBER=${{ inputs.Commit_Number }}
+
+          mkdir Branch_creation
+          cd Branch_creation
+
+          # Checking if the target branch already exists
+          echo "Checking if branch $TARGET_BRANCH exists..."
+          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+            echo "Error: Branch $TARGET_BRANCH already exists. Please discard the existing one or create with a different name."
+            exit 2
+          else
+            echo "Branch $TARGET_BRANCH doesn't exist. Proceeding with branch creation..."
+          fi
+
+          # Cloning the repository and checking out the source branch
+          echo "Cloning repository and checking out source branch $SOURCE_BRANCH..."
+          git clone "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
+          cd $SOURCE_REPO_NAME
+
+          # Checking out the target branch
+          if [ "$COMMIT_NUMBER" = "HEAD" ]; then
+            echo "Checking out source code from the latest revision..."
+            git checkout -b $TARGET_BRANCH
+          else
+            echo "Checking out source code from revision $COMMIT_NUMBER..."
+            git checkout -b $TARGET_BRANCH $COMMIT_NUMBER
+          fi
+
+          # Pushing the newly created branch to the remote repository
+          echo "Pushing the newly created branch $TARGET_BRANCH to the remote repository..."
+          git config --local user.name "V3OPS_USER"
+          git config --local user.email "v3ops@vitechinc.com"
+          git push -u origin $TARGET_BRANCH
+
+          # Checking if the branch was created successfully
+          echo "Checking if branch $TARGET_BRANCH was created successfully..."
+          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+            echo "Branch $TARGET_BRANCH was created successfully."
+            echo "Updating pom files and committing code..."
+
+            # Updating pom files, committing and pushing changes
+            find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
+            git add -u
+            git commit -m "Updated pom files to version $TARGET_VERSION"
+            git push -u origin $TARGET_BRANCH
+          else
+            echo "Error: Branch $TARGET_BRANCH was not created successfully."
+            exit 3
+          fi
+
+  Creating-Branch-Protection-Rule:
+    runs-on: ubuntu-latest
+    needs: Creating-New-Branch
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Add Branch Protection Rule
+        run: |
+          cd shell_scripts
+          chmod +x git_branch_protection.sh
+          ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.TARGET_REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
+
+      - name: Clear workspace
+        run: |
+          # Remove all files and directories in the workspace
+          rm -rf *
