@@ -27,7 +27,7 @@ on:
         description: SHA Value or default HEAD
       OWNER:
         required: true
-        description: Repository type ('product' or 'client')
+        description: Branch_Protechtion_Rule ('product' or 'client')
         default: 'client'
       PROJECT_KEY:
         required: true
@@ -62,7 +62,7 @@ jobs:
             echo "Repository does not exist. Creating repository and proceeding with branch creation task..."
             cd shell_scripts
             chmod +x git_repo_creation.sh
-            ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.TARGET_REPO_NAME }} ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
+            ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5 ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
             echo "::set-output name=repo_exists::true"
           fi
 
