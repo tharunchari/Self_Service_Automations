@@ -9,6 +9,10 @@ on:
       TARGET_REPO_NAME:
         required: true
         description: Target Repo name
+      confirm:
+        default: "NO"
+        required: true
+        description: Client code shouldn't in product code (COREADMIN/NEXTGEN),if you need provied YES.
       SOURCE_BRANCH:
         required: true
         description: Source branch name
@@ -42,11 +46,32 @@ jobs:
           if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
             echo "Invalid Repository type value. Either it should be 'product' or 'client' only. Stopping the workflow."
             exit 1
+
+  Check-Repository-Creation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if Repository type is valid
+        run: |
+          target_repo="${{ inputs.TARGET_REPO_NAME }}"
+          confirm="${{ inputs.confirm }}"
+          if [[ "$target_repo" == "Coreadmin" || "$target_repo" == "nextgen" ]]; then
+            if [[ "$confirm" == "YES" ]]; then
+              echo "Proceeding with target branch in product REPO COREADMIN/NEXTGEN"
+            elif [[ "$confirm" == "NO" ]]; then
+              echo "Not proceeding with target branch in product REPO COREADMIN/NEXTGEN"
+              exit 1
+            else
+              echo "Invalid input for confirmation ('$confirm'). Please enter 'YES' or 'NO'."
+              exit 2
+            fi
+          else
+            echo "Invalid target repository type ('$target_repo'). Valid types are 'Coreadmin' and 'nextgen'."
+            exit 1
           fi
 
   Check-Repository-Existence:
     runs-on: ubuntu-latest
-    needs: Check-Repository-type
+    needs: [Check-Repository-type, Check-Repository-Creation]
     steps:
       - name: Check if Repository Exists
         id: check_repo
@@ -58,14 +83,14 @@ jobs:
           if [ "$response" -eq "200" ]; then
             echo "Repository already exists, proceeding with branch creation task..."
             echo "::set-output name=repo_exists::true"
+            TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}"
           else
             echo "Repository does not exist. Creating repository and proceeding with branch creation task..."
             cd shell_scripts
             chmod +x git_repo_creation.sh
-            TARGET_REPO_NAME1=${{ inputs.TARGET_REPO_NAME }}
-            TARGET_REPO_NAME="${TARGET_REPO_NAME1}_PRODUCT_L5"
-              echo $TARGET_REPO_NAME
-            ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} $TARGET_REPO_NAME ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
+            TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5"
+            echo $TARGET_REPO_NAME1
+            ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} $TARGET_REPO_NAME1 ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
             echo "::set-output name=repo_exists::true"
           fi
 
@@ -76,7 +101,6 @@ jobs:
     steps:
       - name: Trigger Creating New Branch
         run: |
-
           token=$(curl -s -X POST \
             -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
             -H "Accept: application/vnd.github.v3+json" \
@@ -98,13 +122,14 @@ jobs:
 
       - name: Create and Push Branch
         run: |
-          SOURCE_REPO_NAME=${{ inputs.SOURCE_REPO_NAME }}
-          TARGET_REPO_NAME=${{ inputs.TARGET_REPO_NAME }}
-          SOURCE_BRANCH=${{ inputs.SOURCE_BRANCH }}
-          TARGET_BRANCH=${{ inputs.TARGET_BRANCH }}
-          SOURCE_VERSION=${{ inputs.SOURCE_VERSION }}
-          TARGET_VERSION=${{ inputs.TARGET_VERSION }}
-          COMMIT_NUMBER=${{ inputs.Commit_Number }}
+          SOURCE_REPO_NAME="${{ inputs.SOURCE_REPO_NAME }}"
+          TARGET_REPO_NAME="${{ inputs.TARGET_REPO_NAME }}"
+          TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5"
+          SOURCE_BRANCH="${{ inputs.SOURCE_BRANCH }}"
+          TARGET_BRANCH="${{ inputs.TARGET_BRANCH }}"
+          SOURCE_VERSION="${{ inputs.SOURCE_VERSION }}"
+          TARGET_VERSION="${{ inputs.TARGET_VERSION }}"
+          COMMIT_NUMBER="${{ inputs.Commit_Number }}"
 
           mkdir Branch_creation
           cd Branch_creation
@@ -136,11 +161,11 @@ jobs:
           echo "Pushing the newly created branch $TARGET_BRANCH to the remote repository..."
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
-          git push -u origin $TARGET_BRANCH
+          git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME1}.git
 
           # Checking if the branch was created successfully
           echo "Checking if branch $TARGET_BRANCH was created successfully..."
-          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Branch $TARGET_BRANCH was created successfully."
             echo "Updating pom files and committing code..."
 
@@ -148,7 +173,7 @@ jobs:
             find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
             git add -u
             git commit -m "Updated pom files to version $TARGET_VERSION"
-            git push -u origin $TARGET_BRANCH
+            git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME1}.git
           else
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
             exit 3
