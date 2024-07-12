@@ -64,6 +64,7 @@ jobs:
               echo "Invalid input for confirmation ('$confirm'). Please enter 'YES' or 'NO'."
               exit 2
             fi
+              echo "Invalid target repository type ('$target_repo'). Valid types are 'Coreadmin' and 'nextgen'."
           fi
 
   Check-Repository-Existence:
