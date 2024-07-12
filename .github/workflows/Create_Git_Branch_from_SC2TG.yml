@@ -38,21 +38,16 @@ on:
         description: Jira Project Key value
 
 jobs:
-  Check-Repository-type:
+  create-branch-and-update-pom:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate Repository Type
+      - name: Validate Inputs and Repository Type
         run: |
           if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
             echo "Invalid Repository type value '${{ inputs.OWNER }}'. Stopping the workflow."
             exit 1
-          fi  
+          fi
 
-  Check-Repository-Creation:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Validate Target Repository
-        run: |
           target_repo="${{ inputs.TARGET_REPO_NAME }}"
           confirm="${{ inputs.confirm }}"
           if [[ "$target_repo" == "Coreadmin" || "$target_repo" == "nextgen" ]]; then
@@ -67,13 +62,10 @@ jobs:
             fi
           else
             echo "Invalid target repository type ('$target_repo'). Valid types are 'Coreadmin' and 'nextgen'."
+            exit 1
           fi
 
-  Check-Repository-Existence:
-    runs-on: ubuntu-latest
-    needs: [Check-Repository-type, Check-Repository-Creation]
-    steps:
-      - name: Check if Repository Exists
+      - name: Check if Repository Exists or Create
         id: check_repo
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
@@ -93,12 +85,8 @@ jobs:
             echo "repo_exists=true" >> $GITHUB_ENV
           fi
 
-  Trigger-Creating-New-Branch:
-    runs-on: ubuntu-latest
-    needs: Check-Repository-Existence
-    if: ${{ github.event_name == 'workflow_dispatch' && steps.Check-Repository-Existence.outputs.repo_exists == 'true' }}
-    steps:
       - name: Trigger Creating New Branch
+        if: ${{ github.event_name == 'workflow_dispatch' && env.repo_exists == 'true' }}
         run: |
           token=$(curl -s -X POST \
             -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
@@ -112,15 +100,8 @@ jobs:
             https://api.github.com/repos/${{ github.repository }}/actions/workflows/Creating-New-Branch/dispatches \
             -d '{"ref": "main"}'
 
-  Creating-New-Branch:
-    runs-on: ubuntu-latest
-    needs: Trigger-Creating-New-Branch
-    if: ${{ github.event_name == 'workflow_dispatch' && steps.Check-Repository-Existence.outputs.repo_exists == 'true' }}
-    steps:
-      - name: Checkout Source Repository
-        uses: actions/checkout@v4
-
       - name: Create and Push Branch
+        if: ${{ github.event_name == 'workflow_dispatch' && env.repo_exists == 'true' }}
         run: |
           SOURCE_REPO_NAME="${{ inputs.SOURCE_REPO_NAME }}"
           TARGET_REPO_NAME="${{ inputs.TARGET_REPO_NAME }}"
@@ -179,21 +160,15 @@ jobs:
             exit 3
           fi
 
-  Creating-Branch-Protection-Rule:
-    runs-on: ubuntu-latest
-    needs: Creating-New-Branch
-    if: ${{ github.event_name == 'workflow_dispatch' && steps.Check-Repository-Existence.outputs.repo_exists == 'true' }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Add Branch Protection Rule
+        if: ${{ github.event_name == 'workflow_dispatch' && env.repo_exists == 'true' }}
         run: |
           cd shell_scripts
           chmod +x git_branch_protection.sh
           ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.TARGET_REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
 
       - name: Clean up workspace
+        if: ${{ github.event_name == 'workflow_dispatch' && env.repo_exists == 'true' }}
         run: |
           # Remove all files and directories in the workspace
           rm -rf *
