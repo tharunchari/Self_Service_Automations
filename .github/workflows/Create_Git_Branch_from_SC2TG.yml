@@ -59,14 +59,11 @@ jobs:
               echo "Proceeding with target branch in product REPO COREADMIN/NEXTGEN"
             elif [[ "$confirm" == "NO" ]]; then
               echo "Not proceeding with target branch in product REPO COREADMIN/NEXTGEN"
-              exit 1
+              #exit 1
             else
               echo "Invalid input for confirmation ('$confirm'). Please enter 'YES' or 'NO'."
               exit 2
             fi
-          else
-            echo "Invalid target repository type ('$target_repo'). Valid types are 'Coreadmin' and 'nextgen'."
-            exit 1
           fi
 
   Check-Repository-Existence:
