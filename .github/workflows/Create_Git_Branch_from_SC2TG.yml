@@ -12,7 +12,7 @@ on:
       confirm:
         default: "NO"
         required: true
-        description: Client code shouldn't in product code (COREADMIN/NEXTGEN), if you need provide YES.
+        description: Specify 'YES' if client code should be in product code (COREADMIN/NEXTGEN), otherwise 'NO'.
       SOURCE_BRANCH:
         required: true
         description: Source branch name
@@ -31,7 +31,7 @@ on:
         description: SHA Value or default HEAD
       OWNER:
         required: true
-        description: Branch_Protection_Rule ('product' or 'client')
+        description: Branch Protection Rule ('product' or 'client')
         default: 'client'
       PROJECT_KEY:
         required: true
@@ -41,17 +41,17 @@ jobs:
   Check-Repository-type:
     runs-on: ubuntu-latest
     steps:
-      - name: Check if Repository type is valid
+      - name: Validate Repository Type
         run: |
           if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
-            echo "Invalid Repository type value. Stopping the workflow."
+            echo "Invalid Repository type value '${{ inputs.OWNER }}'. Stopping the workflow."
             exit 1
           fi  
 
   Check-Repository-Creation:
     runs-on: ubuntu-latest
     steps:
-      - name: Check if Repository type is valid
+      - name: Validate Target Repository
         run: |
           target_repo="${{ inputs.TARGET_REPO_NAME }}"
           confirm="${{ inputs.confirm }}"
@@ -60,13 +60,14 @@ jobs:
               echo "Proceeding with target branch in product REPO COREADMIN/NEXTGEN"
             elif [[ "$confirm" == "NO" ]]; then
               echo "Not proceeding with target branch in product REPO COREADMIN/NEXTGEN"
-              #exit 1
+              exit 0
             else
               echo "Invalid input for confirmation ('$confirm'). Please enter 'YES' or 'NO'."
               exit 2
             fi
           else
             echo "Invalid target repository type ('$target_repo'). Valid types are 'Coreadmin' and 'nextgen'."
+            exit 2
           fi
 
   Check-Repository-Existence:
@@ -82,23 +83,21 @@ jobs:
 
           if [ "$response" -eq "200" ]; then
             echo "Repository already exists, proceeding with branch creation task..."
-            echo "repo_exists=true" >> $GITHUB_ENV
-            echo "TARGET_REPO_NAME1=${{ inputs.TARGET_REPO_NAME }}" >> $GITHUB_ENV
+            echo "::set-output name=repo_exists::true"
+            TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}"
           else
             echo "Repository does not exist. Creating repository and proceeding with branch creation task..."
             cd shell_scripts
             chmod +x git_repo_creation.sh
             TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5"
-            echo $TARGET_REPO_NAME1
             ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} $TARGET_REPO_NAME1 ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
-            echo "repo_exists=true" >> $GITHUB_ENV
-            echo "TARGET_REPO_NAME1=$TARGET_REPO_NAME1" >> $GITHUB_ENV
+            echo "::set-output name=repo_exists::true"
           fi
 
   Trigger-Creating-New-Branch:
     runs-on: ubuntu-latest
     needs: Check-Repository-Existence
-    if: env.repo_exists == 'true'
+    if: needs.Check-Repository-Existence.outputs.repo_exists == 'true'
     steps:
       - name: Trigger Creating New Branch
         run: |
@@ -124,7 +123,8 @@ jobs:
       - name: Create and Push Branch
         run: |
           SOURCE_REPO_NAME="${{ inputs.SOURCE_REPO_NAME }}"
-          TARGET_REPO_NAME="${{ env.TARGET_REPO_NAME1 }}"
+          TARGET_REPO_NAME="${{ inputs.TARGET_REPO_NAME }}"
+          TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5"
           SOURCE_BRANCH="${{ inputs.SOURCE_BRANCH }}"
           TARGET_BRANCH="${{ inputs.TARGET_BRANCH }}"
           SOURCE_VERSION="${{ inputs.SOURCE_VERSION }}"
@@ -161,11 +161,11 @@ jobs:
           echo "Pushing the newly created branch $TARGET_BRANCH to the remote repository..."
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
-          git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME}.git
+          git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME1}.git
 
           # Checking if the branch was created successfully
           echo "Checking if branch $TARGET_BRANCH was created successfully..."
-          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Branch $TARGET_BRANCH was created successfully."
             echo "Updating pom files and committing code..."
 
@@ -173,7 +173,7 @@ jobs:
             find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
             git add -u
             git commit -m "Updated pom files to version $TARGET_VERSION"
-            git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME}.git
+            git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME1}.git
           else
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
             exit 3
@@ -190,9 +190,9 @@ jobs:
         run: |
           cd shell_scripts
           chmod +x git_branch_protection.sh
-          ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ env.TARGET_REPO_NAME1 }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
+          ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.TARGET_REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
 
-      - name: Clear workspace
+      - name: Clean up workspace
         run: |
           # Remove all files and directories in the workspace
           rm -rf *
