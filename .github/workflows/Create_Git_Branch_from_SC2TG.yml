@@ -96,7 +96,7 @@ jobs:
   Trigger-Creating-New-Branch:
     runs-on: ubuntu-latest
     needs: Check-Repository-Existence
-    if: env.repo_exists == 'true'
+    if: ${{ github.event_name == 'workflow_dispatch' && steps.Check-Repository-Existence.outputs.repo_exists == 'true' }}
     steps:
       - name: Trigger Creating New Branch
         run: |
@@ -115,7 +115,7 @@ jobs:
   Creating-New-Branch:
     runs-on: ubuntu-latest
     needs: Trigger-Creating-New-Branch
-    if: env.repo_exists == 'true'
+    if: ${{ github.event_name == 'workflow_dispatch' && steps.Check-Repository-Existence.outputs.repo_exists == 'true' }}
     steps:
       - name: Checkout Source Repository
         uses: actions/checkout@v4
@@ -182,7 +182,7 @@ jobs:
   Creating-Branch-Protection-Rule:
     runs-on: ubuntu-latest
     needs: Creating-New-Branch
-    if: env.repo_exists == 'true'
+    if: ${{ github.event_name == 'workflow_dispatch' && steps.Check-Repository-Existence.outputs.repo_exists == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
