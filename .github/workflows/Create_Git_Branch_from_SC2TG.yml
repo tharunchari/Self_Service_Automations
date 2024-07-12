@@ -67,7 +67,6 @@ jobs:
             fi
           else
             echo "Invalid target repository type ('$target_repo'). Valid types are 'Coreadmin' and 'nextgen'."
-            exit 2
           fi
 
   Check-Repository-Existence:
