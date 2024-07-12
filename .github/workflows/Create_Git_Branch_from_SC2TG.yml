@@ -65,7 +65,6 @@ jobs:
           fi
 
       - name: Check if Repository Exists or Create
-        id: check_repo
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
             -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
@@ -73,7 +72,6 @@ jobs:
 
           if [ "$response" -eq "200" ]; then
             echo "Repository already exists, proceeding with branch creation task..."
-            echo "repo_exists=true" >> $GITHUB_ENV
             TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}"
           else
             echo "Repository does not exist. Creating repository and proceeding with branch creation task..."
@@ -81,30 +79,13 @@ jobs:
             chmod +x git_repo_creation.sh
             TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5"
             ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} $TARGET_REPO_NAME1 ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
-            echo "repo_exists=true" >> $GITHUB_ENV
           fi
 
-      - name: Trigger Creating New Branch
-        if: ${{ github.event_name == 'workflow_dispatch' && env.repo_exists == 'true' }}
-        run: |
-          token=$(curl -s -X POST \
-            -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/runs \
-            | jq -r .token)
-
-          curl -X POST \
-            -H "Authorization: Bearer $token" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/workflows/Creating-New-Branch/dispatches \
-            -d '{"ref": "main"}'
-
       - name: Create and Push Branch
-        if: ${{ github.event_name == 'workflow_dispatch' && env.repo_exists == 'true' }}
         run: |
           SOURCE_REPO_NAME="${{ inputs.SOURCE_REPO_NAME }}"
           TARGET_REPO_NAME="${{ inputs.TARGET_REPO_NAME }}"
-          TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5"
+          TARGET_REPO_NAME1="${{ env.TARGET_REPO_NAME1 }}"
           SOURCE_BRANCH="${{ inputs.SOURCE_BRANCH }}"
           TARGET_BRANCH="${{ inputs.TARGET_BRANCH }}"
           SOURCE_VERSION="${{ inputs.SOURCE_VERSION }}"
@@ -141,7 +122,7 @@ jobs:
           echo "Pushing the newly created branch $TARGET_BRANCH to the remote repository..."
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
-          git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME1}.git
+          git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME1}
 
           # Checking if the branch was created successfully
           echo "Checking if branch $TARGET_BRANCH was created successfully..."
@@ -153,21 +134,19 @@ jobs:
             find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
             git add -u
             git commit -m "Updated pom files to version $TARGET_VERSION"
-            git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME1}.git
+            git push -u origin $TARGET_BRANCH:${TARGET_REPO_NAME1}
           else
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
             exit 3
           fi
 
       - name: Add Branch Protection Rule
-        if: ${{ github.event_name == 'workflow_dispatch' && env.repo_exists == 'true' }}
         run: |
           cd shell_scripts
           chmod +x git_branch_protection.sh
           ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.TARGET_REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
 
       - name: Clean up workspace
-        if: ${{ github.event_name == 'workflow_dispatch' && env.repo_exists == 'true' }}
         run: |
           # Remove all files and directories in the workspace
           rm -rf *
