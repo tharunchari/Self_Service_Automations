@@ -82,7 +82,7 @@ jobs:
 
           if [ "$response" -eq "200" ]; then
             echo "Repository already exists, proceeding with branch creation task..."
-            echo "::set-output name=repo_exists::true"
+            echo "repo_exists=true" >> $GITHUB_ENV
             TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}"
           else
             echo "Repository does not exist. Creating repository and proceeding with branch creation task..."
@@ -90,7 +90,7 @@ jobs:
             chmod +x git_repo_creation.sh
             TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5"
             ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} $TARGET_REPO_NAME1 ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
-            echo "::set-output name=repo_exists::true"
+            echo "repo_exists=true" >> $GITHUB_ENV
           fi
 
   Trigger-Creating-New-Branch:
