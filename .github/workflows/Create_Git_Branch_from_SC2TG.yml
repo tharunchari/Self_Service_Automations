@@ -44,7 +44,7 @@ jobs:
       - name: Check if Repository type is valid
         run: |
           if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
-            echo "Invalid Repository type value. Either it should be 'product' or 'client' only. Stopping the workflow."
+            echo "Invalid Repository type value. Stopping the workflow."
             exit 1
 
   Check-Repository-Creation:
