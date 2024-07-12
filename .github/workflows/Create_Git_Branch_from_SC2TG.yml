@@ -45,7 +45,8 @@ jobs:
         run: |
           if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
             echo "Invalid Repository type value. Stopping the workflow."
-            #exit 1
+            exit 1
+          fi  
 
   Check-Repository-Creation:
     runs-on: ubuntu-latest
