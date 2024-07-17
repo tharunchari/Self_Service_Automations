@@ -22,7 +22,7 @@ jobs:
         id: start-ec2
         run: |
           aws ec2 run-instances \
-            --image-id ${{ secrets.SELF_HOSTED_RUNNER_AMI }} \
+            --image-id ${{ vars.SELF_HOSTED_RUNNER_AMI }} \
             --instance-type c5.9xlarge \
             --key-name InternalTools \
             --security-group-ids sg-05c61d58016fc3e3b \
