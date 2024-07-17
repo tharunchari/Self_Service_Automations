@@ -1,0 +1,94 @@
+name: "CodeQL_for_sql"
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  LaunchingSelfHostedRunner_1:
+    runs-on: ubuntu-latest
+    if: github.event.repository.fork == false
+    outputs:
+      genrun_1: ${{ steps.gen_step.outputs.INSTANCE_ID }}
+    steps:      
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Start EC2 instance using an AMI
+        id: start-ec2
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ secrets.SELF_HOSTED_RUNNER_AMI }} \
+            --instance-type c5.9xlarge \
+            --key-name InternalTools \
+            --security-group-ids sg-05c61d58016fc3e3b \
+            --subnet-id subnet-074f1c628d472d492 \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github}]' \
+            --iam-instance-profile Name=VitechTools > /tmp/ec2_output.json
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Set environment variable for subsequent jobs
+        id: gen_step
+        run: echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+
+      - name: Run Command on EC2 Instance to register the runner
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets Key=instanceids,Values=$INSTANCE_ID \
+            --parameters "commands=['runuser -l ec2-user -c \"/actions-runner/config.sh --url https://github.com/vitechsystems --pat ${{ secrets.PROD_CLASSIC_PAT }} --name $INSTANCE_ID --runnergroup ops --labels $INSTANCE_ID --work _work && /actions-runner/run.sh\"']" \
+            --region us-east-1
+        shell: bash
+
+      - name: Set JAVA_HOME on EC2 Instance
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets Key=instanceids,Values=$INSTANCE_ID \
+            --parameters "commands=['sudo update-alternatives --install /usr/bin/java java ${{ secrets.JAVA_HOME_11 }}/bin/java 1 && sudo update-alternatives --set java ${{ secrets.JAVA_HOME_11 }}/bin/java']" \
+            --region us-east-1
+        shell: bash
+
+  CodeQLScanJava:
+    needs: LaunchingSelfHostedRunner_1
+    runs-on: "${{ needs.LaunchingSelfHostedRunner_1.outputs.genrun_1 }}"
+    outputs:
+      genrun_3: ${{ steps.gen_step.outputs.INSTANCE_ID }}
+    continue-on-error: true
+    name: CodeQL scan for SQL
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:  
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Debug JAVA_HOME
+        run: |
+          java -version
+        
+      - name: Set environment variable for third job
+        id: gen_step
+        run: echo "INSTANCE_ID=${{ needs.LaunchingSelfHostedRunner_1.outputs.genrun_1 }}" >> $GITHUB_ENV
+
+      - name: Initialize CodeQL for SQL
+        run: |
+          # Replace with your CodeQL initialization steps if needed
+
+      - name: Run DevSkim Action
+        uses: microsoft/DevSkim-Action@v1
+
+      - name: Upload CodeQL results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: devskim-results.sarif
