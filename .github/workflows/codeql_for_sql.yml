@@ -12,18 +12,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Debug JAVA_HOME
-        run: |
-          java -version
-        
-      - name: Set environment variable for third job
-        id: gen_step
-        run: echo "INSTANCE_ID=${{ needs.LaunchingSelfHostedRunner.outputs.genrun }}" >> $GITHUB_OUTPUT
-
-      - name: Initialize CodeQL for SQL
-        run: |
-          # Replace with your CodeQL initialization steps if needed
-
       - name: Run DevSkim Action
         uses: actions/DevSkim-Action@v1.0
 
