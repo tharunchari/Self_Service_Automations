@@ -98,3 +98,55 @@ jobs:
         uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: devskim-results.sarif
+          
+  TerminatingSelfHostedRunner:
+    runs-on: ubuntu-latest
+    needs: CodeQLScan
+    continue-on-error: true
+
+    steps:       
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Debug Instance IP
+        run: |
+          echo Instance ID: "${{ needs.CodeQLScan.outputs.genrun-2 }}"
+          
+      - name: Run Command on EC2 Instance to remove runner from GitHub
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets Key=instanceids,Values=${{ needs.CodeQLScan.outputs.genrun-2 }} \
+            --parameters commands="sudo -u ec2-user /actions-runner/config.sh remove --pat ${{ secrets.PROD_CLASSIC_PAT }}" \
+            --region us-east-1
+        shell: bash
+
+      - name: Get the associations IDS
+        id: get_associations
+        run: |
+          ASSOC_IDS=$(aws ssm describe-effective-instance-associations --instance-id "${{ needs.CodeQLScan.outputs.genrun-2 }}" | jq -r '.Associations[].AssociationId')
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "ASSOC_IDS<<$EOF" >> $GITHUB_ENV
+          echo "$ASSOC_IDS" >> $GITHUB_ENV
+          echo "$EOF" >> $GITHUB_ENV
+ 
+      - name: Delete associations
+        run: |
+          for ASSOC_ID in $ASSOC_IDS
+          do
+            aws ssm delete-association --association-id $ASSOC_ID
+          done
+
+      - name: Workflow will be in sleep mode until GITHUB runner gets removed from GitHub
+        run: |
+          sleep 10
+          
+      - name: Terminate Self Hosted Runner instance
+        run: |
+          aws ec2 terminate-instances --instance-ids "${{ needs.CodeQLScan.outputs.genrun-2 }}" --region us-east-1
+          
+          
