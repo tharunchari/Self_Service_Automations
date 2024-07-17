@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  LaunchingSelfHostedRunner_1:
+  LaunchingSelfHostedRunner:
     runs-on: ubuntu-latest
     if: github.event.repository.fork == false
     outputs:
@@ -55,20 +55,25 @@ jobs:
             --region us-east-1
         shell: bash
 
-  CodeQLScanJava:
-    needs: LaunchingSelfHostedRunner_1
+  CodeQLScan:
+    needs: LaunchingSelfHostedRunner
     runs-on: "${{ needs.LaunchingSelfHostedRunner.outputs.genrun }}"
     outputs:
-      genrun_3: ${{ steps.gen_step.outputs.INSTANCE_ID }}
+      genrun-2: ${{ steps.gen_step.outputs.INSTANCE_ID }}      # <== Note the output variable
     continue-on-error: true
-    name: CodeQL scan for SQL
-    timeout-minutes: 360
+
+    
+    name: CodeQL scan
+    timeout-minutes: ${{ (matrix.language == 'swift' && 120) || 360 }}
     strategy:
       fail-fast: false
+      matrix:
+        language: [ 'python' ]
     permissions:
       actions: read
       contents: read
       security-events: write
+      
     steps:  
       - name: Checkout repository
         uses: actions/checkout@v4
