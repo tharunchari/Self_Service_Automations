@@ -57,7 +57,7 @@ jobs:
 
   CodeQLScanJava:
     needs: LaunchingSelfHostedRunner_1
-    runs-on: "${{ needs.LaunchingSelfHostedRunner_1.outputs.genrun_1 }}"
+    runs-on: "${{ needs.LaunchingSelfHostedRunner.outputs.genrun }}"
     outputs:
       genrun_3: ${{ steps.gen_step.outputs.INSTANCE_ID }}
     continue-on-error: true
@@ -79,7 +79,7 @@ jobs:
         
       - name: Set environment variable for third job
         id: gen_step
-        run: echo "INSTANCE_ID=${{ needs.LaunchingSelfHostedRunner_1.outputs.genrun_1 }}" >> $GITHUB_ENV
+        run: echo "INSTANCE_ID=${{ needs.LaunchingSelfHostedRunner.outputs.genrun }}" >> $GITHUB_OUTPUT
 
       - name: Initialize CodeQL for SQL
         run: |
