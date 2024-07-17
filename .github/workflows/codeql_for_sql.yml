@@ -25,7 +25,7 @@ jobs:
           # Replace with your CodeQL initialization steps if needed
 
       - name: Run DevSkim Action
-        uses: vitechsystems/DevSkim-Action@v1.0
+        uses: actions/DevSkim-Action@v1.0
 
       - name: Upload CodeQL results
         uses: github/codeql-action/upload-sarif@v2
