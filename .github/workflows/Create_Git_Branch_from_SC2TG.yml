@@ -122,7 +122,7 @@ jobs:
           echo "Pushing the newly created branch $TARGET_BRANCH to the remote repository..."
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
-          git remote add https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git
+          git remote add origin https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git
           git push -u origin $TARGET_BRANCH
 
           # Checking if the branch was created successfully
