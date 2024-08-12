@@ -148,10 +148,10 @@ jobs:
 
       - name: Add Branch Protection Rule
         run: |
-          cd ../../shell_scripts/
+          find / -name "shell_scripts" -type d -print -exec cd {} \;
           pwd
           chmod +x git_branch_protection.sh
-          ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${TARGET_REPO_NAME1} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
+          ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ TARGET_REPO_NAME1 }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
       - name: Clean up workspace
         run: |
           # Remove all files and directories in the workspace
