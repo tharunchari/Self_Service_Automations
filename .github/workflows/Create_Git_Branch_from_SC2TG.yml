@@ -41,6 +41,9 @@ jobs:
   create-branch-and-update-pom:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
       - name: Validate Inputs and Repository Type
         run: |
           if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
@@ -150,6 +153,7 @@ jobs:
         run: |
           locate shell_scripts | grep -E "/shell_scripts$" | xargs cd
           pwd
+          cd ../../shell_scripts
           chmod +x git_branch_protection.sh
           ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${TARGET_REPO_NAME1} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
       - name: Clean up workspace
