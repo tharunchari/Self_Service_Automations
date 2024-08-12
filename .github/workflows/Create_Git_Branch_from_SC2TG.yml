@@ -148,7 +148,7 @@ jobs:
 
       - name: Add Branch Protection Rule
         run: |
-          cd ../..
+          cd "$(find ~/ -type d -name "shell_scripts" -print -quit)"
           pwd
           chmod +x git_branch_protection.sh
           ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${TARGET_REPO_NAME1} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
