@@ -85,7 +85,7 @@ jobs:
         run: |
           SOURCE_REPO_NAME="${{ inputs.SOURCE_REPO_NAME }}"
           TARGET_REPO_NAME="${{ inputs.TARGET_REPO_NAME }}"
-          TARGET_REPO_NAME1="${{ env.TARGET_REPO_NAME1 }}"
+          TARGET_REPO_NAME1="${{ github.event.inputs.TARGET_REPO_NAME }}"
           SOURCE_BRANCH="${{ inputs.SOURCE_BRANCH }}"
           TARGET_BRANCH="${{ inputs.TARGET_BRANCH }}"
           SOURCE_VERSION="${{ inputs.SOURCE_VERSION }}"
