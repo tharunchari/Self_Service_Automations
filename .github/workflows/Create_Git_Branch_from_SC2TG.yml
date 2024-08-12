@@ -122,7 +122,8 @@ jobs:
           echo "Pushing the newly created branch $TARGET_BRANCH to the remote repository..."
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
-          git push $TARGET_BRANCH ${TARGET_REPO_NAME1}
+          git remote add https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git
+          git push -u origin $TARGET_BRANCH
 
           # Checking if the branch was created successfully
           echo "Checking if branch $TARGET_BRANCH was created successfully..."
@@ -133,8 +134,8 @@ jobs:
             # Updating pom files, committing and pushing changes
             find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
             git add -u
-            git commit -m "Updated pom files to version $TARGET_VERSION"
-            git push $TARGET_BRANCH ${TARGET_REPO_NAME1}
+            git commit -m "Updated pom files to version ${TARGET_VERSION}"
+            git push -u origin $TARGET_BRANCH
           else
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
             exit 3
