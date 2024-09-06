@@ -29,8 +29,8 @@ jobs:
         run: ls -al
 
       - name: Change directories and execute script
-        env:
-           TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
+    #    env:
+         #  TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
         run: |
             ls -al
             cd shell_scripts
