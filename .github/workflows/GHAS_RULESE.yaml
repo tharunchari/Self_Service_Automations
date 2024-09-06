@@ -1,0 +1,69 @@
+name: GITGAS_Ruleset
+ 
+on:
+
+  # Allows the workflow to be triggered manually with inputs
+
+  workflow_dispatch:
+
+    inputs:
+
+      ORG_NAME:
+
+        description: 'Organization name (prod or client)'
+
+        required: true
+
+        default: 'prod'
+
+      ORG:
+
+        description: 'GitHub organization name'
+
+        required: true
+
+        default: 'vitechsystems'
+
+      REPOS:
+
+        description: 'Repository name'
+
+        required: true
+
+        default: 'your-repo-name'
+ 
+jobs:
+
+  create-ruleset:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Check out repository
+
+      uses: actions/checkout@v2
+ 
+    - name: Change directories and execute script
+
+      env:
+
+        GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+
+        ORG_NAME: ${{ github.event.inputs.ORG_NAME }}
+
+        ORG: ${{ github.event.inputs.ORG }}
+
+        REPOS: ${{ github.event.inputs.REPOS }}
+
+      run: |
+
+        ls -al
+
+        cd shell_scripts
+
+        ls -al
+
+        chmod +x ./GITGHAS.sh
+
+        ./GITGHAS.sh $ORG_NAME $ORG $REPOS
