@@ -1,6 +1,6 @@
 #heloo
 
-name: ADDBranchingRuleset
+name: ruleset_creationandbranchadd
  
 on:
   workflow_dispatch:
@@ -12,11 +12,11 @@ on:
       repo_name:
         description: "Repository Name"
         required: true
-        default: "reposnam"
+        default: "Repository Name"
       new_branch:
-        description: "New branch name refs/heads/BRANCHNAME "
+        description: "New Branch to be added"
         required: true
-        default: "refs/heads/Bname"
+        default: "refs/heads/branchname"
  
 jobs:
   update-ruleset:
@@ -28,9 +28,7 @@ jobs:
       - name: List directories
         run: ls -al
 
-      - name: Change directories and execute script
-    #    env:
-         #  TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
+      - name: change directories
         run: |
             ls -al
             cd shell_scripts
