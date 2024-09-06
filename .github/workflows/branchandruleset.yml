@@ -1,0 +1,43 @@
+#heloo
+
+name: ADDBranchingRuleset
+ 
+on:
+  workflow_dispatch:
+    inputs:
+      org_name:
+        description: "Organization Name"
+        required: true
+        default: "vitechsystems"
+      repo_name:
+        description: "Repository Name"
+        required: true
+        default: ""
+      new_branch:
+        description: "New branch name refs/heads/BRANCHNAME "
+        required: true
+        default: "refs/heads/"
+ 
+jobs:
+  update-ruleset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: List directories
+        run: ls -al
+
+      - name: change directories
+        run: |
+            ls -al
+            cd shell_scripts
+            ls -al
+            chmod +x ./ruleset_creationandbranchadd.sh
+            ./ruleset_creationandbranchadd.sh ${{ github.event.inputs.org_name }} ${{ github.event.inputs.repo_name }} ${{ github.event.inputs.new_branch }}
+
+#      - name: Make the script executable
+#        run: chmod +x ./update_ruleset.sh
+ 
+  #    - name: Update ruleset
+  #      run: ./update_ruleset.sh ${{ github.event.inputs.org_name }} ${{ github.event.inputs.repo_name }} ${{ github.event.inputs.new_branch }}
