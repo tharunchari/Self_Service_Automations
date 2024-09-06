@@ -1,7 +1,7 @@
 #!/bin/bash
  
 # Define GitHub credentials and API details
-
+TOKEN="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"
  
 # Get organization name and repository name from arguments
 ORG_NAME="$1"
