@@ -12,11 +12,11 @@ on:
       repo_name:
         description: "Repository Name"
         required: true
-        default: ""
+        default: "reposnam"
       new_branch:
         description: "New branch name refs/heads/BRANCHNAME "
         required: true
-        default: "refs/heads/"
+        default: "refs/heads/Bname"
  
 jobs:
   update-ruleset:
