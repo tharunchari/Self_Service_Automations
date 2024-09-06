@@ -28,13 +28,15 @@ jobs:
       - name: List directories
         run: ls -al
 
-      - name: change directories
+      - name: Change directories and execute script
+        env:
+           TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
         run: |
             ls -al
             cd shell_scripts
             ls -al
-            chmod +x ./ruleset_creationandbranchadd.sh
-            ./ruleset_creationandbranchadd.sh ${{ github.event.inputs.org_name }} ${{ github.event.inputs.repo_name }} ${{ github.event.inputs.new_branch }}
+            chmod +x ./ADDbranching_ruleset.sh
+            ./ADDbranching_ruleset.sh ${{ github.event.inputs.org_name }} ${{ github.event.inputs.repo_name }} ${{ github.event.inputs.new_branch }}
 
 #      - name: Make the script executable
 #        run: chmod +x ./update_ruleset.sh
