@@ -95,7 +95,7 @@ jobs:
           SOURCE_VERSION="${{ inputs.SOURCE_VERSION }}"
           TARGET_VERSION="${{ inputs.TARGET_VERSION }}"
           COMMIT_NUMBER="${{ inputs.Commit_Number }}"
-
+          set -x
           mkdir Branch_creation
           cd Branch_creation
 
@@ -127,10 +127,10 @@ jobs:
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
           if ! git remote -v | grep -q "^https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git\s+" ; then
-            git push -u origin2 $TARGET_BRANCH
+            git push -u origin $TARGET_BRANCH
           else
             git remote add origin https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git
-            git push -u origin2 $TARGET_BRANCH
+            git push -u origin $TARGET_BRANCH
           fi
 
           # Checking if the branch was created successfully
@@ -143,7 +143,7 @@ jobs:
             find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
             git add -u
             git commit -m "Updated pom files to version ${TARGET_VERSION}"
-            git push -u origin2 $TARGET_BRANCH
+            git push -u origin $TARGET_BRANCH
           else
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
             exit 3
