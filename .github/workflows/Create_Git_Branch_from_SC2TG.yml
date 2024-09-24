@@ -126,11 +126,16 @@ jobs:
           echo "Pushing the newly created branch $TARGET_BRANCH to the remote repository..."
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
-          if ! git remote -v | grep -q "^origin\s*https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git"; then
-            git remote add origin https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git
+          # Check if the remote "origin" exists
+          if git remote get-url origin | grep -q "^https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git$"; then
+            echo "Remote 'origin' already exists with the correct URL."
+          else
+            echo "Adding remote 'origin'."
+            git remote set-url origin https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git
           fi
-            git push -u origin $TARGET_BRANCH
-
+          
+          # Push to the target branch
+          git push -u origin $TARGET_BRANCH
 
           # Checking if the branch was created successfully
           echo "Checking if branch $TARGET_BRANCH was created successfully..."
