@@ -17,6 +17,15 @@ def send_sns_notification(subject, message):
     except Exception as e:
         print("Failed to send SNS notification:", str(e))
  
+def mark_instance_as_notified(instance_id):
+    # Add a 'Notified' tag to the instance after sending the notification
+    ec2_client = boto3.client('ec2')
+    try:
+        ec2_client.create_tags(Resources=[instance_id], Tags=[{'Key': 'Notified', 'Value': 'True'}])
+        print(f"Instance {instance_id} marked as notified")
+    except Exception as e:
+        print(f"Failed to tag instance {instance_id}: {str(e)}")
+ 
 def check_running_ec2_instances():
     # Create a Boto3 EC2 client
     ec2_client = boto3.client('ec2')
@@ -29,29 +38,29 @@ def check_running_ec2_instances():
     instances_to_notify = []
     # Retrieve instance descriptions based on the tag filter
     response = ec2_client.describe_instances(Filters=[
-        {
-            'Name': f'tag:{tag_key}',
-            'Values': [tag_value]
-        },
-        {
-            'Name': 'instance-state-name',
-            'Values': ['running']
-        }
+        {'Name': f'tag:{tag_key}', 'Values': [tag_value]},
+        {'Name': 'instance-state-name', 'Values': ['running']}
     ])
+ 
     # Extract instance details
     for reservation in response['Reservations']:
         for instance in reservation['Instances']:
             instance_id = instance['InstanceId']
             launch_time = instance['LaunchTime']
+            # Check if instance has already been notified
+            notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
             # Calculate the running time
             running_time = current_time - launch_time
-            if running_time.total_seconds() > 7200:  # 2 hours = 7200 seconds
+            # If running for more than 2 hours and not yet notified
+            if running_time.total_seconds() > 7200 and notified_tag != 'True':
                 instance_details = {
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
                     'Running Time': running_time
                 }
                 instances_to_notify.append(instance_details)
+                mark_instance_as_notified(instance_id)
+ 
     # Prepare email subject and body
     subject = "EC2 Github_Self_Hosted_Runner Instances Running for More Than 2 hours"
     message = ""
@@ -59,9 +68,12 @@ def check_running_ec2_instances():
         message += f"Instance ID: {instance['Instance ID']}\n"
         message += f"Launch Time: {instance['Launch Time']}\n"
         message += f"Running Time: {instance['Running Time']}\n\n"
+ 
     # Send SNS notification if there are instances to notify
     if instances_to_notify:
         send_sns_notification(subject, message)
+    else:
+        print("No instances running for more than 2 hours.")
  
 # Run the function to check running EC2 instances and send notifications
 check_running_ec2_instances()
