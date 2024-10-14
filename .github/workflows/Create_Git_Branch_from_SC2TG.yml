@@ -144,7 +144,10 @@ jobs:
             echo "Updating pom files and committing code..."
 
             # Updating pom files, committing and pushing changes
-            find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
+            pwd
+            set -x
+            find . -name pom.xml | xargs sed -i 's/'"${SOURCE_VERSION}"'/'"${TARGET_VERSION}"'/g'
+            #find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
             git add -u
             git commit -m "Updated pom files to version ${TARGET_VERSION}"
             git push -u origin $TARGET_BRANCH
