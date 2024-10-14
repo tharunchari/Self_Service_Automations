@@ -144,10 +144,7 @@ jobs:
             echo "Updating pom files and committing code..."
 
             # Updating pom files, committing and pushing changes
-            pwd
-            set -x
             find . -name pom.xml | xargs sed -i 's/'"${SOURCE_VERSION}"'/'"${TARGET_VERSION}"'/g'
-            #find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
             git add -u
             git commit -m "Updated pom files to version ${TARGET_VERSION}"
             git push -u origin $TARGET_BRANCH
@@ -158,7 +155,7 @@ jobs:
 
       - name: Add Branch Protection Rule
         run: |
-          find /home/runner/work/ shell_scripts -type d -name "shell_scripts" -exec bash -c ' cd "$0" && chmod +x git_branch_protection.sh && ./git_branch_protection.sh "${{ secrets.PROD_CLASSIC_PAT }}" "${TARGET_REPO_NAME1}" "${{ inputs.TARGET_BRANCH }}" "${{ inputs.OWNER }}" ' {} \;
+          find /home/runner/work/ -type d -name "shell_scripts" -exec bash -c ' cd "$0" && chmod +x git_branch_protection.sh && ./git_branch_protection.sh "${{ secrets.PROD_CLASSIC_PAT }}" "${TARGET_REPO_NAME1}" "${{ inputs.TARGET_BRANCH }}" "${{ inputs.OWNER }}" ' {} \;
           #chmod +x git_branch_protection.sh
           #./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${TARGET_REPO_NAME1} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
       - name: Clean up workspace
