@@ -155,9 +155,9 @@ jobs:
 
       - name: Add Branch Protection Rule
         run: |
-          find /home/runner/work/ -type d -name "shell_scripts" -exec bash -c ' cd "$0" && chmod +x git_branch_protection.sh && ./git_branch_protection.sh "${{ secrets.PROD_CLASSIC_PAT }}" "${TARGET_REPO_NAME1}" "${{ inputs.TARGET_BRANCH }}" "${{ inputs.OWNER }}" ' {} \;
+          find /home/runner/work/ -type d -name "shell_scripts" -exec bash -c ' cd "$0" && chmod +x git_branch_protection.sh && ./git_branch_protection.sh "${{ secrets.PROD_CLASSIC_PAT }}" "${{ github.event.inputs.TARGET_REPO_NAME }}" "${{ inputs.TARGET_BRANCH }}" "${{ inputs.OWNER }}" ' {} \;
           #chmod +x git_branch_protection.sh
-          #./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${TARGET_REPO_NAME1} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
+          #./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ github.event.inputs.TARGET_REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
       - name: Clean up workspace
         run: |
           # Remove all files and directories in the workspace
