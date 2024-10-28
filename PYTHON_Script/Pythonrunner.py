@@ -17,6 +17,15 @@ def send_sns_notification(subject, message):
     except Exception as e:
         print("Failed to send SNS notification:", str(e))
  
+def mark_instance_as_notified(instance_id):
+    # Add a 'Notified' tag to the instance after sending the notification
+    ec2_client = boto3.client('ec2')
+    try:
+        ec2_client.create_tags(Resources=[instance_id], Tags=[{'Key': 'Notified', 'Value': 'True'}])
+        print(f"Instance {instance_id} marked as notified")
+    except Exception as e:
+        print(f"Failed to tag instance {instance_id}: {str(e)}")
+ 
 def check_running_ec2_instances():
     # Create a Boto3 EC2 client
     ec2_client = boto3.client('ec2')
@@ -35,36 +44,40 @@ def check_running_ec2_instances():
         {'Name': f'tag:{tag_key}', 'Values': [self_hosted_runner_value]},
         {'Name': 'instance-state-name', 'Values': ['running']}
     ])
-    # Extract self-hosted runners running more than 2 hours
+    # Extract self-hosted runners running more than 2 hours and not previously notified
     for reservation in response_self_hosted['Reservations']:
         for instance in reservation['Instances']:
             instance_id = instance['InstanceId']
             launch_time = instance['LaunchTime']
+            notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
             running_time = current_time - launch_time
-            if running_time.total_seconds() > 300:  # 2 hours = 7200 seconds
+            if running_time.total_seconds() > 300 and notified_tag != 'True':  # 2 hours = 7200 seconds
                 self_hosted_instances.append({
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
                     'Running Time': running_time
                 })
+                mark_instance_as_notified(instance_id)
  
     # Retrieve instances for bam::ip* pattern running for more than 3 hours
     response_bam_ip = ec2_client.describe_instances(Filters=[
         {'Name': f'tag:{tag_key}', 'Values': [bam_ip_value]},
         {'Name': 'instance-state-name', 'Values': ['running']}
     ])
-    # Extract bam::ip* instances running more than 3 hours
+    # Extract bam::ip* instances running more than 3 hours and not previously notified
     for reservation in response_bam_ip['Reservations']:
         for instance in reservation['Instances']:
             instance_id = instance['InstanceId']
             launch_time = instance['LaunchTime']
+            notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
             running_time = current_time - launch_time
-            if running_time.total_seconds() > 300:  # 3 hours = 10800 seconds
+            if running_time.total_seconds() > 300 and notified_tag != 'True':  # 3 hours = 10800 seconds
                 bam_ip_instances.append({
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
                     'Running Time': running_time
                 })
+                mark_instance_as_notified(instance_id)
  
     # Self-Hosted Runners
     if self_hosted_instances:
@@ -80,8 +93,8 @@ def check_running_ec2_instances():
  
     # bam::ip* Instances
     if bam_ip_instances:
-        subject_bam_ip = "Bamboo Elastic Instances Running for More Than 3 Hours"
-        message_bam_ip = "The following Bamboo Elastic Instances have been running for more than 3 hours:\n"
+        subject_bam_ip = "bam::ip* Instances Running for More Than 3 Hours"
+        message_bam_ip = "The following bam::ip* instances have been running for more than 3 hours:\n"
         for instance in bam_ip_instances:
             message_bam_ip += f"Instance ID: {instance['Instance ID']}\n"
             message_bam_ip += f"Launch Time: {instance['Launch Time']}\n"
