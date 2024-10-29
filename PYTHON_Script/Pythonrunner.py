@@ -93,8 +93,8 @@ def check_running_ec2_instances():
  
     # bam::ip* Instances
     if bam_ip_instances:
-        subject_bam_ip = "bam::ip* Instances Running for More Than 3 Hours"
-        message_bam_ip = "The following bam::ip* instances have been running for more than 3 hours:\n"
+        subject_bam_ip = "Bamboo Elastic Instances Running for More Than 3 Hours"
+        message_bam_ip = "The following Bamboo Elastic Instances have been running for more than 3 hours:\n"
         for instance in bam_ip_instances:
             message_bam_ip += f"Instance ID: {instance['Instance ID']}\n"
             message_bam_ip += f"Launch Time: {instance['Launch Time']}\n"
