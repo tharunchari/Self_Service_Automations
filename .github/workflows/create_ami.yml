@@ -1,0 +1,94 @@
+name: "Create AMI"
+on:
+  workflow_dispatch:
+ 
+jobs:
+  LaunchingSelfHostedRunner:
+    if: github.event.repository.fork == false
+    runs-on: ubuntu-latest
+    outputs:
+      genrun: ${{ steps.gen_step.outputs.INSTANCE_ID }}
+ 
+    steps:
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+ 
+      - name: Step 1 - Find the latest Amazon Linux 2023 AMI
+        id: find_ami
+        run: |
+          LATEST_AMI=$(aws ec2 describe-images --owners amazon \
+            --filters "Name=name,Values=al2023-ami-*-x86_64*" \
+            --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' --output text)
+          echo "LATEST_AMI=$LATEST_AMI" >> $GITHUB_ENV
+ 
+      - name: Step 2 - Start EC2 instance using an AMI
+        id: start_ec2
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ env.LATEST_AMI }}  \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE_C5_4XLARGE }} \
+            --key-name InternalTools \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id ${{ vars.SUBNET_ID }} \
+            --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":200,"VolumeType":"gp3"}}]' \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Amazon-Linux-AMI-GITHUB},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github}]' \
+            --iam-instance-profile Name=VitechTools > /tmp/ec2_output.json
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+ 
+      - name: Workflow sleep until EC2 is avaliable to use
+        run: sleep 300
+ 
+      - name: Step 3 - Configure AWS CLI and other dependencies
+        run: |
+          aws ssm send-command \
+            --instance-ids ${{ env.INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands='aws configure set aws_access_key_id ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }} && aws configure set aws_secret_access_key ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }} && aws configure set default.region ${{ vars.AWS_REGION }} && aws s3 cp s3://bamboo-jdks-resources/setup-instance.sh /tmp/setup-instance.sh && chmod +x /tmp/setup-instance.sh && sudo /tmp/setup-instance.sh' \
+            --region ${{ vars.AWS_REGION }}
+ 
+      - name: Workflow sleep until copying the JDK's from AWS S3
+        run: sleep 300
+ 
+      - name: Step 4 - Create an AMI from the instance
+        id: create_ami
+        run: |
+          AMI_ID=$(aws ec2 create-image --instance-id ${{ env.INSTANCE_ID }} --name "Github_Self_Hosted_Runner_AMI-$(date +%Y-%m-%d_%H-%M)" --no-reboot \
+            --tag-specifications 'ResourceType=image,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner_Amazon_Linux_AMI},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github}]' \
+            --query 'ImageId' --output text)
+          echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
+
+      - name: Workflow sleep until created AMI is avaliable to use
+        run: sleep 1000
+
+      - name: Step 5 - Retrieve Current AMI ID from Github
+        run: |
+          export CURRENT_AMI_ID=$(curl -s -X GET https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI \
+            -H "Authorization: Bearer ${{ secrets.PROD_CLASSIC_PAT }}" \
+            -H "Accept: application/vnd.github+json" | jq -r '.value')
+          echo "CURRENT_AMI_ID=$CURRENT_AMI_ID" >> $GITHUB_ENV
+ 
+      - name: Step 6 - Update the new AMI ID in GitHub organization variables
+        run: |
+          curl -X PATCH https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI \
+            -H "Authorization: Bearer ${{ secrets.PROD_CLASSIC_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"value": "${{ env.AMI_ID }}"}'
+ 
+      - name: Step 7 - Send AMI Details via SNS
+        run: |
+          MESSAGE=$(printf "New AWS AMI created on $(date +%Y-%m-%d) for Bamboo Image configuration.\nCurrent AMI ID: ${{ env.CURRENT_AMI_ID }}\nNew AMI ID: ${{ env.AMI_ID }}\nAttention may be required.")
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$MESSAGE" \
+            --subject "New AWS AMI Created on $(date +%Y-%m-%d)"
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+
+
+      - name: Step 8 - Terminate Self Hosted Runner instance
+        run: |
+          aws ec2 terminate-instances --instance-ids "${{ env.INSTANCE_ID }}" --region ${{ vars.AWS_REGION }}
