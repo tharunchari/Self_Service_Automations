@@ -1,0 +1,54 @@
+name: Check Branch Protection Status
+
+on:
+  workflow_dispatch:  # You can trigger the action manually via the GitHub UI
+
+jobs:
+  check-branch-protection:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v3
+
+    - name: Run branch protection check
+      env:
+        GITHUB_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}  # Use the token to authenticate API requests
+      run: |
+        # Variables
+        ORG="vitechsystems"
+        API_URL="https://api.github.com"
+        AUTH_HEADER="Authorization: token $GITHUB_TOKEN"
+        UNPROTECTED_BRANCHES=()
+
+        # Fetch all repositories in the organization
+        repos=$(curl -s -H "$AUTH_HEADER" "$API_URL/orgs/$ORG/repos?per_page=100")
+
+        # Loop through each repository
+        for repo in $(echo "$repos" | jq -r '.[].name'); do
+          echo "Checking branches in repository: $repo"
+
+          # Fetch branches for the current repository
+          branches=$(curl -s -H "$AUTH_HEADER" "$API_URL/repos/$ORG/$repo/branches?per_page=100")
+
+          # Loop through each branch
+          for branch in $(echo "$branches" | jq -r '.[].name'); do
+            # Check if the branch has protection enabled
+            protection_status=$(curl -s -o /dev/null -w "%{http_code}" -H "$AUTH_HEADER" "$API_URL/repos/$ORG/$repo/branches/$branch/protection")
+
+            if [ "$protection_status" -ne 200 ]; then
+              # If not protected, add it to the list
+              UNPROTECTED_BRANCHES+=("$repo:$branch")
+            fi
+          done
+        done
+
+        # Output the result
+        if [ ${#UNPROTECTED_BRANCHES[@]} -gt 0 ]; then
+          echo "Unprotected branches:"
+          for entry in "${UNPROTECTED_BRANCHES[@]}"; do
+            echo "Repository and Branch: $entry"
+          done
+        else
+          echo "All branches are protected!"
+        fi
