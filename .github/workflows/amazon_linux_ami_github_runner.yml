@@ -1,6 +1,9 @@
-name: "Create Amazon Linux AMI"
+name: "Amazon Linux AMI For GitHub Runner"
 on:
   workflow_dispatch:
+  schedule:
+    # This will run the workflow 1st day of every month
+    - cron: "0 0 1 * *"
  
 jobs:
   Creating-Amazon-Linux-AMI:
@@ -91,11 +94,11 @@ jobs:
  
       - name: Step 8 - Send AMI Details via SNS
         run: |
-          MESSAGE=$(printf "New AWS AMI created on $(date +%Y-%m-%d) for Bamboo Image configuration.\nCurrent AMI ID: ${{ env.CURRENT_AMI_ID }}\nNew AMI ID: ${{ env.AMI_ID }}\nAttention may be required.")
+          MESSAGE=$(printf "New Amazon Linux AMI created on $(date +%Y-%m-%d) for GitHub Runner. \nCurrent AMI ID: ${{ env.CURRENT_AMI_ID }}\nNew AMI ID: ${{ env.AMI_ID }}\nAttention may be required.")
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
             --message "$MESSAGE" \
-            --subject "New AWS AMI Created on $(date +%Y-%m-%d)"
+            --subject "New Amazon Linux AMI Created on $(date +%Y-%m-%d)"
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
 
