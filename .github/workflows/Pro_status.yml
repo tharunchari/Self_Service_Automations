@@ -19,10 +19,14 @@ jobs:
         ORG="vitechsystems"
         API_URL="https://api.github.com"
         AUTH_HEADER="Authorization: token $GITHUB_TOKEN"
+        LOG_FILE="branch_protection_check.log"
         UNPROTECTED_BRANCHES=()
 
         # List of repositories to skip
-        SKIP_REPOS=("CoreAdmin" "Nextgen" "digital-automation" "github-runner-testing" "ghas-jira-integration" "Internal-Tools" "BackportHack" "acttesting" "changed-files" "github-securityreport-action" "CodeQL-SQL-Test" "connector-x" "V3locityDashBoard" "codacy-analysis-cli-action" "central-workflows" "Nextgen_GHAS_Testing")  
+        SKIP_REPOS=("CoreAdmin" "Nextgen" "productutilities" "v3-graphql" "NextGen-Core" "ConfigurationStore" "v3-lambda-host" "v3-lambda-core" "v3-graphql-js" "digital-automation" "github-runner-testing" "ghas-jira-integration" "Internal-Tools" "BackportHack" "acttesting" "changed-files" "github-securityreport-action" "CodeQL-SQL-Test" "connector-x" "V3locityDashBoard" "codacy-analysis-cli-action" "central-workflows" "Nextgen_GHAS_Testing")
+
+        # Start the logging
+        echo "Starting branch protection check for $ORG" > $LOG_FILE
 
         # Function to fetch all pages of repositories
         fetch_repositories() {
@@ -68,6 +72,16 @@ jobs:
           return 1  # Return false (do not skip the repo)
         }
 
+        # Function to check if a branch name contains "dependabot"
+        is_dependabot_branch() {
+          branch=$1
+          if [[ "$branch" == *"dependabot"* ]]; then
+            return 0  # Return true (skip this branch)
+          else
+            return 1  # Return false (do not skip this branch)
+          fi
+        }
+
         # Fetch all repositories
         repos=$(fetch_repositories)
 
@@ -75,33 +89,46 @@ jobs:
         for repo in ${repos[@]}; do
           # Check if the repository is in the skip list
           if is_skipped "$repo"; then
-            echo "Skipping repository: $repo"
+            echo "Skipping repository: $repo" >> $LOG_FILE
             continue
           fi
 
-          echo "Checking branches in repository: $repo"
+          echo "Checking branches in repository: $repo" >> $LOG_FILE
 
           # Fetch all branches for the current repository
           branches=$(fetch_branches $repo)
 
           # Loop through each branch
           for branch in ${branches[@]}; do
+            # Skip branches that contain "dependabot"
+            if is_dependabot_branch "$branch"; then
+              echo "Skipping dependabot branch: $repo:$branch" >> $LOG_FILE
+              continue
+            fi
+
             # Check if the branch has protection enabled
             protection_status=$(curl -s -o /dev/null -w "%{http_code}" -H "$AUTH_HEADER" "$API_URL/repos/$ORG/$repo/branches/$branch/protection")
 
             if [ "$protection_status" -ne 200 ]; then
               # If not protected, add it to the list
               UNPROTECTED_BRANCHES+=("$repo:$branch")
+              echo "Unprotected branch found: $repo:$branch" >> $LOG_FILE
             fi
           done
         done
 
-        # Output the result
+        # Output the result to the log
         if [ ${#UNPROTECTED_BRANCHES[@]} -gt 0 ]; then
-          echo "Unprotected branches:"
+          echo "Unprotected branches:" >> $LOG_FILE
           for entry in "${UNPROTECTED_BRANCHES[@]}"; do
-            echo "Repository and Branch: $entry"
+            echo "Repository and Branch: $entry" >> $LOG_FILE
           done
         else
-          echo "All branches are protected!"
+          echo "All branches are protected!" >> $LOG_FILE
         fi
+
+    - name: Upload log file
+      uses: actions/upload-artifact@v3
+      with:
+        name: branch-protection-log
+        path: branch_protection_check.log
