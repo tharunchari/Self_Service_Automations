@@ -1,7 +1,7 @@
 name: Check Branch Protection Status
 
 on:
-  workflow_dispatch:  # You can trigger the action manually via the GitHub UI
+  workflow_dispatch:  
 
 jobs:
   check-branch-protection:
@@ -21,34 +21,61 @@ jobs:
         AUTH_HEADER="Authorization: token $GITHUB_TOKEN"
         UNPROTECTED_BRANCHES=()
 
-        # Fetch all repositories in the organization
-        repos=$(curl -s -H "$AUTH_HEADER" "$API_URL/orgs/$ORG/repos?per_page=100")
+        # Function to fetch all pages of repositories
+        fetch_repositories() {
+          page=1
+          repos=()
+          while : ; do
+            response=$(curl -s -H "$AUTH_HEADER" "$API_URL/orgs/$ORG/repos?per_page=100&page=$page")
+            repos_page=$(echo "$response" | jq -r '.[].name')
+            if [ -z "$repos_page" ]; then
+              break
+            fi
+            repos+=($repos_page)
+            page=$((page + 1))
+          done
+          echo "${repos[@]}"
+        }
+
+        # Function to fetch the primary branch for a given repository
+        fetch_primary_branch() {
+          repo=$1
+          response=$(curl -s -H "$AUTH_HEADER" "$API_URL/repos/$ORG/$repo")
+          primary_branch=$(echo "$response" | jq -r '.default_branch')
+          echo "$primary_branch"
+        }
+
+        # Fetch all repositories
+        repos=$(fetch_repositories)
 
         # Loop through each repository
-        for repo in $(echo "$repos" | jq -r '.[].name'); do
-          echo "Checking branches in repository: $repo"
+        for repo in ${repos[@]}; do
+          # Skip the repositories CoreAdmin and Nextgen
+          if [[ "$repo" == "CoreAdmin" || "$repo" == "Nextgen" ]]; then
+            echo "Skipping repository: $repo"
+            continue
+          fi
 
-          # Fetch branches for the current repository
-          branches=$(curl -s -H "$AUTH_HEADER" "$API_URL/repos/$ORG/$repo/branches?per_page=100")
+          echo "Checking primary branch in repository: $repo"
 
-          # Loop through each branch
-          for branch in $(echo "$branches" | jq -r '.[].name'); do
-            # Check if the branch has protection enabled
-            protection_status=$(curl -s -o /dev/null -w "%{http_code}" -H "$AUTH_HEADER" "$API_URL/repos/$ORG/$repo/branches/$branch/protection")
+          # Fetch the primary branch (e.g., main, master)
+          primary_branch=$(fetch_primary_branch $repo)
 
-            if [ "$protection_status" -ne 200 ]; then
-              # If not protected, add it to the list
-              UNPROTECTED_BRANCHES+=("$repo:$branch")
-            fi
-          done
+          # Check if the primary branch has protection enabled
+          protection_status=$(curl -s -o /dev/null -w "%{http_code}" -H "$AUTH_HEADER" "$API_URL/repos/$ORG/$repo/branches/$primary_branch/protection")
+
+          if [ "$protection_status" -ne 200 ]; then
+            # If not protected, add it to the list
+            UNPROTECTED_BRANCHES+=("$repo:$primary_branch")
+          fi
         done
 
         # Output the result
         if [ ${#UNPROTECTED_BRANCHES[@]} -gt 0 ]; then
-          echo "Unprotected branches:"
+          echo "Unprotected primary branches:"
           for entry in "${UNPROTECTED_BRANCHES[@]}"; do
             echo "Repository and Branch: $entry"
           done
         else
-          echo "All branches are protected!"
+          echo "All primary branches are protected!"
         fi
