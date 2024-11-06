@@ -102,7 +102,7 @@ jobs:
           for branch in ${branches[@]}; do
             # Skip branches that contain "dependabot"
             if is_dependabot_branch "$branch"; then
-              echo "Skipping dependabot branch: $repo:$branch" >> $LOG_FILE
+              echo "Skipping dependabot branch: $repo:$branch"
               continue
             fi
 
@@ -119,6 +119,8 @@ jobs:
 
         # Output the result to the log
         if [ ${#UNPROTECTED_BRANCHES[@]} -gt 0 ]; then
+          echo "******************************** >> $LOG_FILE
+          echo "******************************** >> $LOG_FILE
           echo "Unprotected branches:" >> $LOG_FILE
           for entry in "${UNPROTECTED_BRANCHES[@]}"; do
             echo "Repository and Branch: $entry" >> $LOG_FILE
@@ -128,7 +130,7 @@ jobs:
         fi
 
     - name: Upload log file
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: branch-protection-log
         path: branch_protection_check.log
