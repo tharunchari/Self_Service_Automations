@@ -22,7 +22,7 @@ jobs:
         LOG_FILE="branch_protection_check.log"
         UNPROTECTED_BRANCHES=()
 
-        SKIP_REPOS=("CoreAdmin" "Nextgen" "EBRPortal" "productutilities" "v3-graphql" "NextGen-Core" "ConfigurationStore" "v3-lambda-host" "v3-lambda-core" "v3-graphql-js" "digital-automation" "github-runner-testing" "ghas-jira-integration" "Internal-Tools" "BackportHack" "acttesting" "changed-files" "github-securityreport-action" "CodeQL-SQL-Test" "connector-x" "V3locityDashBoard" "codacy-analysis-cli-action" "central-workflows" "Nextgen_GHAS_Testing")
+        #SKIP_REPOS=("CoreAdmin" "Nextgen" "EBRPortal" "productutilities" "v3-graphql" "NextGen-Core" "ConfigurationStore" "v3-lambda-host" "v3-lambda-core" "v3-graphql-js" "digital-automation" "github-runner-testing" "ghas-jira-integration" "Internal-Tools" "BackportHack" "acttesting" "changed-files" "github-securityreport-action" "CodeQL-SQL-Test" "connector-x" "V3locityDashBoard" "codacy-analysis-cli-action" "central-workflows" "Nextgen_GHAS_Testing")
 
         echo "Starting branch protection check for $ORG" > $LOG_FILE
 
