@@ -16,7 +16,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
       run: |
         # Variables
-        ORG="VitechInfra"
+        ORG="vitechsystems"
         API_URL="https://api.github.com"
         AUTH_HEADER="Authorization: token $GITHUB_TOKEN"
         LOG_FILE="branch_protection_check.log"
