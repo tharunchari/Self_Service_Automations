@@ -30,7 +30,7 @@ jobs:
         uses: github/issue-metrics@v3
         env:
           GH_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
-          SEARCH_QUERY: 'vitechsystems:IA/main is:issue created:${{ env.last_month }} -reason:"not planned"'
+          SEARCH_QUERY: 'vitechsystems:TMK/main is:issue created:${{ env.last_month }} -reason:"not planned"'
 
       - name: Create issue
         uses: vitechsystems/create-issue-from-file@main
