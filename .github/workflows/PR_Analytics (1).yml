@@ -1,0 +1,48 @@
+name: "PR Analytics"
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_owner:
+        description: "Repository owner, e.g., vitechsystems"
+        required: true
+      repo_name:
+        description: "Repository name, e.g., IA"
+        required: true
+      report_date_start:
+        description: "Enter report start date (d/MM/yyyy)"
+        required: true
+      report_date_end:
+        description: "Enter report end date (d/MM/yyyy)"
+        required: true
+
+jobs:
+  create-report:
+    name: "Create report for ${{ inputs.repo_owner }}/${{ inputs.repo_name }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Check if issues are enabled"
+        id: check_issues
+        run: |
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ inputs.repo_owner }}/${{ inputs.repo_name }}")
+          
+          # Check if the response contains "has_issues": true
+          if [[ $RESPONSE == *'"has_issues": true'* ]]; then
+            echo "Issues are enabled."
+          else
+            echo "Issues are disabled for this repository."
+            exit 1  # Fail the job
+          fi
+      - name: "Run script for analytics"
+        uses: vitechsystems/pull-request-analytics@main
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_OWNERS_REPOS: ${{ inputs.repo_owner }}/${{ inputs.repo_name }}
+          GITHUB_OWNER_FOR_ISSUE: ${{ inputs.repo_owner }}
+          GITHUB_REPO_FOR_ISSUE: ${{ inputs.repo_name }}
+          CORE_HOURS_START: 09:00
+          CORE_HOURS_END: 19:00
+          TIMEZONE: "America/New_York"
+          REPORT_DATE_START: ${{ inputs.report_date_start }}
+          REPORT_DATE_END: ${{ inputs.report_date_end }}
