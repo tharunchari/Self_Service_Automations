@@ -23,9 +23,7 @@ jobs:
       - name: Step 1 - Find the latest Amazon Linux 2023 AMI
         id: find_ami
         run: |
-          LATEST_AMI=$(aws ec2 describe-images --owners amazon \
-            --filters "Name=name,Values=al2023-ami-*-x86_64*" \
-            --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' --output text)
+          LATEST_AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --query 'Parameter.Value' --output text)
           echo "LATEST_AMI=$LATEST_AMI" >> $GITHUB_ENV
  
       - name: Step 2 - Start EC2 instance using an AMI
