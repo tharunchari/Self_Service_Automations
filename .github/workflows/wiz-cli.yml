@@ -5,10 +5,10 @@ on:
     inputs:
       repo_name:
         type: string
-        description: 'The URL of the repository to scan'
+        description: 'Repository_Name to scan'
       branch_name:
         type: string
-        description: 'The branch to checkout and scan'
+        description: 'Branch_name to scan'
 
 jobs:
   wiz-cli-iac-scan:
