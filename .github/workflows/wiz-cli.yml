@@ -3,10 +3,10 @@ name: 'wiz-cli'
 on:
   workflow_dispatch:
     inputs:
-      repo_name:  
+      repo_name:
         type: string
         description: 'The URL of the repository to scan'
-      branch_name:  
+      branch_name:
         type: string
         description: 'The branch to checkout and scan'
 
@@ -20,8 +20,7 @@ jobs:
         shell: bash
 
     env:
-      SCAN_PATH: "."  
-      POLICY: "Default lac policy"  
+      POLICY: "Default lac policy"
 
     steps:
       - name: Check out specific repository and branch (use variables)
@@ -42,5 +41,5 @@ jobs:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
 
-      - name: Run wiz CLI IaC scan
-        run: ./wizcli iac scan-path $SCAN_PATH --policy "$POLICY"
+      - name: Run wiz CLI IaC scan (using checkout directory)
+        run: ./wizcli iac scan-path ${{ github.workspace }} --policy "$POLICY"
