@@ -23,7 +23,7 @@ jobs:
       POLICY: "Default lac policy"
 
     steps:
-      - name: Check out specific repository and branch (use variables)
+      - name: Check out specific repository and branch 
         uses: actions/checkout@v2
         with:
           repo: https://github.com/vitechsystems/{{ github.event.inputs.repo_name }}.git
@@ -41,5 +41,5 @@ jobs:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
 
-      - name: Run wiz CLI IaC scan (using checkout directory)
+      - name: Run wiz CLI IaC scan 
         run: ./wizcli iac scan-path ${{ github.workspace }} --policy "$POLICY"
