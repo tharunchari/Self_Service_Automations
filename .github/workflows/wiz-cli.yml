@@ -1,23 +1,34 @@
 name: 'wiz-cli'
 
-on: [pull_request]
+on:
+  workflow_dispatch:
+    inputs:
+      repo_name:  
+        type: string
+        description: 'The URL of the repository to scan'
+      branch_name:  
+        type: string
+        description: 'The branch to checkout and scan'
 
 jobs:
   wiz-cli-iac-scan:
     name: 'Wiz-cli Iac Scan'
     runs-on: ubuntu-latest
 
-    env:
-      SCAN_PATH: "."  # Set the relative path in the repo to scan
-      POLICY: "Default lac policy"  # Set the desired Wiz CLI policy to use
-
     defaults:
       run:
         shell: bash
 
+    env:
+      SCAN_PATH: "."  
+      POLICY: "Default lac policy"  
+
     steps:
-      - name: Check out repository
+      - name: Check out specific repository and branch (use variables)
         uses: actions/checkout@v2
+        with:
+          repo: https://github.com/vitechsystems/{{ github.event.inputs.repo_name }}.git
+          ref: ${{ github.event.inputs.branch_name }}
 
       - name: Download Wiz CLI
         run: |
