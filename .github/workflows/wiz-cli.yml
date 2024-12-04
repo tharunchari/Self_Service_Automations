@@ -20,7 +20,7 @@ jobs:
         shell: bash
 
     env:
-      POLICY: "Default lac policy"
+      POLICY: "Default IaC policy"
 
     steps:
       - name: Check out specific repository and branch 
