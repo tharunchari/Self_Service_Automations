@@ -42,4 +42,4 @@ jobs:
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
 
       - name: Run wiz CLI IaC scan 
-        run: ./wizcli iac scan-path ${{ github.workspace }} --policy "$POLICY"
+        run: ./wizcli iac scan --path ${{ github.workspace }} --policy "$POLICY"
