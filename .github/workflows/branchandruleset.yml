@@ -1,7 +1,4 @@
-#heloo
-
 name: ruleset_creationandbranchadd
- 
 on:
   workflow_dispatch:
     inputs:
@@ -24,23 +21,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
-      - name: Change directories and execute script
-        env:
-           GITHUB_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
-           
+ 
       - name: List directories
         run: ls -al
-
-      - name: change directories
-        run: |
-            ls -al
-            cd shell_scripts
-            ls -al
-            chmod +x ./ADDbranching_ruleset.sh
-            ./ADDbranching_ruleset.sh ${{ github.event.inputs.org_name }} ${{ github.event.inputs.repo_name }} ${{ github.event.inputs.new_branch }}
-
-#      - name: Make the script executable
-#        run: chmod +x ./update_ruleset.sh
  
-  #    - name: Update ruleset
-  #      run: ./update_ruleset.sh ${{ github.event.inputs.org_name }} ${{ github.event.inputs.repo_name }} ${{ github.event.inputs.new_branch }}
+      - name: Change directories and execute script
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
+        run: |
+          ls -al
+          cd shell_scripts
+          ls -al
+          chmod +x ./ADDbranching_ruleset.sh
+          ./ADDbranching_ruleset.sh ${{ github.event.inputs.org_name }} ${{ github.event.inputs.repo_name }} ${{ github.event.inputs.new_branch }}
+
