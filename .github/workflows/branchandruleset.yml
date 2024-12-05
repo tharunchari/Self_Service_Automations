@@ -24,7 +24,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
-
+      - name: Change directories and execute script
+        env:
+           GITHUB_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
+           
       - name: List directories
         run: ls -al
 
