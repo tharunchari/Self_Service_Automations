@@ -1,7 +1,7 @@
 #!/bin/bash
  
 # Define GitHub credentials and API details
-TOKEN="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"
+#TOKEN="$GITHUB_TOKEN"
  
 # Get organization name and repository name from arguments
 ORG_NAME="$1"
@@ -14,7 +14,7 @@ REPO="$ORG_NAME/$REPO_NAME"
 # Fetch all rulesets and filter for the ID using jq
 RULESET_ID=$(curl -L -s \
   -H "Accept: application/vnd.github+json" \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
   "https://api.github.com/repos/$REPO/rulesets" | jq -r '.[] | select(.name == "Branch Protection Ruleset") | .id')
  
@@ -24,7 +24,7 @@ if [ -n "$RULESET_ID" ]; then
   # Fetch the current ruleset
   response=$(curl -L -s \
     -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer $TOKEN" \
+    -H "Authorization: Bearer $GITHUB_TOKEN" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
     "https://api.github.com/repos/$REPO/rulesets/$RULESET_ID")
  
@@ -38,7 +38,7 @@ if [ -n "$RULESET_ID" ]; then
   curl -L \
     -X PUT \
     -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer $TOKEN" \
+    -H "Authorization: Bearer $GITHUB_TOKEN" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
     "https://api.github.com/repos/$REPO/rulesets/$RULESET_ID" \
     -d "$updated_response"
@@ -54,7 +54,7 @@ else
   # Fetch the existing ruleset
   existing_ruleset=$(curl -L -s \
     -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer $TOKEN" \
+    -H "Authorization: Bearer $GITHUB_TOKEN" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
     "https://api.github.com/repos/$SOURCE_REPO/rulesets/$SOURCE_RULESET_ID")
  
@@ -75,7 +75,7 @@ else
   response=$(curl -L -s \
     -X POST \
     -H "Accept: application/vnd.github+json" \
-    -H "Authorization: Bearer $TOKEN" \
+    -H "Authorization: Bearer $GITHUB_TOKEN" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
     "https://api.github.com/repos/$ORG_NAME/$REPO_NAME/rulesets" \
     -d "$new_ruleset")
