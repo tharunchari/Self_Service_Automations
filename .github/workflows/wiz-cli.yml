@@ -24,10 +24,9 @@ jobs:
 
     steps:
       - name: Check out specific repository and branch 
-        uses: actions/checkout@v2
-        with:
-          repo: https://github.com/vitechsystems/{{ github.event.inputs.repo_name }}.git
-          ref: ${{ github.event.inputs.branch_name }}
+        run: |
+           echo "Cloning repository and checking out source branch $SOURCE_BRANCH..."
+           git clone "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.repo_name }}.git" --single-branch --branch=${{ inputs.branch_name }}
 
       - name: Download Wiz CLI
         run: |
