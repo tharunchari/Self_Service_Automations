@@ -27,7 +27,8 @@ jobs:
         run: |
            echo "Cloning repository and checking out source branch $SOURCE_BRANCH..."
            git clone "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/${{ inputs.repo_name }}.git" --single-branch --branch=${{ inputs.branch_name }}
-
+           REPO_DIR=$(basename ${{ inputs.repo_name }})  
+           
       - name: Download Wiz CLI
         run: |
           curl -o wizcli https://downloads.wiz.io/wizcli/latest/wizcli-linux-amd64 &&
@@ -41,4 +42,4 @@ jobs:
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
 
       - name: Run wiz CLI IaC scan 
-        run: ./wizcli iac scan --path ${{ github.workspace }} --policy "$POLICY"
+        run: ./wizcli iac scan --path "./$REPO_DIR" --policy "$POLICY"
