@@ -5,7 +5,7 @@ on:
     inputs:
       repo_name:
         type: string
-        description: 'Repository_Name to scan'
+        description: 'Org/Repository_Name to scan'
       branch_name:
         type: string
         description: 'Branch_name to scan'
@@ -26,7 +26,7 @@ jobs:
       - name: Check out specific repository and branch 
         run: |
            echo "Cloning repository and checking out source branch $SOURCE_BRANCH..."
-           git clone "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${{ inputs.repo_name }}.git" --single-branch --branch=${{ inputs.branch_name }}
+           git clone "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/${{ inputs.repo_name }}.git" --single-branch --branch=${{ inputs.branch_name }}
 
       - name: Download Wiz CLI
         run: |
