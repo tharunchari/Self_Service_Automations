@@ -51,7 +51,7 @@ def check_running_ec2_instances():
             launch_time = instance['LaunchTime']
             notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
             running_time = current_time - launch_time
-            if running_time.total_seconds() > 200:  # 2 hours = 7200 seconds
+            if running_time.total_seconds() > 7200:  # 2 hours = 7200 seconds
                 self_hosted_instances.append({
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
@@ -71,7 +71,7 @@ def check_running_ec2_instances():
             launch_time = instance['LaunchTime']
             notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
             running_time = current_time - launch_time
-            if running_time.total_seconds() > 800:  # 3 hours = 10800 seconds
+            if running_time.total_seconds() > 10800:  # 3 hours = 10800 seconds
                 bam_ip_instances.append({
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
