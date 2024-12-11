@@ -30,6 +30,10 @@ jobs:
            REPO_NAME=$(echo "${{ inputs.repo_name }}" | cut -d'/' -f2)
            REPO_PATH="${{ github.workspace }}/${REPO_NAME}"
            echo "Repository path: $REPO_PATH"
+           if [ ! -d "$REPO_PATH" ]; then
+             echo "ERROR: Repository path does not exist: $REPO_PATH"
+             exit 1
+           fi
            
       - name: Download Wiz CLI
         run: |
