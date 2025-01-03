@@ -26,7 +26,7 @@ jobs:
       - name: Check out specific repository and branch 
         run: |
            echo "Cloning repository and checking out source branch $SOURCE_BRANCH..."
-           git clone "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/${{ inputs.repo_name }}.git" --single-branch --branch=${{ inputs.branch_name }}
+           git clone "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/${{ inputs.repo_name }}.git" --single-branch --branch=${{ inputs.branch_name }}
            REPO_NAME=$(echo "${{ inputs.repo_name }}" | cut -d'/' -f2)
            REPO_PATH="${{ github.workspace }}/${REPO_NAME}"
            echo "Repository path: $REPO_PATH"
