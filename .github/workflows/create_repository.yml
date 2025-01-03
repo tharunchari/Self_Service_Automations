@@ -37,7 +37,7 @@ jobs:
     - name: Check if Repository Exists
       run: |
         response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
-          -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
+          -H "Authorization: token ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
           "https://api.github.com/repos/vitechsystems/${{ inputs.REPO_NAME }}")
  
         if [ "$response" -eq "200" ]; then
@@ -59,7 +59,7 @@ jobs:
       run: |
           cd shell_scripts
           chmod +x git_repo_creation.sh
-          ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
+          ./git_repo_creation.sh ${{ secrets.PROD_FINE_GRAINED_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
           
     - name: Clear workspace
       run: |
