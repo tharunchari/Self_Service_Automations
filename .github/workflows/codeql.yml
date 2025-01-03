@@ -43,7 +43,7 @@ jobs:
           aws ssm create-association \
             --name "AWS-RunShellScript" \
             --targets Key=instanceids,Values=$INSTANCE_ID \
-            --parameters "commands=['runuser -l ec2-user -c \"/actions-runner/config.sh --url https://github.com/vitechsystems --pat ${{ secrets.PROD_CLASSIC_PAT }} --name $INSTANCE_ID --runnergroup ops --labels $INSTANCE_ID --work _work && /actions-runner/run.sh\"']" \
+            --parameters "commands=['runuser -l ec2-user -c \"/actions-runner/config.sh --url https://github.com/vitechsystems --pat ${{ secrets.PROD_FINE_GRAINED_PAT }} --name $INSTANCE_ID --runnergroup ops --labels $INSTANCE_ID --work _work && /actions-runner/run.sh\"']" \
             --region us-east-1
         shell: bash
 
@@ -117,7 +117,7 @@ jobs:
           aws ssm create-association \
             --name "AWS-RunShellScript" \
             --targets Key=instanceids,Values=${{ needs.CodeQLScan.outputs.genrun-2 }} \
-            --parameters commands="sudo -u ec2-user /actions-runner/config.sh remove --pat ${{ secrets.PROD_CLASSIC_PAT }}" \
+            --parameters commands="sudo -u ec2-user /actions-runner/config.sh remove --pat ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             --region us-east-1
         shell: bash
 
