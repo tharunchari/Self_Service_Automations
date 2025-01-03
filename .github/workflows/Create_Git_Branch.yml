@@ -50,7 +50,7 @@ jobs:
           
           # Check if the target branch already exists
           echo "Checking if branch $TARGET_BRANCH exists..."
-          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Error: Branch $TARGET_BRANCH already exists. Please discard the existing one or create with a different name."
             exit 1
           else
@@ -59,7 +59,7 @@ jobs:
           
           # Clone the repository and checkout the source branch
           echo "Cloning repository and checking out source branch $SOURCE_BRANCH..."
-          git clone "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
+          git clone "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
           cd $REPO_NAME
           ls -l 
           
@@ -80,7 +80,7 @@ jobs:
           
           # Check if the branch was created successfully
           echo "Checking if branch $TARGET_BRANCH was created successfully..."
-          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Branch $TARGET_BRANCH was created successfully."
             echo "Updating pom files and committing code..."
             
@@ -117,7 +117,7 @@ jobs:
       run: |
           cd shell_scripts
           chmod +x git_branch_protection.sh
-          ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
+          ./git_branch_protection.sh ${{ secrets.PROD_FINE_GRAINED_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
           
     - name: Clear workspace
       run: |
