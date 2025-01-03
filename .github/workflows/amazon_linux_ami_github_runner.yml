@@ -48,13 +48,33 @@ jobs:
           aws ssm send-command \
             --instance-ids ${{ env.INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
-            --parameters commands='aws configure set aws_access_key_id ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }} && aws configure set aws_secret_access_key ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }} && aws configure set default.region ${{ vars.AWS_REGION }} && aws s3 cp s3://bamboo-jdks-resources/setup-instance.sh /tmp/setup-instance.sh && chmod +x /tmp/setup-instance.sh && sudo /tmp/setup-instance.sh' \
-            --region ${{ vars.AWS_REGION }}
+            --parameters commands='aws configure set aws_access_key_id ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }} && aws configure set aws_secret_access_key ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }} && aws configure set default.region ${{ vars.AWS_REGION }} && aws s3 cp s3://bamboo-jdks-resources/shell_scripts/github-runner-setup-instance.sh /tmp/github-runner-setup-instance.sh && chmod +x /tmp/github-runner-setup-instance.sh && sudo /tmp/github-runner-setup-instance.sh' \
+            --region ${{ vars.AWS_REGION }} > /tmp/command_output.json
+          COMMAND_ID=$(jq -r '.Command.CommandId' < /tmp/command_output.json)
+          echo "COMMAND_ID=$COMMAND_ID" >> $GITHUB_ENV
  
-      - name: Workflow sleep until copying the JDK's from AWS S3
-        run: sleep 500
+      - name: Step 4 - Verify script execution with retries
+        run: |
+          END_TIME=$(( $(date +%s) + 5000 )) # 5000 seconds timeout
+          while [ $(date +%s) -lt $END_TIME ]; do
+            STATUS=$(aws ssm list-command-invocations \
+              --command-id ${{ env.COMMAND_ID }} \
+              --details \
+              --query "CommandInvocations[0].Status" \
+              --output text)
+            if [ "$STATUS" == "Success" ]; then
+              echo "Shell script executed successfully!"
+              break
+            elif [ "$STATUS" == "Failed" ]; then
+              echo "Shell script execution failed."
+              exit 1
+            else
+              echo "Shell script not yet successful. Retrying in 100 seconds..."
+              sleep 100
+            fi
+          done
  
-      - name: Step 4 - Create an AMI from the instance
+      - name: Step 5 - Create an AMI from the instance
         id: create_ami
         run: |
           AMI_ID=$(aws ec2 create-image --instance-id ${{ env.INSTANCE_ID }} --name "Github_Self_Hosted_Runner_AMI-$(date +%Y-%m-%d_%H-%M)" --no-reboot \
@@ -62,7 +82,7 @@ jobs:
             --query 'ImageId' --output text)
           echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
 
-      - name: Step 5 - Workflow sleep until AMI is available to use
+      - name: Step 6 - Workflow sleep until AMI is available to use
         id: wait_for_ami
         run: |
           while true; do
@@ -76,21 +96,21 @@ jobs:
             sleep 100
           done
  
-      - name: Step 6 - Retrieve Current AMI ID from GitHub
+      - name: Step 7 - Retrieve Current AMI ID from GitHub
         run: |
           export CURRENT_AMI_ID=$(curl -s -X GET https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             -H "Accept: application/vnd.github+json" | jq -r '.value')
           echo "CURRENT_AMI_ID=$CURRENT_AMI_ID" >> $GITHUB_ENV
  
-      - name: Step 7 - Update the new AMI ID in GitHub organization variables
+      - name: Step 8 - Update the new AMI ID in GitHub organization variables
         run: |
           curl -X PATCH https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             -H "Accept: application/vnd.github+json" \
             -d '{"value": "${{ env.AMI_ID }}"}'
  
-      - name: Step 8 - Send AMI Details via SNS
+      - name: Step 9 - Send AMI Details via SNS
         run: |
           MESSAGE=$(printf "New Amazon Linux AMI created on $(date +%Y-%m-%d) for GitHub Runner. \nCurrent AMI ID: ${{ env.CURRENT_AMI_ID }}\nNew AMI ID: ${{ env.AMI_ID }}\nAttention may be required.")
           aws sns publish \
@@ -101,6 +121,6 @@ jobs:
           AWS_REGION: ${{ vars.AWS_REGION }}
 
 
-      - name: Step 9 - Terminate Self Hosted Runner instance
+      - name: Step 10 - Terminate Self Hosted Runner instance
         run: |
           aws ec2 terminate-instances --instance-ids "${{ env.INSTANCE_ID }}" --region ${{ vars.AWS_REGION }}
