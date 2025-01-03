@@ -80,7 +80,6 @@ jobs:
               sleep 100
             fi
           done
-          echo "Shell script did not succeed within 5000 seconds."
 
       - name: Step 5 - Create an AMI from the instance
         id: create_ami
