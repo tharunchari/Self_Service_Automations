@@ -70,7 +70,7 @@ jobs:
       - name: Check if Repository Exists or Create
         run: |
           response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
-            -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
+            -H "Authorization: token ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             "https://api.github.com/repos/vitechsystems/${{ inputs.TARGET_REPO_NAME }}")
 
           if [ "$response" -eq "200" ]; then
@@ -82,7 +82,7 @@ jobs:
             pwd
             chmod +x git_repo_creation.sh
             TARGET_REPO_NAME1="${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5" >> $GITHUB_ENV
-            ./git_repo_creation.sh ${{ secrets.PROD_CLASSIC_PAT }} $TARGET_REPO_NAME1 ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
+            ./git_repo_creation.sh ${{ secrets.PROD_FINE_GRAINED_PAT }} $TARGET_REPO_NAME1 ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
           fi
 
       - name: Create and Push Branch
@@ -101,7 +101,7 @@ jobs:
 
           # Checking if the target branch already exists
           echo "Checking if branch $TARGET_BRANCH exists..."
-          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Error: Branch $TARGET_BRANCH already exists. Please discard the existing one or create with a different name."
             exit 2
           else
@@ -110,7 +110,7 @@ jobs:
 
           # Cloning the repository and checking out the source branch
           echo "Cloning repository and checking out source branch $SOURCE_BRANCH..."
-          git clone "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
+          git clone "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
           cd $SOURCE_REPO_NAME
 
           # Checking out the target branch
@@ -127,11 +127,11 @@ jobs:
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
           # Check if the remote "origin" exists
-          if git remote get-url origin | grep -q "^https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git$"; then
+          if git remote get-url origin | grep -q "^https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git$"; then
             echo "Remote 'origin' already exists with the correct URL."
           else
             echo "Adding remote 'origin'."
-            git remote set-url origin https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git
+            git remote set-url origin https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git
           fi
           
           # Push to the target branch
@@ -139,7 +139,7 @@ jobs:
 
           # Checking if the branch was created successfully
           echo "Checking if branch $TARGET_BRANCH was created successfully..."
-          if git ls-remote --heads "https://${{ secrets.PROD_CLASSIC_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Branch $TARGET_BRANCH was created successfully."
             echo "Updating pom files and committing code..."
 
@@ -155,9 +155,9 @@ jobs:
 
       - name: Add Branch Protection Rule
         run: |
-          find /home/runner/work/ -type d -name "shell_scripts" -exec bash -c ' cd "$0" && chmod +x git_branch_protection.sh && ./git_branch_protection.sh "${{ secrets.PROD_CLASSIC_PAT }}" "${{ github.event.inputs.TARGET_REPO_NAME }}" "${{ inputs.TARGET_BRANCH }}" "${{ inputs.OWNER }}" ' {} \;
+          find /home/runner/work/ -type d -name "shell_scripts" -exec bash -c ' cd "$0" && chmod +x git_branch_protection.sh && ./git_branch_protection.sh "${{ secrets.PROD_FINE_GRAINED_PAT }}" "${{ github.event.inputs.TARGET_REPO_NAME }}" "${{ inputs.TARGET_BRANCH }}" "${{ inputs.OWNER }}" ' {} \;
           #chmod +x git_branch_protection.sh
-          #./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ github.event.inputs.TARGET_REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
+          #./git_branch_protection.sh ${{ secrets.PROD_FINE_GRAINED_PAT }} ${{ github.event.inputs.TARGET_REPO_NAME }} ${{ inputs.TARGET_BRANCH }} ${{ inputs.OWNER }}
       - name: Clean up workspace
         run: |
           # Remove all files and directories in the workspace
