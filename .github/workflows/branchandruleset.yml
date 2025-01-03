@@ -27,7 +27,7 @@ jobs:
  
       - name: Change directories and execute script
         env:
-          GITHUB_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
+          GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           ls -al
           cd shell_scripts
