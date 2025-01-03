@@ -13,7 +13,7 @@ jobs:
 
     - name: Run branch protection check
       env:
-        GITHUB_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
+        GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
       run: |
         # Variables
         ORG="vitechsystems"
