@@ -34,7 +34,7 @@ jobs:
     - name: Check if Branch Exists
       run: |
         response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
-          -H "Authorization: token ${{ secrets.PROD_CLASSIC_PAT }}" \
+          -H "Authorization: token ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
           "https://api.github.com/repos/vitechsystems/${{ inputs.REPO_NAME }}/branches/${{ inputs.BRANCH_NAME }}")
  
         if [ "$response" -eq "404" ]; then
@@ -56,7 +56,7 @@ jobs:
       run: |
           cd shell_scripts
           chmod +x git_branch_protection.sh
-          ./git_branch_protection.sh ${{ secrets.PROD_CLASSIC_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.BRANCH_NAME }} ${{ inputs.OWNER }}
+          ./git_branch_protection.sh ${{ secrets.PROD_FINE_GRAINED_PAT }} ${{ inputs.REPO_NAME }} ${{ inputs.BRANCH_NAME }} ${{ inputs.OWNER }}
           
     - name: Clear workspace
       run: |
