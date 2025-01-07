@@ -1,0 +1,38 @@
+
+name: "RunnersAssociation1"
+
+on:
+  schedule:
+    # This will run the workflow every 2 hours
+    - cron: "0 16 * * MON"
+  workflow_dispatch:
+
+jobs:
+  check_instances:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+ 
+    steps:
+      - name: Checkout repository
+        uses: VitechInfra/actions-checkout@main
+ 
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+ 
+      - name: Install dependencies
+        run: pip install boto3 requests
+    
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::734006704080:role/github-action-oidc-role
+          aws-region: us-east-1
+          role-session-name: GitHubActionsSession
+        env:
+          AWS_ACTIONS_DEBUG: true
+          
+      - run: python3 PYTHON_Script/Pythonrunnerassociation1.py
