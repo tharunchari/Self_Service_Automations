@@ -11,7 +11,7 @@ jobs:
       genrun: ${{ steps.gen_step.outputs.INSTANCE_ID }}      # <== Note the output variable
     steps:      
       - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: vitechsystems/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
@@ -102,7 +102,7 @@ jobs:
 
     steps:       
       - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: vitechsystems/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
