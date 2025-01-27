@@ -48,4 +48,14 @@ jobs:
         env:
           AWS_ACTIONS_DEBUG: true
           
-      - run: python3 PYTHON_Script/ythonrunnerassociation1.py
+      - run: python3 PYTHON_Script/Pythonrunnerassociation1.py
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::866159464259:role/github-action-oidc-role
+          aws-region: us-east-1
+          role-session-name: GitHubActionsSession
+        env:
+          AWS_ACTIONS_DEBUG: true
+          
+      - run: python3 documentation/Pythonrunnerassociation1.py
