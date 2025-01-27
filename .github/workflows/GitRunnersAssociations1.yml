@@ -31,5 +31,21 @@ jobs:
           role-session-name: GitHubActionsSession
         env:
           AWS_ACTIONS_DEBUG: true
+
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
           
-      - run: python3 PYTHON_Script/Pythonrunnerassociation1.py
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::734006704080:role/github-action-oidc-role
+          aws-region: us-east-1
+          role-session-name: GitHubActionsSession
+        env:
+          AWS_ACTIONS_DEBUG: true
+          
+      - run: python3 PYTHON_Script/ythonrunnerassociation1.py
