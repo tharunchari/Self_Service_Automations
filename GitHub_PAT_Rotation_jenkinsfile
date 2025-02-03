@@ -1,0 +1,273 @@
+pipeline {
+    agent {
+        label 'V3LOCITY-SLAVE-01'
+    }
+
+    environment {
+        NEW_PROD_PAT = credentials('github_prod_pat')
+		NEW_INFRA_PAT = credentials('github_infra_pat')
+		NEW_QA_PAT = credentials('github_qa_pat')
+        svn = credentials('svn_service_account') 
+		KEY_ID = "3380204578043523366"
+    }
+
+
+    stages {
+	
+        stage('starting Pipline email notify'){
+            steps{
+                script{
+                        sh '''
+						echo "GIT-HUB PAT plan has been initiated, You can monitor here ${BUILD_URL}" | mailx -r "v3atlassianops@vitechinc.com" -s "GitHub PAT Rotation for Service Account" v3ops@vitechinc.com,SRE-Team@Vitechsg.onmicrosoft.com
+                        '''
+                }
+            }
+        }
+		
+        stage('Retrieve Credential') {
+            steps {
+                script {
+                    echo "Credential retrieved successfully and stored in NEW_VALUE."
+                    env.NEW_PROD_PAT = NEW_PROD_PAT
+					env.NEW_INFRA_PAT = NEW_INFRA_PAT
+					env.NEW_QA_PAT = NEW_QA_PAT
+                }
+            }
+        }
+
+        stage('Update Bamboo GlobalVariable-Value PAT') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'bamboorestuser', usernameVariable: 'BAMBOO_USER', passwordVariable: 'BAMBOO_PASSWORD')]) {
+                        withCredentials([usernamePassword(credentialsId: 'VITECH-APP-FISHCRU', usernameVariable: 'username', passwordVariable: 'password')]) {
+							sh '''
+							#!/bin/bash
+
+							update_bamboo_pat() {
+							  URL="$1"
+							  NEW_PAT="$2"
+							  VARIABLE_NAME="$3"
+
+							  echo "Updating Bamboo $VARIABLE_NAME PAT"
+
+							  old_value=$(curl -s -u "$BAMBOO_USER:$BAMBOO_PASSWORD" "$URL" | jq -r '.value')
+							  echo "Old value: $old_value"
+
+							  response=$(curl -s -o /dev/null -w \"%{http_code}\" -X PUT -u \"$BAMBOO_USER:$BAMBOO_PASSWORD\" \"$URL\" -H \"Content-Type: application/json\" -d \"{\\\"value\\\":\\\"$NEW_PAT\\\"}\")
+
+							  if [ "$response" -eq 200 ]; then
+								echo "Update successful. New value set to: $NEW_PAT"
+							  else
+								echo "Update failed with status code: $response"
+								exit "1" 
+							  fi
+							}
+
+							update_bamboo_pat "https://bamboo.vitechinc.com/bamboo/rest/admin/latest/globalVariables/153668343" "$NEW_PROD_PAT" "Git Prod" 1
+							update_bamboo_pat "https://bamboo.vitechinc.com/bamboo/rest/admin/latest/globalVariables/149001826" "$NEW_QA_PAT" "Git QA" 2
+							update_bamboo_pat "https://bamboo.vitechinc.com/bamboo/rest/admin/latest/globalVariables/161908561" "$NEW_INFRA_PAT" "Git Infra" 3
+
+							'''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Update EBR-Secret PAT') {
+            steps {
+                script {
+                    sh """
+                        export AWS_PROFILE="v3locitydev"
+                        NEW_PROD_PAT="${NEW_PROD_PAT}"
+						NEW_INFRA_PAT="${NEW_INFRA_PAT}" 
+                        secret_arn="arn:aws:secretsmanager:us-east-1:866159464259:secret:EBR_SECRETS-IVnHZq"
+                        secret_value=\$(aws secretsmanager get-secret-value --secret-id \$secret_arn --query 'SecretString' --output text)
+                        github_prod_pat_value=\$(echo \$secret_value | jq -r '.github_vitechpat')
+						github_infra_pat_value=\$(echo \$secret_value | jq -r '.github_pat')
+                        echo "Current github_pat value: \$github_prod_pat_value" 
+						echo "Current github_pat value: \$github_infra_pat_value"
+                        updated_secret_value_prod=\$(echo \$secret_value | jq --arg NEW_PROD_PAT "\$NEW_PROD_PAT" '.github_vitechpat = \$NEW_PROD_PAT')
+						updated_secret_value_infra=\$(echo \$secret_value | jq --arg NEW_INFRA_PAT "\$NEW_INFRA_PAT" '.github_pat = \$NEW_INFRA_PAT')
+                        aws secretsmanager update-secret --secret-id \$secret_arn --secret-string "\$updated_secret_value_prod"
+						aws secretsmanager update-secret --secret-id \$secret_arn --secret-string "\$updated_secret_value_infra"
+                        echo "AWS 'EBR_SECRETS' updated with new github_pat value of Prod and Infra."
+                    """
+                }
+            }
+        }
+		
+		stage('Update V3locitydev-Secret PAT') {
+			steps {
+				script {
+					sh """
+					    sleep 5
+						export AWS_PROFILE="v3locitydev"
+						NEW_INFRA_PAT="${NEW_INFRA_PAT}"  
+						secret_arn="arn:aws:secretsmanager:us-east-1:866159464259:secret:v3ops_github_service_pat-9lQZIk"
+						secret_value=\$(aws secretsmanager get-secret-value --secret-id \$secret_arn --query 'SecretString' --output text)
+						echo "Current secret value: \$secret_value"
+						updated_secret_value="\$NEW_INFRA_PAT"
+						aws secretsmanager update-secret --secret-id \$secret_arn --secret-string "\$updated_secret_value" 
+						echo "AWS secret 'V3locitydev-Secret' updated with new value."
+					"""
+				}
+			}
+		}
+		
+        stage('Update V3locity-Secret PAT') {
+            steps {
+                script {
+                    sh """
+                        export AWS_PROFILE="v3locity" 
+						NEW_INFRA_PAT="${NEW_INFRA_PAT}"  
+						secret_arn="arn:aws:secretsmanager:us-east-1:734006704080:secret:v3ops_github_service_pat-wnqizU"
+						secret_value=\$(aws secretsmanager get-secret-value --secret-id \$secret_arn --query 'SecretString' --output text)
+						echo "Current secret value: \$secret_value"
+						updated_secret_value="\$NEW_INFRA_PAT"
+						aws secretsmanager update-secret --secret-id \$secret_arn --secret-string "\$updated_secret_value"                      
+                        echo "AWS secret 'V3locity-Secret' updated with new github_pat value."
+                    """
+                }
+            }
+        }
+
+        stage('Update Crucible PAT') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'VITECH-APP-FISHCRU', usernameVariable: 'username', passwordVariable: 'password')]) {
+						sh '''
+							TIMESTAMP=$(date +%Y%m%d%H%M%S)
+							sshpass -p "$password" ssh -o StrictHostKeyChecking=no "$username"@172.26.44.151 "cp /u01/fecrudata/config.xml /u01/fecrudata/${TIMESTAMP}_config.xml_"
+						'''
+                        def output = sh(script: '''
+                            #!/bin/bash
+                            sshpass -p "$password" ssh -o StrictHostKeyChecking=no "$username"@172.26.44.151 "grep -o 'github_pat\\w*' /u01/fecrudata/config.xml | head -n 1"
+                        ''', returnStdout: true).trim()
+                        echo "Output from grep: ${output}"
+                        if (output == "") {
+                            error "No match found for the regular expression."
+                        }
+
+						sh '''
+							sshpass -p "$password" ssh -o StrictHostKeyChecking=no "$username"@172.26.44.151 ". ~/.bash_profile; /bin/bash /u01/fecruhome/bin/stop.sh"
+						'''
+						
+                        def updateResult = sh(script: """
+                            NEW_PROD_PAT="${NEW_PROD_PAT}"  
+                            sshpass -p "$password" ssh -o StrictHostKeyChecking=no "$username"@172.26.44.151 "sed -i 's/${output}/\$NEW_PROD_PAT/' /u01/fecrudata/config.xml"
+                        """, returnStatus: true) 
+                        if (updateResult == 0) {
+                            echo "File updated successfully."
+                        } else {
+                            error "Failed to update the file. Exit status: ${updateResult}"
+                        }
+						
+						sh '''
+							sshpass -p "$password" ssh -o StrictHostKeyChecking=no "$username"@172.26.44.151 ". ~/.bash_profile; /bin/bash /u01/fecruhome/bin/start.sh"
+						'''
+                    }
+                }
+            }
+        }
+		
+		stage('Update PrecommitLambda PAT') {
+			steps {
+				script {
+					sh '''
+						export AWS_PROFILE="JIRA-Account"
+						
+						# Fetch existing environment variables for PrecommitLambda
+						existing_vars=$(aws lambda get-function-configuration --function-name PrecommitLambda --region us-east-1 | jq -r '.Environment.Variables')
+
+						# Print the current existing environment variables for debugging
+						echo "------------------- Current Existing Variables -------------------"
+						echo "$existing_vars"
+						echo "------------------------------------------------------------"
+
+						# Extract current values of relevant keys (if they exist)
+						GITHUB_KEY=$(echo "$existing_vars" | jq -r '.GITHUB_KEY // empty')
+						GITHUB_KEY_VITECHINFRA=$(echo "$existing_vars" | jq -r '.GITHUB_KEY_VITECHINFRA // empty')
+						GITHUB_KEY_VITECHQA=$(echo "$existing_vars" | jq -r '.GITHUB_KEY_VITECHQA // empty')
+						GITHUB_KEY_VITECHSYSTEMS=$(echo "$existing_vars" | jq -r '.GITHUB_KEY_VITECHSYSTEMS // empty')
+
+						echo "Current GITHUB_KEY: $GITHUB_KEY"
+						echo "Current GITHUB_KEY_VITECHINFRA: $GITHUB_KEY_VITECHINFRA"
+						echo "Current GITHUB_KEY_VITECHQA: $GITHUB_KEY_VITECHQA"
+						echo "Current GITHUB_KEY_VITECHSYSTEMS: $GITHUB_KEY_VITECHSYSTEMS"
+
+						# Define new PAT values
+						NEW_PROD_PAT="${NEW_PROD_PAT}"
+						NEW_INFRA_PAT="${NEW_INFRA_PAT}"
+						NEW_QA_PAT="${NEW_QA_PAT}"
+					
+						# Update the environment variables: only replace the specified ones
+						updated_vars=$(echo "$existing_vars" | jq -r \
+							--arg GITHUB_KEY "$NEW_PROD_PAT" \
+							--arg GITHUB_KEY_VITECHINFRA "$NEW_INFRA_PAT" \
+							--arg GITHUB_KEY_VITECHQA "$NEW_QA_PAT" \
+							--arg GITHUB_KEY_VITECHSYSTEMS "$NEW_PROD_PAT" \
+							'. + {
+								GITHUB_KEY: $GITHUB_KEY,
+								GITHUB_KEY_VITECHINFRA: $GITHUB_KEY_VITECHINFRA,
+								GITHUB_KEY_VITECHQA: $GITHUB_KEY_VITECHQA,
+								GITHUB_KEY_VITECHSYSTEMS: $GITHUB_KEY_VITECHSYSTEMS
+							}')
+
+						# Print the updated environment variables for debugging
+						echo "------------------- Updated Variables -------------------"
+						echo "$updated_vars"
+						echo "------------------------------------------------------------"
+
+						# Update the lambda function environment variables with the updated list
+						aws lambda update-function-configuration --function-name PrecommitLambda --region us-east-1 --environment "Variables=$updated_vars"
+
+						echo "Updated GITHUB_KEY, GITHUB_KEY_VITECHINFRA, GITHUB_KEY_VITECHQA, and GITHUB_KEY_VITECHSYSTEMS with new values."
+					'''
+				}
+			}
+		}
+ 
+		stages {
+			stage('Update GitHub Secrets') {
+				steps {
+					script {
+						def orgsAndSecrets = [
+							[org: 'vitechsystems', secret: 'INFRA_FINE_GRAINED_PAT', token: NEW_INFRA_PAT],
+							[org: 'vitechsystems', secret: 'PROD_FINE_GRAINED_PAT', token: NEW_PROD_PAT],
+							[org: 'vitechsystems', secret: 'QA_FINE_GRAINED_PAT', token: NEW_QA_PAT],
+							[org: 'VitechInfra', secret: 'INFRA_FINE_GRAINED_PAT', token: NEW_INFRA_PAT],
+							[org: 'VitechInfra', secret: 'PROD_FINE_GRAINED_PAT', token: NEW_PROD_PAT],
+							[org: 'VitechQA', secret: 'QA_FINE_GRAINED_PAT', token: NEW_QA_PAT]
+						]
+						
+						// Loop through each organization and secret
+						orgsAndSecrets.each { item ->
+							sh """
+								curl -X PUT \\
+									 -H "Authorization: token ${item.token}" \\
+									 -H "Accept: application/vnd.github.v3+json" \\
+									 -d '{
+										   "encrypted_value": "${item.token}",
+										   "key_id": "${KEY_ID}"
+										 }' \\
+									 https://api.github.com/orgs/${item.org}/actions/secrets/${item.secret}
+							"""
+						}
+					}
+				}
+			}
+		}
+
+        stage('Ending Pipline email notify'){
+            steps{
+                script{
+                        sh '''
+						echo "GIT-HUB PAT Update completed " | mailx -r "v3atlassianops@vitechinc.com" -s "GitHub PAT Rotation for Service Account -- Completed" v3ops@vitechinc.com,SRE-Team@Vitechsg.onmicrosoft.com
+                        '''
+                }
+            }
+        }		
+		
+    }
+}
