@@ -1,0 +1,101 @@
+name: Jira server Patching
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  update-instance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: 'us-east-1'  
+
+      - name: Get Auto Scaling Group instances
+        id: get-instances
+        run: |
+          ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
+          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-name $ASG_NAME \
+            --query "AutoScalingGroups[0].Instances[].[InstanceId]" \
+            --output text)
+          echo "Instance IDs: $INSTANCE_IDS"
+          echo "INSTANCE_IDS=$INSTANCE_IDS" >> $GITHUB_ENV
+
+      - name: Set Auto Scaling Group to 1-2 instances
+        run: |
+          ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name $ASG_NAME \
+            --min-size 1 \
+            --max-size 2 \
+
+
+      - name: Set first instance to Standby
+        run: |
+          INSTANCE_IDS=$(echo ${{ env.INSTANCE_IDS }} | tr '\n' ' ')
+          INSTANCE_TO_STANDBY=$(echo $INSTANCE_IDS | awk '{print $1}')
+          aws autoscaling enter-standby \
+            --auto-scaling-group-name $ASG_NAME \
+            --instance-ids $INSTANCE_TO_STANDBY \
+            --should-decrement-desired-capacity
+
+      - name: Connect to the first instance and run yum update 
+        run: |
+          INSTANCE_TO_UPDATE=$(echo $INSTANCE_IDS | awk '{print $1}')
+          aws ssm send-command \
+            --instance-ids $INSTANCE_TO_UPDATE \
+            --document-name "AWS-RunShellScript" \
+            --comment "Run yum update on instance" \
+            --parameters 'commands=["sudo yum update -y"]'
+
+      - name: Restart the first instance
+        run: |
+          aws ssm send-command \
+            --instance-ids $INSTANCE_TO_UPDATE \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart instance" \
+            --parameters 'commands=["sudo reboot"]'
+
+      - name: Set second instance to Standby 
+        run: |
+          INSTANCE_IDS=$(echo ${{ env.INSTANCE_IDS }} | tr '\n' ' ')
+          INSTANCE_TO_STANDBY=$(echo $INSTANCE_IDS | awk '{print $2}')
+          aws autoscaling enter-standby \
+            --auto-scaling-group-name $ASG_NAME \
+            --instance-ids $INSTANCE_TO_STANDBY \
+            --should-decrement-desired-capacity
+
+      - name: Connect to the second instance and run yum update 
+        run: |
+          INSTANCE_TO_UPDATE=$(echo $INSTANCE_IDS | awk '{print $2}')
+          aws ssm send-command \
+            --instance-ids $INSTANCE_TO_UPDATE \
+            --document-name "AWS-RunShellScript" \
+            --comment "Run yum update on instance" \
+            --parameters 'commands=["sudo yum update -y"]'
+
+      - name: Restart the second instance
+        run: |
+          aws ssm send-command \
+            --instance-ids $INSTANCE_TO_UPDATE \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart instance" \
+            --parameters 'commands=["sudo reboot"]'
+
+      - name: Remove both instances from Standby and set Auto Scaling to 2-2
+        run: |
+          INSTANCE_IDS=$(echo ${{ env.INSTANCE_IDS }} | tr '\n' ' ')
+          aws autoscaling exit-standby \
+            --auto-scaling-group-name $ASG_NAME \
+            --instance-ids $INSTANCE_IDS
+
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name $ASG_NAME \
+            --min-size 2 \
+            --max-size 2 \
+            
