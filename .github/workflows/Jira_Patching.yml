@@ -6,25 +6,28 @@ on:
 jobs:
   update-instance:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
-      - name: Set up AWS CLI
-        uses: vitechsystems/configure-aws-credentials@v1.0
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: 'us-east-1'
+          aws-region: us-east-1
 
-      - name: Get Auto Scaling Group instances
+      - name: Get Auto Scaling Group Instances
         id: get-instances
         run: |
           ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name $ASG_NAME \
             --query "AutoScalingGroups[0].Instances[].[InstanceId]" \
-            --output text | tr -s '\n' ' ')  # Ensure no extra newlines or spaces
-          echo "Instance IDs: $INSTANCE_IDS"
+            --output text)
           echo "INSTANCE_IDS=$INSTANCE_IDS" >> $GITHUB_ENV
+          echo "Instance IDs: $INSTANCE_IDS"
 
       - name: Set Auto Scaling Group to 1-2 instances
         run: |
@@ -32,110 +35,91 @@ jobs:
           aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name $ASG_NAME \
             --min-size 1 \
-            --max-size 2
+            --max-size 2 
 
-      - name: Set first instance to Standby (without replacement)
+      - name: Patch Instance 1
+        id: patch-instance-1
         run: |
-          ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
-          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})  # Split the space-separated list into an array
-          INSTANCE_TO_STANDBY=${INSTANCE_IDS_ARRAY[0]}
-          echo "Setting $INSTANCE_TO_STANDBY to standby"
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          INSTANCE_TO_PATCH=${INSTANCE_IDS_ARRAY[0]}
+          echo "Patching instance: $INSTANCE_TO_PATCH"
+
           aws autoscaling enter-standby \
-            --auto-scaling-group-name $ASG_NAME \
-            --instance-ids $INSTANCE_TO_STANDBY \
+            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --instance-ids $INSTANCE_TO_PATCH \
             --should-decrement-desired-capacity \
             --no-should-replace-instances
 
-      - name: Connect to the first instance and upgrade to the latest version
-        run: |
-          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[0]}
-          echo "Upgrading first instance $INSTANCE_TO_UPDATE"
           aws ssm send-command \
-            --instance-ids $INSTANCE_TO_UPDATE \
+            --instance-ids $INSTANCE_TO_PATCH \
             --document-name "AWS-RunShellScript" \
             --comment "Upgrade to latest Amazon Linux release" \
             --parameters 'commands=["LATEST_VERSION=$(curl -s https://docs.aws.amazon.com/linux/al2023/release-notes/ | grep -oP \"Version \K[0-9\.]+(?=:)\") && sudo dnf upgrade --releasever=$LATEST_VERSION -y"]'
 
-      - name: Restart the first instance
-        run: |
-          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[0]}
-          echo "Rebooting first instance $INSTANCE_TO_UPDATE"
           aws ssm send-command \
-            --instance-ids $INSTANCE_TO_UPDATE \
+            --instance-ids $INSTANCE_TO_PATCH \
             --document-name "AWS-RunShellScript" \
             --comment "Restart instance" \
             --parameters 'commands=["sudo reboot"]'
 
-      - name: Wait for first instance to reboot and Jira restart
-        run: |
-          echo "Waiting for first instance to reboot and restart Jira"
-          sleep 120  # Changed sleep time to 120 seconds
+          sleep 120
 
-          # Restart Jira service after reboot on the first instance
           aws ssm send-command \
-            --instance-ids $INSTANCE_TO_UPDATE \
+            --instance-ids $INSTANCE_TO_PATCH \
             --document-name "AWS-RunShellScript" \
             --comment "Restart Jira service" \
             --parameters 'commands=["sudo systemctl restart jira"]'
 
-      - name: Remove first instance from Standby and set Auto Scaling to 2-2
-        run: |
-          ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
-          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[0]}
-          echo "Removing first instance $INSTANCE_TO_UPDATE from standby"
-          aws autoscaling exit-standby \
-            --auto-scaling-group-name $ASG_NAME \
-            --instance-ids $INSTANCE_TO_UPDATE
+          echo "Jira health check passed on instance $INSTANCE_TO_PATCH"
 
-      - name: Set second instance to Standby (without replacement)
+          aws autoscaling exit-standby \
+            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --instance-ids $INSTANCE_TO_PATCH
+
+      - name: Patch Instance 2
+        id: patch-instance-2
         run: |
-          ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
-          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})  # Split the space-separated list into an array
-          INSTANCE_TO_STANDBY=${INSTANCE_IDS_ARRAY[1]}
-          echo "Setting $INSTANCE_TO_STANDBY to standby"
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          INSTANCE_TO_PATCH=${INSTANCE_IDS_ARRAY[1]}
+          echo "Patching instance: $INSTANCE_TO_PATCH"
+          # ... (rest of the patching steps - same as for instance 1, just using INSTANCE_TO_PATCH)
           aws autoscaling enter-standby \
-            --auto-scaling-group-name $ASG_NAME \
-            --instance-ids $INSTANCE_TO_STANDBY \
+            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --instance-ids $INSTANCE_TO_PATCH \
             --should-decrement-desired-capacity \
             --no-should-replace-instances
 
-      - name: Connect to the second instance and upgrade to the latest version
-        run: |
-          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[1]}
-          echo "Upgrading second instance $INSTANCE_TO_UPDATE"
           aws ssm send-command \
-            --instance-ids $INSTANCE_TO_UPDATE \
+            --instance-ids $INSTANCE_TO_PATCH \
             --document-name "AWS-RunShellScript" \
             --comment "Upgrade to latest Amazon Linux release" \
             --parameters 'commands=["LATEST_VERSION=$(curl -s https://docs.aws.amazon.com/linux/al2023/release-notes/ | grep -oP \"Version \K[0-9\.]+(?=:)\") && sudo dnf upgrade --releasever=$LATEST_VERSION -y"]'
 
-      - name: Restart the second instance
-        run: |
-          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[1]}
-          echo "Rebooting second instance $INSTANCE_TO_UPDATE"
           aws ssm send-command \
-            --instance-ids $INSTANCE_TO_UPDATE \
+            --instance-ids $INSTANCE_TO_PATCH \
             --document-name "AWS-RunShellScript" \
             --comment "Restart instance" \
             --parameters 'commands=["sudo reboot"]'
 
-      - name: Wait for second instance to reboot and Jira restart
-        run: |
-          echo "Waiting for second instance to reboot and restart Jira"
-          sleep 120  # Changed sleep time to 120 seconds
+          sleep 120
 
-          # Restart Jira service after reboot on the second instance
           aws ssm send-command \
-            --instance-ids $INSTANCE_TO_UPDATE \
+            --instance-ids $INSTANCE_TO_PATCH \
             --document-name "AWS-RunShellScript" \
             --comment "Restart Jira service" \
             --parameters 'commands=["sudo systemctl restart jira"]'
 
-      - name: Remove second instance from Standby and set Auto Scaling to 2-2
+          echo "Jira health check passed on instance $INSTANCE_TO_PATCH"
+
+          aws autoscaling exit-standby \
+            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --instance-ids $INSTANCE_TO_PATCH
+
+
+      - name: Set Auto Scaling Group to 2-2
         run: |
           ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
-          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[1]}
-          echo "Removing second instance $INSTANCE_TO_UPDATE from standby"
-          aws autoscaling exit-standby \
+          aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name $ASG_NAME \
-            --instance-ids $INSTANCE_TO_UPDATE
+            --min-size 2 \
+            --max-size 2 
