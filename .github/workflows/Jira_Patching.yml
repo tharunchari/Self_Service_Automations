@@ -24,11 +24,11 @@ jobs:
           ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name "$ASG_NAME" \
-            --query "AutoScalingGroups[0].Instances[].[InstanceId]" \
-            --output json | jq -r '.[].InstanceId' | tr -s '\n' ' ')
+            --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
+            --output text | tr -s '\n' ' ')
           echo "INSTANCE_IDS=$INSTANCE_IDS" >> $GITHUB_ENV
           echo "Instance IDs: $INSTANCE_IDS"
-
+      
           if [[ -z "$INSTANCE_IDS" ]]; then
             echo "Error: No instances found in the Auto Scaling Group. Exiting."
             exit 1
