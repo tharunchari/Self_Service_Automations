@@ -1,7 +1,7 @@
 name: Jira server Patching
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch:
 
 jobs:
   update-instance:
@@ -13,7 +13,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: 'us-east-1'  
+          aws-region: 'us-east-1'
 
       - name: Get Auto Scaling Group instances
         id: get-instances
@@ -32,25 +32,26 @@ jobs:
           aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name $ASG_NAME \
             --min-size 1 \
-            --max-size 2 
+            --max-size 2
 
-      - name: Set first instance to Standby
+      - name: Set first instance to Standby (without replacement)
         run: |
           INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
           INSTANCE_TO_STANDBY=${INSTANCE_IDS_ARRAY[0]}
           aws autoscaling enter-standby \
             --auto-scaling-group-name $ASG_NAME \
             --instance-ids $INSTANCE_TO_STANDBY \
-            --should-decrement-desired-capacity
+            --should-decrement-desired-capacity \
+            --no-should-replace-instances
 
-      - name: Connect to the first instance and run yum update 
+      - name: Connect to the first instance and upgrade to the latest version
         run: |
           INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[0]}
           aws ssm send-command \
             --instance-ids $INSTANCE_TO_UPDATE \
             --document-name "AWS-RunShellScript" \
-            --comment "Run yum update on instance" \
-            --parameters 'commands=["sudo yum update -y"]'
+            --comment "Upgrade to latest Amazon Linux release" \
+            --parameters 'commands=["LATEST_VERSION=$(curl -s https://docs.aws.amazon.com/linux/al2023/release-notes/ | grep -oP \"Version \K[0-9\.]+(?=:)\") && sudo dnf upgrade --releasever=$LATEST_VERSION -y"]'
 
       - name: Restart the first instance
         run: |
@@ -60,22 +61,43 @@ jobs:
             --comment "Restart instance" \
             --parameters 'commands=["sudo reboot"]'
 
-      - name: Set second instance to Standby 
+      - name: Wait for first instance to reboot and Jira restart
         run: |
+          sleep 60  # Wait for the first instance to reboot (adjust as necessary)
+          
+          # Restart Jira service after reboot on the first instance
+          aws ssm send-command \
+            --instance-ids $INSTANCE_TO_UPDATE \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart Jira service" \
+            --parameters 'commands=["sudo service jira restart"]'
+
+      - name: Remove first instance from Standby and set Auto Scaling to 2-2
+        run: |
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[0]}
+          aws autoscaling exit-standby \
+            --auto-scaling-group-name $ASG_NAME \
+            --instance-ids $INSTANCE_TO_UPDATE
+
+      - name: Set second instance to Standby (without replacement)
+        run: |
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
           INSTANCE_TO_STANDBY=${INSTANCE_IDS_ARRAY[1]}
           aws autoscaling enter-standby \
             --auto-scaling-group-name $ASG_NAME \
             --instance-ids $INSTANCE_TO_STANDBY \
-            --should-decrement-desired-capacity
+            --should-decrement-desired-capacity \
+            --no-should-replace-instances
 
-      - name: Connect to the second instance and run yum update 
+      - name: Connect to the second instance and upgrade to the latest version
         run: |
           INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[1]}
           aws ssm send-command \
             --instance-ids $INSTANCE_TO_UPDATE \
             --document-name "AWS-RunShellScript" \
-            --comment "Run yum update on instance" \
-            --parameters 'commands=["sudo yum update -y"]'
+            --comment "Upgrade to latest Amazon Linux release" \
+            --parameters 'commands=["LATEST_VERSION=$(curl -s https://docs.aws.amazon.com/linux/al2023/release-notes/ | grep -oP \"Version \K[0-9\.]+(?=:)\") && sudo dnf upgrade --releasever=$LATEST_VERSION -y"]'
 
       - name: Restart the second instance
         run: |
@@ -85,31 +107,21 @@ jobs:
             --comment "Restart instance" \
             --parameters 'commands=["sudo reboot"]'
 
-      - name: Remove both instances from Standby and set Auto Scaling to 2-2
+      - name: Wait for second instance to reboot and Jira restart
         run: |
+          sleep 60  # Wait for the second instance to reboot (adjust as necessary)
+
+          # Restart Jira service after reboot on the second instance
+          aws ssm send-command \
+            --instance-ids $INSTANCE_TO_UPDATE \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart Jira service" \
+            --parameters 'commands=["sudo service jira restart"]'
+
+      - name: Remove second instance from Standby and set Auto Scaling to 2-2
+        run: |
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[1]}
           aws autoscaling exit-standby \
             --auto-scaling-group-name $ASG_NAME \
-            --instance-ids ${{ env.INSTANCE_IDS }}
-          
-          aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name $ASG_NAME \
-            --min-size 2 \
-            --max-size 2
-
-      - name: Restart Jira service on both instances
-        run: |
-          # Restart Jira on the first instance
-          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[0]}
-          aws ssm send-command \
-            --instance-ids $INSTANCE_TO_UPDATE \
-            --document-name "AWS-RunShellScript" \
-            --comment "Restart Jira service" \
-            --parameters 'commands=["sudo service jira restart"]'
-
-          # Restart Jira on the second instance
-          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[1]}
-          aws ssm send-command \
-            --instance-ids $INSTANCE_TO_UPDATE \
-            --document-name "AWS-RunShellScript" \
-            --comment "Restart Jira service" \
-            --parameters 'commands=["sudo service jira restart"]'
+            --instance-ids $INSTANCE_TO_UPDATE
