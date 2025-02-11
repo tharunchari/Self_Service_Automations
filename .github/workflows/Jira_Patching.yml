@@ -71,8 +71,8 @@ jobs:
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart Jira service" \
-            --parameters 'commands=["sudo service jira restart"]'
+            --comment "Restart Jira and HTTPD services" \
+            --parameters 'commands=["sudo service httpd restart", "sudo service jira restart"]'
 
           echo "Jira health check passed on instance $INSTANCE_TO_PATCH"
 
@@ -109,8 +109,8 @@ jobs:
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart Jira service" \
-            --parameters 'commands=["sudo service jira restart"]'
+            --comment "Restart Jira and HTTPD services" \
+            --parameters 'commands=["sudo service httpd restart", "sudo service jira restart"]'
 
           echo "Jira health check passed on instance $INSTANCE_TO_PATCH"
 
