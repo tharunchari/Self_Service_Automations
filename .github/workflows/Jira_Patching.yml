@@ -46,46 +46,7 @@ jobs:
 
           aws autoscaling enter-standby \
             --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
-            --instance-ids "$INSTANCE_TO_PATCH" \
-            --should-decrement-desired-capacity \
-            --no-should-replace-instances
-
-          aws ssm send-command \
-            --instance-ids "$INSTANCE_TO_PATCH" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Upgrade to latest Amazon Linux release" \
-            --parameters 'commands=["LATEST_VERSION=$(curl -s https://docs.aws.amazon.com/linux/al2023/release-notes/ | grep -oP \"Version \K[0-9\.]+(?=:)\") && sudo dnf upgrade --releasever=$LATEST_VERSION -y"]'
-
-          aws ssm send-command \
-            --instance-ids "$INSTANCE_TO_PATCH" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Restart instance" \
-            --parameters 'commands=["sudo reboot"]'
-
-          sleep 120
-
-          aws ssm send-command \
-            --instance-ids "$INSTANCE_TO_PATCH" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Restart Jira service" \
-            --parameters 'commands=["sudo systemctl restart jira"]'
-
-          aws autoscaling exit-standby \
-            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
-            --instance-ids "$INSTANCE_TO_PATCH"
-
-      - name: Patch Instance 2
-        id: patch-instance-2
-        run: |
-          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
-          INSTANCE_TO_PATCH=${INSTANCE_IDS_ARRAY[1]}
-          echo "Patching instance: $INSTANCE_TO_PATCH"
-
-          aws autoscaling enter-standby \
-            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
-            --instance-ids "$INSTANCE_TO_PATCH" \
-            --should-decrement-desired-capacity \
-            --no-should-replace-instances
+            --instance-ids "$INSTANCE_TO_PATCH"  # Correct: No decrement or replace
 
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
@@ -108,6 +69,42 @@ jobs:
             --parameters 'commands=["sudo systemctl restart jira"]'
 
           echo "Jira health check passed on instance $INSTANCE_TO_PATCH"
+
+          aws autoscaling exit-standby \
+            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --instance-ids "$INSTANCE_TO_PATCH"
+
+      - name: Patch Instance 2
+        id: patch-instance-2
+        run: |
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          INSTANCE_TO_PATCH=${INSTANCE_IDS_ARRAY[1]}
+          echo "Patching instance: $INSTANCE_TO_PATCH"
+
+          aws autoscaling enter-standby \
+            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --instance-ids "$INSTANCE_TO_PATCH"  # Correct: No decrement or replace
+
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_TO_PATCH" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Upgrade to latest Amazon Linux release" \
+            --parameters 'commands=["LATEST_VERSION=$(curl -s https://docs.aws.amazon.com/linux/al2023/release-notes/ | grep -oP \"Version \K[0-9\.]+(?=:)\") && sudo dnf upgrade --releasever=$LATEST_VERSION -y"]'
+
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_TO_PATCH" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart instance" \
+            --parameters 'commands=["sudo reboot"]'
+
+          sleep 120
+
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_TO_PATCH" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart Jira service" \
+            --parameters 'commands=["sudo systemctl restart jira"]'
+
 
           aws autoscaling exit-standby \
             --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
