@@ -63,7 +63,7 @@ jobs:
 
       - name: Wait for first instance to reboot and Jira restart
         run: |
-          sleep 60  # Wait for the first instance to reboot (adjust as necessary)
+          sleep 120  # Wait for the first instance to reboot (adjust as necessary)
           
           # Restart Jira service after reboot on the first instance
           aws ssm send-command \
@@ -109,7 +109,7 @@ jobs:
 
       - name: Wait for second instance to reboot and Jira restart
         run: |
-          sleep 60  # Wait for the second instance to reboot (adjust as necessary)
+          sleep 120  # Wait for the second instance to reboot (adjust as necessary)
 
           # Restart Jira service after reboot on the second instance
           aws ssm send-command \
