@@ -22,7 +22,7 @@ jobs:
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name $ASG_NAME \
             --query "AutoScalingGroups[0].Instances[].[InstanceId]" \
-            --output text)
+            --output text | tr -s '\n' ' ')  # Ensure no extra newlines or spaces
           echo "Instance IDs: $INSTANCE_IDS"
           echo "INSTANCE_IDS=$INSTANCE_IDS" >> $GITHUB_ENV
 
@@ -32,13 +32,12 @@ jobs:
           aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name $ASG_NAME \
             --min-size 1 \
-            --max-size 2 \
-
+            --max-size 2 
 
       - name: Set first instance to Standby
         run: |
-          INSTANCE_IDS=$(echo ${{ env.INSTANCE_IDS }} | tr '\n' ' ')
-          INSTANCE_TO_STANDBY=$(echo $INSTANCE_IDS | awk '{print $1}')
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          INSTANCE_TO_STANDBY=${INSTANCE_IDS_ARRAY[0]}
           aws autoscaling enter-standby \
             --auto-scaling-group-name $ASG_NAME \
             --instance-ids $INSTANCE_TO_STANDBY \
@@ -46,7 +45,7 @@ jobs:
 
       - name: Connect to the first instance and run yum update 
         run: |
-          INSTANCE_TO_UPDATE=$(echo $INSTANCE_IDS | awk '{print $1}')
+          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[0]}
           aws ssm send-command \
             --instance-ids $INSTANCE_TO_UPDATE \
             --document-name "AWS-RunShellScript" \
@@ -63,8 +62,7 @@ jobs:
 
       - name: Set second instance to Standby 
         run: |
-          INSTANCE_IDS=$(echo ${{ env.INSTANCE_IDS }} | tr '\n' ' ')
-          INSTANCE_TO_STANDBY=$(echo $INSTANCE_IDS | awk '{print $2}')
+          INSTANCE_TO_STANDBY=${INSTANCE_IDS_ARRAY[1]}
           aws autoscaling enter-standby \
             --auto-scaling-group-name $ASG_NAME \
             --instance-ids $INSTANCE_TO_STANDBY \
@@ -72,7 +70,7 @@ jobs:
 
       - name: Connect to the second instance and run yum update 
         run: |
-          INSTANCE_TO_UPDATE=$(echo $INSTANCE_IDS | awk '{print $2}')
+          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[1]}
           aws ssm send-command \
             --instance-ids $INSTANCE_TO_UPDATE \
             --document-name "AWS-RunShellScript" \
@@ -89,13 +87,29 @@ jobs:
 
       - name: Remove both instances from Standby and set Auto Scaling to 2-2
         run: |
-          INSTANCE_IDS=$(echo ${{ env.INSTANCE_IDS }} | tr '\n' ' ')
           aws autoscaling exit-standby \
             --auto-scaling-group-name $ASG_NAME \
-            --instance-ids $INSTANCE_IDS
-
+            --instance-ids ${{ env.INSTANCE_IDS }}
+          
           aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name $ASG_NAME \
             --min-size 2 \
-            --max-size 2 \
-            
+            --max-size 2
+
+      - name: Restart Jira service on both instances
+        run: |
+          # Restart Jira on the first instance
+          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[0]}
+          aws ssm send-command \
+            --instance-ids $INSTANCE_TO_UPDATE \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart Jira service" \
+            --parameters 'commands=["sudo service jira restart"]'
+
+          # Restart Jira on the second instance
+          INSTANCE_TO_UPDATE=${INSTANCE_IDS_ARRAY[1]}
+          aws ssm send-command \
+            --instance-ids $INSTANCE_TO_UPDATE \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart Jira service" \
+            --parameters 'commands=["sudo service jira restart"]'
