@@ -72,7 +72,7 @@ jobs:
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
             --comment "Restart Jira service" \
-            --parameters 'commands=["sudo systemctl restart jira"]'
+            --parameters 'commands=["sudo service jira restart"]'
 
           echo "Jira health check passed on instance $INSTANCE_TO_PATCH"
 
@@ -110,7 +110,7 @@ jobs:
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
             --comment "Restart Jira service" \
-            --parameters 'commands=["sudo systemctl restart jira"]'
+            --parameters 'commands=["sudo service jira restart"]'
 
           echo "Jira health check passed on instance $INSTANCE_TO_PATCH"
 
