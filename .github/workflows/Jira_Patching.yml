@@ -34,7 +34,7 @@ jobs:
             exit 1
           fi
 
-      - name: Set Auto Scaling Group to 1-2 instances
+      - name: Set Auto Scaling Group to 1-2 instances 
         run: |
           ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
           aws autoscaling update-auto-scaling-group \
