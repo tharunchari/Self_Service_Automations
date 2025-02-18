@@ -27,7 +27,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-            --subject "JirauPG is going down for patching" \
+            --subject "JirauPG is going down for patching - Rolling" \
             --message "This is a notification that Jiraupg is scheduled for patching. Please be aware of any disruptions during this process."    
 
       - name: Disable Jira Plugins
@@ -110,7 +110,32 @@ jobs:
             --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
+          # Check node status using the API
+          NODE_STATUS=$(curl -X GET \
+            -H "Authorization: Bearer ${jiraupg_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://jiraupg.vitechinc.com/jiraupg/rest/api/2/cluster/nodes" | jq .)
+
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids ${INSTANCE_IDS_ARRAY[0]} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text)
+  
+          INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.ip == $ip and .alive == true)')
+  
+          if [[ -n "$INSTANCE_ALIVE" ]]; then
+            echo "Instance ${INSTANCE_IDS_ARRAY[0]} is alive and healthy."
+          else
+            echo "Error: Instance ${INSTANCE_IDS_ARRAY[0]} is NOT healthy. Sending notification."
+  
+            aws sns publish \
+              --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+              --subject "JirauPG Patching Failed (Instance 1)" \
+              --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]} failed. Please investigate."
+  
+            exit 1 
+          fi  
+
       - name: Patch Instance 2
+        if: needs.patch-instance-1.result == 'success'
         id: patch-instance-2
         run: |
           INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
@@ -154,6 +179,31 @@ jobs:
             --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
+          # Check node status using the API
+          NODE_STATUS=$(curl -X GET \
+            -H "Authorization: Bearer ${jiraupg_ACCESS_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://jiraupg.vitechinc.com/jiraupg/rest/api/2/cluster/nodes" | jq .)
+
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids ${INSTANCE_IDS_ARRAY[0]} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text)
+  
+          INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.ip == $ip and .alive == true)')
+  
+          if [[ -n "$INSTANCE_ALIVE" ]]; then
+            echo "Instance ${INSTANCE_IDS_ARRAY[0]} is alive and healthy."
+          else
+            echo "Error: Instance ${INSTANCE_IDS_ARRAY[0]} is NOT healthy. Sending notification."
+  
+            aws sns publish \
+              --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+              --subject "JirauPG Patching Failed (Instance 2)" \
+              --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]} failed. Please investigate."
+  
+            exit 2 
+          fi
+            
+
       - name: Set Auto Scaling Group to 2-2
         run: |
           ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
@@ -178,5 +228,5 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-            --subject "Patching Completed for Jiraupg" \
+            --subject "Rolling Patching Completed for Jiraupg" \
             --message "The patching for Jiraupg has been completed successfully. If any issues arise, please reach out to v3atlassianops@vitechinc.com. Thanks for your patience during this process."     
