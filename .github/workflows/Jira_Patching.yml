@@ -2,6 +2,11 @@ name: Jira server Patching
 
 on:
   workflow_dispatch:
+    inputs:
+      pluginKeys:
+        description: 'Comma-separated plugin keys to disable'
+        required: true
+        default: 'com.vitechinc.jira.hoursTracking,com.vitechinc.jira.defaultCommentSecurity,com.vitechinc.art.ArtJiraService'
 
 jobs:
   update-instance:
@@ -17,6 +22,25 @@ jobs:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
+
+      - name: Send pre-patching notification via SNS
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+            --subject "JirauPG is going down for patching" \
+            --message "This is a notification that Jiraupg is scheduled for patching. Please be aware of any disruptions during this process."    
+
+      - name: Disable Jira Plugins
+        run: |
+          PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
+          for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
+          do
+            echo "Disabling plugin: $PLUGIN_KEY"
+            curl --request PUT "https://jiraupg.vitechinc.com/jiraupg/rest/plugins/1.0/${PLUGIN_KEY}-key" \
+                 --header 'Authorization: Bearer ${jiraupg_ACCESS_TOKEN}' \
+                 --header 'Content-Type: application/vnd.atl.plugins.plugin+json' \
+                 --data '{"enabled": false}'
+          done
 
       - name: Get Auto Scaling Group Instances
         id: get-instances
@@ -57,6 +81,12 @@ jobs:
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
+            --comment "Restart Jira and HTTPD services" \
+            --parameters 'commands=["sudo service jira stop"]'  
+
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_TO_PATCH" \
+            --document-name "AWS-RunShellScript" \
             --comment "Upgrade to latest Amazon Linux release" \
             --parameters 'commands=["LATEST_VERSION=\$(curl -s https://docs.aws.amazon.com/linux/al2023/release-notes/ | grep -oP \\\"Version \\\K[0-9\.]+(?=:)\\\") && sudo dnf upgrade --releasever=\$LATEST_VERSION -y"]'
 
@@ -91,7 +121,13 @@ jobs:
             --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --should-decrement-desired-capacity
-
+         
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_TO_PATCH" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Restart Jira and HTTPD services" \
+            --parameters 'commands=["sudo service jira stop"]' 
+            
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
@@ -125,3 +161,22 @@ jobs:
             --auto-scaling-group-name "$ASG_NAME" \
             --min-size 2 \
             --max-size 2 
+            
+      - name: Enable Jira Plugins
+        run: |
+            PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
+            for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
+            do
+              echo "Disabling plugin: $PLUGIN_KEY"
+              curl --request PUT "https://jiraupg.vitechinc.com/jiraupg/rest/plugins/1.0/${PLUGIN_KEY}-key" \
+                   --header 'Authorization: Bearer ${jiraupg_ACCESS_TOKEN}' \
+                   --header 'Content-Type: application/vnd.atl.plugins.plugin+json' \
+                   --data '{"enabled": true}'
+            done
+            
+      - name: Send post-patching notification via SNS
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+            --subject "Patching Completed for Jiraupg" \
+            --message "The patching for Jiraupg has been completed successfully. If any issues arise, please reach out to v3atlassianops@vitechinc.com. Thanks for your patience during this process."     
