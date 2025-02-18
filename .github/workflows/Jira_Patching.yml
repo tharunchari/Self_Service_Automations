@@ -1,4 +1,4 @@
-name: Jira server Patching
+name: Jira Server Patching
 
 on:
   workflow_dispatch:
@@ -7,6 +7,9 @@ on:
         description: 'Comma-separated plugin keys to disable'
         required: true
         default: 'com.vitechinc.jira.hoursTracking,com.vitechinc.jira.defaultCommentSecurity,com.vitechinc.art.ArtJiraService'
+      environment:
+        description: 'The environment to patch (jiraupg or jiraqa)'
+        required: true        
 
 jobs:
   update-instance:
@@ -16,6 +19,29 @@ jobs:
       id-token: write
 
     steps:
+      - name: Set environment-specific variables
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "jiraupg" ]; then
+            echo "Using jiraupg configuration"
+            echo "ASG_NAME=JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" >> $GITHUB_ENV
+            echo "URL=https://jiraupg.vitechinc.com/jiraupg" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.JIRAUPG_ACCESS_TOKEN }}" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=JiraUPG Patching" >> $GITHUB_ENV
+            echo "BODY_PREFIX=JiraUPG patching is scheduled." >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.environment }}" == "jiraqa" ]; then
+            echo "Using jiraqa configuration"
+            echo "ASG_NAME=JIRAQA-JiraQAADScalingGroup-YfhGsDer5pMjc" >> $GITHUB_ENV
+            echo "URL=https://jiraqa.vitechinc.com/jiraqa" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.JIRAQA_ACCESS_TOKEN }}" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=JiraQA Patching" >> $GITHUB_ENV
+            echo "BODY_PREFIX=JiraQA patching is scheduled." >> $GITHUB_ENV
+          else
+            echo "Invalid environment specified. Please choose either 'jiraupg' or 'jiraqa'."
+            exit 1
+          fi
+
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -26,9 +52,9 @@ jobs:
       - name: Send pre-patching notification via SNS
         run: |
           aws sns publish \
-            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-            --subject "JirauPG is going down for patching - Rolling" \
-            --message "This is a notification that Jiraupg is scheduled for patching. Please be aware of any disruptions during this process."    
+            --topic-arn ${{ env.SNS_TOPIC }} \
+            --subject "${{ env.SUBJECT_PREFIX }} - Rolling" \
+            --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process."
 
       - name: Disable Jira Plugins
         run: |
@@ -36,8 +62,8 @@ jobs:
           for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
           do
             echo "Disabling plugin: $PLUGIN_KEY"
-            curl --request PUT "https://jiraupg.vitechinc.com/jiraupg/rest/plugins/1.0/${PLUGIN_KEY}-key" \
-                 --header 'Authorization: Bearer ${jiraupg_ACCESS_TOKEN}' \
+            curl --request PUT "${{ env.URL }}/rest/plugins/1.0/${PLUGIN_KEY}-key" \
+                 --header "Authorization: Bearer ${env.TOKEN}" \
                  --header 'Content-Type: application/vnd.atl.plugins.plugin+json' \
                  --data '{"enabled": false}'
           done
@@ -45,9 +71,8 @@ jobs:
       - name: Get Auto Scaling Group Instances
         id: get-instances
         run: |
-          ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
-            --auto-scaling-group-name "$ASG_NAME" \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
             --output text | tr -s '\n' ' ')
           echo "INSTANCE_IDS=$INSTANCE_IDS" >> $GITHUB_ENV
@@ -60,9 +85,8 @@ jobs:
 
       - name: Set Auto Scaling Group to 1-2 instances 
         run: |
-          ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
           aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "$ASG_NAME" \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --min-size 1 \
             --max-size 2 
 
@@ -74,15 +98,15 @@ jobs:
           echo "Patching instance: $INSTANCE_TO_PATCH"
 
           aws autoscaling enter-standby \
-            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --should-decrement-desired-capacity
 
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart Jira and HTTPD services" \
-            --parameters 'commands=["sudo service jira stop"]'  
+            --comment "Stop Jira and HTTPD services" \
+            --parameters 'commands=["sudo service httpd stop", "sudo service jira stop"]'
 
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
@@ -104,19 +128,16 @@ jobs:
             --comment "Restart Jira and HTTPD services" \
             --parameters 'commands=["sudo service httpd restart", "sudo service jira restart"]'
 
-          echo "Jira health check passed on instance $INSTANCE_TO_PATCH"
-
           aws autoscaling exit-standby \
-            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
-            -H "Authorization: Bearer ${jiraupg_ACCESS_TOKEN}" \
+            -H "Authorization: Bearer ${env.TOKEN}" \
             -H "Content-Type: application/json" \
-            "https://jiraupg.vitechinc.com/jiraupg/rest/api/2/cluster/nodes" | jq .)
+            "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
 
-          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
           INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids ${INSTANCE_IDS_ARRAY[0]} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text)
   
           INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.ip == $ip and .alive == true)')
@@ -127,8 +148,8 @@ jobs:
             echo "Error: Instance ${INSTANCE_IDS_ARRAY[0]} is NOT healthy. Sending notification."
   
             aws sns publish \
-              --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-              --subject "JirauPG Patching Failed (Instance 1)" \
+              --topic-arn ${{ env.SNS_TOPIC }} \
+              --subject "${{ env.SUBJECT_PREFIX }} Patching Failed (Instance 1)" \
               --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]} failed. Please investigate."
   
             exit 1 
@@ -143,15 +164,15 @@ jobs:
           echo "Patching instance: $INSTANCE_TO_PATCH"
 
           aws autoscaling enter-standby \
-            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --should-decrement-desired-capacity
          
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart Jira and HTTPD services" \
-            --parameters 'commands=["sudo service jira stop"]' 
+            --comment "Stop Jira and HTTPD services" \
+            --parameters 'commands=["sudo service httpd stop", "sudo service jira stop"]'
             
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
@@ -173,19 +194,17 @@ jobs:
             --comment "Restart Jira and HTTPD services" \
             --parameters 'commands=["sudo service httpd restart", "sudo service jira restart"]'
 
-          echo "Jira health check passed on instance $INSTANCE_TO_PATCH"
 
           aws autoscaling exit-standby \
-            --auto-scaling-group-name "JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
-            -H "Authorization: Bearer ${jiraupg_ACCESS_TOKEN}" \
+            -H "Authorization: Bearer ${env.TOKEN}" \
             -H "Content-Type: application/json" \
-            "https://jiraupg.vitechinc.com/jiraupg/rest/api/2/cluster/nodes" | jq .)
+            "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
 
-          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
           INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids ${INSTANCE_IDS_ARRAY[0]} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text)
   
           INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.ip == $ip and .alive == true)')
@@ -196,30 +215,28 @@ jobs:
             echo "Error: Instance ${INSTANCE_IDS_ARRAY[0]} is NOT healthy. Sending notification."
   
             aws sns publish \
-              --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-              --subject "JirauPG Patching Failed (Instance 2)" \
+              --topic-arn ${{ env.SNS_TOPIC }} \
+              --subject "${{ env.SUBJECT_PREFIX }} Patching Failed (Instance 2)" \
               --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]} failed. Please investigate."
   
             exit 2 
           fi
-            
 
       - name: Set Auto Scaling Group to 2-2
         run: |
-          ASG_NAME="JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc"
           aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "$ASG_NAME" \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --min-size 2 \
-            --max-size 2 
+            --max-size 2
             
       - name: Enable Jira Plugins
         run: |
             PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
             for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
             do
-              echo "Disabling plugin: $PLUGIN_KEY"
-              curl --request PUT "https://jiraupg.vitechinc.com/jiraupg/rest/plugins/1.0/${PLUGIN_KEY}-key" \
-                   --header 'Authorization: Bearer ${jiraupg_ACCESS_TOKEN}' \
+              echo "Enabling plugin: $PLUGIN_KEY"
+              curl --request PUT "${{ env.URL }}/rest/plugins/1.0/${PLUGIN_KEY}-key" \
+                   --header "Authorization: Bearer ${env.TOKEN}" \
                    --header 'Content-Type: application/vnd.atl.plugins.plugin+json' \
                    --data '{"enabled": true}'
             done
@@ -227,6 +244,6 @@ jobs:
       - name: Send post-patching notification via SNS
         run: |
           aws sns publish \
-            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-            --subject "Rolling Patching Completed for Jiraupg" \
-            --message "The patching for Jiraupg has been completed successfully. If any issues arise, please reach out to v3atlassianops@vitechinc.com. Thanks for your patience during this process."     
+            --topic-arn ${{ env.SNS_TOPIC }} \
+            --subject "${{ env.SUBJECT_PREFIX }} Completed" \
+            --message "${{ env.BODY_PREFIX }} The patching has been completed successfully. Please reach out v3atlassianops@vitechinc.com for any issues."
