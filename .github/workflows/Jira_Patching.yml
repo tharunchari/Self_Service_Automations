@@ -280,5 +280,5 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
-            --subject "${{ env.SUBJECT_PREFIX }} Completed" \
+            --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
             --message "${{ env.BODY_PREFIX }} The patching has been completed successfully, check URL: ${{ env.URL }}. Please reach out v3atlassianops@vitechinc.com for any issues."
