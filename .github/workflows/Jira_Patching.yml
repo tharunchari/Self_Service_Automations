@@ -133,13 +133,20 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
+           sleep 600
+
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
             -H "Authorization: Bearer ${{ env.TOKEN }}" \
             -H "Content-Type: application/json" \
             "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
 
-          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids ${INSTANCE_IDS_ARRAY[0]} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text)
+          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances \
+            --instance-ids ${INSTANCE_IDS_ARRAY[0]} \
+            --query 'Reservations[].Instances[].PrivateIpAddress' \
+            --output text)
+
+            echo "Private IP: $INSTANCE_TO_PATCH_PRIVATE_IP"
   
           INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.ip == $ip and .alive == true)')
   
@@ -237,7 +244,6 @@ jobs:
             
       - name: Enable Jira Plugins
         run: |
-          set -x
           PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
           for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
           do
@@ -247,10 +253,31 @@ jobs:
                  --header "Content-Type: application/vnd.atl.plugins.plugin+json" \
                  --data '{"enabled": true}'
           done
+
+      - name: Check URL Status Code
+        id: check_status
+        run: |
+          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}")
+          echo "URL Status Code: $STATUS_CODE"
+          if [[ "$STATUS_CODE" -eq 200 ]]; then
+            echo "URL is up and running with status code 200"
+            echo "status_code=200" >> $GITHUB_ENV
+          else
+            echo "Error: URL did not return status code 200. Status Code: $STATUS_CODE"
+            echo "status_code=$STATUS_CODE" >> $GITHUB_ENV
+            
+            aws sns publish \
+              --topic-arn ${{ env.SNS_TOPIC }} \
+              --subject "App Down Alert - Status Code: $STATUS_CODE" \
+              --message "The app at ${{ env.URL }} is down. Status code: $STATUS_CODE. Please investigate."
+            exit 3
+
+          fi
          
       - name: Send post-patching notification via SNS
+        if: env.status_code == '200'
         run: |
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "${{ env.BODY_PREFIX }} The patching has been completed successfully. Please reach out v3atlassianops@vitechinc.com for any issues."
+            --message "${{ env.BODY_PREFIX }} The patching has been completed successfully, check URL: ${{ env.URL }}. Please reach out v3atlassianops@vitechinc.com for any issues."
