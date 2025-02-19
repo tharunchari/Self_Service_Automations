@@ -133,7 +133,7 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
-           sleep 300
+           sleep 600
 
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
@@ -210,7 +210,7 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
-          sleep 300 
+          sleep 600 
 
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
@@ -218,20 +218,20 @@ jobs:
             -H "Content-Type: application/json" \
             "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
 
-          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids ${INSTANCE_IDS_ARRAY[0]} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text)
+          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids ${INSTANCE_IDS_ARRAY[1]} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text)
           echo "NODE_STATUS: $NODE_STATUS"
           echo "Private IP: $INSTANCE_TO_PATCH_PRIVATE_IP"
           INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.nodeId == $ip and .state == "ACTIVE")')
   
           if [[ -n "$INSTANCE_ALIVE" ]]; then
-            echo "Instance ${INSTANCE_IDS_ARRAY[0]} is alive and healthy."
+            echo "Instance ${INSTANCE_IDS_ARRAY[1]} is alive and healthy."
           else
-            echo "Error: Instance ${INSTANCE_IDS_ARRAY[0]} is NOT healthy. Sending notification."
+            echo "Error: Instance ${INSTANCE_IDS_ARRAY[1]} is NOT healthy. Sending notification."
   
             aws sns publish \
               --topic-arn ${{ env.SNS_TOPIC }} \
               --subject "${{ env.SUBJECT_PREFIX }} Failed on Node $INSTANCE_TO_PATCH_PRIVATE_IP" \
-              --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]}($INSTANCE_TO_PATCH_PRIVATE_IP) failed. Please investigate."
+              --message "Patching of instance ${INSTANCE_IDS_ARRAY[1]}($INSTANCE_TO_PATCH_PRIVATE_IP) failed. Please investigate."
   
             exit 2 
           fi
