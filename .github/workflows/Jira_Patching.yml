@@ -51,10 +51,10 @@ jobs:
 
       - name: Send pre-patching notification via SNS
         run: |
-          aws sns publish \
-            --topic-arn ${{ env.SNS_TOPIC }} \
-            --subject "${{ env.SUBJECT_PREFIX }} - Rolling" \
-            --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process."
+          #aws sns publish \
+          #  --topic-arn ${{ env.SNS_TOPIC }} \
+           # --subject "${{ env.SUBJECT_PREFIX }} - Rolling" \
+           # --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process."
 
       - name: Disable Jira Plugins
         run: |
