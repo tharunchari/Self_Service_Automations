@@ -64,8 +64,8 @@ jobs:
           do
             echo "Disabling plugin: $PLUGIN_KEY"
             curl --request PUT "${{ env.URL }}/rest/plugins/1.0/${PLUGIN_KEY}-key" \
-                 --header 'Authorization: Bearer ${env.TOKEN}" \
-                 --header 'Content-Type: application/vnd.atl.plugins.plugin+json' \
+                 --header "Authorization: Bearer ${env.TOKEN}" \
+                 --header "Content-Type: application/vnd.atl.plugins.plugin+json" \
                  --data '{"enabled": false}'
           done
 
