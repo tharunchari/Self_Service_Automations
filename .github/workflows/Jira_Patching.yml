@@ -135,7 +135,7 @@ jobs:
 
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
-            -H "Authorization: Bearer ${env.TOKEN}" \
+            -H "Authorization: Bearer ${{ env.TOKEN }}" \
             -H "Content-Type: application/json" \
             "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
 
@@ -200,13 +200,18 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
+          sleep 800 
+
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
             -H "Authorization: Bearer ${env.TOKEN}" \
             -H "Content-Type: application/json" \
             "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
 
-          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids ${INSTANCE_IDS_ARRAY[0]} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text)
+          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${INSTANCE_IDS_ARRAY[0]} \
+          --query 'Reservations[].Instances[].PrivateIpAddress' \
+          --output text)
   
           INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.ip == $ip and .alive == true)')
   
@@ -232,16 +237,17 @@ jobs:
             
       - name: Enable Jira Plugins
         run: |
-            PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
-            for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
-            do
-              echo "Enabling plugin: $PLUGIN_KEY"
-              curl --request PUT "${{ env.URL }}/rest/plugins/1.0/${PLUGIN_KEY}-key" \
-                   --header "Authorization: Bearer ${env.TOKEN}" \
-                   --header 'Content-Type: application/vnd.atl.plugins.plugin+json' \
-                   --data '{"enabled": true}'
-            done
-            
+          set -x
+          PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
+          for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
+          do
+            echo "Disabling plugin: $PLUGIN_KEY"
+            curl --request PUT "${{ env.URL }}/rest/plugins/1.0/${PLUGIN_KEY}-key" \
+                 --header "Authorization: Bearer ${{ env.TOKEN }}" \
+                 --header "Content-Type: application/vnd.atl.plugins.plugin+json" \
+                 --data '{"enabled": true}'
+          done
+         
       - name: Send post-patching notification via SNS
         run: |
           aws sns publish \
