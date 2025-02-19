@@ -27,7 +27,7 @@ jobs:
             echo "URL=https://jiraupg.vitechinc.com/jiraupg" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.JIRAUPG_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
-            echo "SUBJECT_PREFIX=Rolling Restart of JiraUPG Nodes for Scheduled Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Restart of JiraUPG Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=JiraUPG patching is scheduled." >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.environment }}" == "jiraqa" ]; then
             echo "Using jiraqa configuration"
@@ -35,7 +35,7 @@ jobs:
             echo "URL=https://jiraqa.vitechinc.com/jiraqa" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.JIRAQA_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
-            echo "SUBJECT_PREFIX=Rolling Restart of JiraQa Nodes for Scheduled Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Restart of JiraQa Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=JiraQA patching is scheduled." >> $GITHUB_ENV
           else
             echo "Invalid environment specified. Please choose either 'jiraupg' or 'jiraqa'."
@@ -51,10 +51,10 @@ jobs:
 
       - name: Send pre-patching notification via SNS
         run: |
-          #aws sns publish \
-          #  --topic-arn ${{ env.SNS_TOPIC }} \
-           # --subject "${{ env.SUBJECT_PREFIX }} - Rolling" \
-           # --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process."
+          aws sns publish \
+            --topic-arn ${{ env.SNS_TOPIC }} \
+            --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
+            --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process."
 
       - name: Disable Jira Plugins
         run: |
