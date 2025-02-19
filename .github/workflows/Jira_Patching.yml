@@ -133,7 +133,7 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
-           sleep 800
+           sleep 300
 
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
@@ -147,9 +147,10 @@ jobs:
             --output text)
 
             echo "Private IP: $INSTANCE_TO_PATCH_PRIVATE_IP"
-  
-          INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.ip == $ip and .alive == true)')
-  
+            echo "NODE_STATUS: $NODE_STATUS"
+            
+          INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.nodeId == $ip and .state == "ACTIVE")')
+          echo "INSTANCE_ALIVE: $INSTANCE_ALIVE"
           if [[ -n "$INSTANCE_ALIVE" ]]; then
             echo "Instance ${INSTANCE_IDS_ARRAY[0]} is alive and healthy."
           else
