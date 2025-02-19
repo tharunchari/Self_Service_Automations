@@ -27,7 +27,7 @@ jobs:
             echo "URL=https://jiraupg.vitechinc.com/jiraupg" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.JIRAUPG_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
-            echo "SUBJECT_PREFIX=JiraUPG Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Rolling Restart of JiraUPG Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=JiraUPG patching is scheduled." >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.environment }}" == "jiraqa" ]; then
             echo "Using jiraqa configuration"
@@ -35,7 +35,7 @@ jobs:
             echo "URL=https://jiraqa.vitechinc.com/jiraqa" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.JIRAQA_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
-            echo "SUBJECT_PREFIX=JiraQA Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Rolling Restart of JiraQa Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=JiraQA patching is scheduled." >> $GITHUB_ENV
           else
             echo "Invalid environment specified. Please choose either 'jiraupg' or 'jiraqa'."
@@ -153,20 +153,22 @@ jobs:
           echo "INSTANCE_ALIVE: $INSTANCE_ALIVE"
           if [[ -n "$INSTANCE_ALIVE" ]]; then
             echo "Instance ${INSTANCE_IDS_ARRAY[0]} is alive and healthy."
+            echo "patch-instance-1=success" >> $GITHUB_ENV
           else
             echo "Error: Instance ${INSTANCE_IDS_ARRAY[0]} is NOT healthy. Sending notification."
   
             aws sns publish \
               --topic-arn ${{ env.SNS_TOPIC }} \
-              --subject "${{ env.SUBJECT_PREFIX }} Patching Failed (Instance 1)" \
+              --subject "${{ env.SUBJECT_PREFIX }} Patching Failed on Node $INSTANCE_TO_PATCH_PRIVATE_IP" \
               --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]} ($INSTANCE_TO_PATCH_PRIVATE_IP) failed. Please investigate."
-  
+
+             echo "patch-instance-1=failure" >> $GITHUB_ENV
             exit 1 
           fi  
 
       - name: Patch Instance 2
-        if: needs.patch-instance-1.result == 'success'
         id: patch-instance-2
+        if: env.patch-instance-1 == 'success'
         run: |
           INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
           INSTANCE_TO_PATCH=${INSTANCE_IDS_ARRAY[1]}
@@ -208,7 +210,7 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
-          sleep 800 
+          sleep 300 
 
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
@@ -216,12 +218,10 @@ jobs:
             -H "Content-Type: application/json" \
             "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
 
-          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances \
-          --instance-ids ${INSTANCE_IDS_ARRAY[0]} \
-          --query 'Reservations[].Instances[].PrivateIpAddress' \
-          --output text)
-  
-          INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.ip == $ip and .alive == true)')
+          INSTANCE_TO_PATCH_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids ${INSTANCE_IDS_ARRAY[0]} --query 'Reservations[*].Instances[*].PrivateIpAddress' --output text)
+          echo "NODE_STATUS: $NODE_STATUS"
+          echo "Private IP: $INSTANCE_TO_PATCH_PRIVATE_IP"
+          INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_TO_PATCH_PRIVATE_IP" '.[] | select(.nodeId == $ip and .state == "ACTIVE")')
   
           if [[ -n "$INSTANCE_ALIVE" ]]; then
             echo "Instance ${INSTANCE_IDS_ARRAY[0]} is alive and healthy."
@@ -230,8 +230,8 @@ jobs:
   
             aws sns publish \
               --topic-arn ${{ env.SNS_TOPIC }} \
-              --subject "${{ env.SUBJECT_PREFIX }} Patching Failed (Instance 2)" \
-              --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]} failed. Please investigate."
+              --subject "${{ env.SUBJECT_PREFIX }} Patching Failed on Node $INSTANCE_TO_PATCH_PRIVATE_IP" \
+              --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]}($INSTANCE_TO_PATCH_PRIVATE_IP) failed. Please investigate."
   
             exit 2 
           fi
@@ -258,7 +258,7 @@ jobs:
       - name: Check URL Status Code
         id: check_status
         run: |
-          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}")
+          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}/status")
           echo "URL Status Code: $STATUS_CODE"
           if [[ "$STATUS_CODE" -eq 200 ]]; then
             echo "URL is up and running with status code 200"
@@ -269,7 +269,7 @@ jobs:
             
             aws sns publish \
               --topic-arn ${{ env.SNS_TOPIC }} \
-              --subject "App Down Alert - Status Code: $STATUS_CODE" \
+              --subject "${{ github.event.inputs.environment }} App Down Alert - Status Code: $STATUS_CODE" \
               --message "The app at ${{ env.URL }} is down. Status code: $STATUS_CODE. Please investigate."
             exit 3
 
