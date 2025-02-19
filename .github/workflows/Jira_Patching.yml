@@ -214,7 +214,7 @@ jobs:
 
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
-            -H "Authorization: Bearer ${env.TOKEN}" \
+            -H "Authorization: Bearer ${{ env.TOKEN }}" \
             -H "Content-Type: application/json" \
             "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
 
