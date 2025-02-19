@@ -159,7 +159,7 @@ jobs:
   
             aws sns publish \
               --topic-arn ${{ env.SNS_TOPIC }} \
-              --subject "${{ env.SUBJECT_PREFIX }} Patching Failed on Node $INSTANCE_TO_PATCH_PRIVATE_IP" \
+              --subject "${{ env.SUBJECT_PREFIX }} Failed on Node $INSTANCE_TO_PATCH_PRIVATE_IP" \
               --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]} ($INSTANCE_TO_PATCH_PRIVATE_IP) failed. Please investigate."
 
              echo "patch-instance-1=failure" >> $GITHUB_ENV
@@ -230,7 +230,7 @@ jobs:
   
             aws sns publish \
               --topic-arn ${{ env.SNS_TOPIC }} \
-              --subject "${{ env.SUBJECT_PREFIX }} Patching Failed on Node $INSTANCE_TO_PATCH_PRIVATE_IP" \
+              --subject "${{ env.SUBJECT_PREFIX }} Failed on Node $INSTANCE_TO_PATCH_PRIVATE_IP" \
               --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]}($INSTANCE_TO_PATCH_PRIVATE_IP) failed. Please investigate."
   
             exit 2 
