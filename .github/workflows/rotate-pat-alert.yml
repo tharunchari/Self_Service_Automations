@@ -1,0 +1,45 @@
+name: Rotate GitHub PATs Alert
+
+on:
+  schedule:
+    # Cron expression to run every Thursday at midnight UTC
+    - cron: '0 0 * * 4'
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Check if today is the last Thursday of the month and calculate the last Saturday
+        run: |
+          current_day=$(date +%d)
+          current_month=$(date +%m)
+          
+          # Get the last day of the current month
+          last_day_of_month=$(date -d "$(date +%Y)-$current_month-01 +1 month -1 day" +%d)
+          
+          # Get the weekday of the last day of the current month (0=Sunday, 6=Saturday)
+          weekday_last_day=$(date -d "$(date +%Y)-$current_month-$last_day_of_month" +%u)
+          
+          # Calculate the date of the last Thursday of the month
+          last_thursday_day=$((last_day_of_month - (weekday_last_day + 3) % 7))
+          
+          # Check if today is the last Thursday
+          if [ "$current_day" -eq "$last_thursday_day" ]; then
+            # Calculate the last Saturday (upcoming Saturday)
+            last_saturday=$(date -d "$(date +%Y)-$current_month-$last_day_of_month +1 month" +%Y-%m-%d)
+
+            aws sns publish \
+              --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+              --message "Reminder: It's time to rotate GitHub PATs for all organizations. The last Saturday of this month is ${last_saturday}. Please make sure to rotate the PATs before then." \
+              --subject "GitHub PAT Rotation Reminder"
+          else
+            echo "Today is not the last Thursday, skipping alert."
+          fi
