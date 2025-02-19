@@ -133,7 +133,7 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --instance-ids "$INSTANCE_TO_PATCH"
 
-           sleep 600
+           sleep 800
 
           # Check node status using the API
           NODE_STATUS=$(curl -X GET \
@@ -158,7 +158,7 @@ jobs:
             aws sns publish \
               --topic-arn ${{ env.SNS_TOPIC }} \
               --subject "${{ env.SUBJECT_PREFIX }} Patching Failed (Instance 1)" \
-              --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]} failed. Please investigate."
+              --message "Patching of instance ${INSTANCE_IDS_ARRAY[0]} ($INSTANCE_TO_PATCH_PRIVATE_IP) failed. Please investigate."
   
             exit 1 
           fi  
