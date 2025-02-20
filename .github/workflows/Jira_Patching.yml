@@ -118,10 +118,10 @@ jobs:
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
-            --comment "Stop and Start EC2 instance" \
+            --comment "Reboot EC2 instance" \
             --parameters 'commands=["sudo reboot"]'
-          
-          sleep 200
+                          
+          sleep 120
 
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
@@ -192,13 +192,13 @@ jobs:
             --comment "Upgrade to latest Amazon Linux release" \
             --parameters 'commands=["dnf -y --releasever=latest update"]'
 
-            aws ssm send-command \
-              --instance-ids "$INSTANCE_TO_PATCH" \
-              --document-name "AWS-RunShellScript" \
-              --comment "Stop and Start EC2 instance" \
-              --parameters 'commands=["aws ec2 stop-instances --instance-ids $INSTANCE_ID", "sleep 60", "aws ec2 start-instances --instance-ids $INSTANCE_ID"]'
-            
-          sleep 200
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_TO_PATCH" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Reboot EC2 instance" \
+            --parameters 'commands=["sudo reboot"]'
+         
+          sleep 120
 
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
