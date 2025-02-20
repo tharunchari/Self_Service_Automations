@@ -119,7 +119,7 @@ jobs:
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
             --comment "Stop and Start EC2 instance" \
-            --parameters 'commands=["aws ec2 stop-instances --instance-ids $INSTANCE_ID", "sleep 60", "aws ec2 start-instances --instance-ids $INSTANCE_ID"]'
+            --parameters 'commands=["sudo reboot"]'
           
           sleep 200
 
