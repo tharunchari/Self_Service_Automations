@@ -31,7 +31,7 @@ jobs:
             echo "BODY_PREFIX=JiraUPG patching is scheduled." >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.environment }}" == "jiraqa" ]; then
             echo "Using jiraqa configuration"
-            echo "ASG_NAME=JIRAQA-JiraQAADScalingGroup-YfhGsDer5pMjc" >> $GITHUB_ENV
+            echo "ASG_NAME=JIRAQA-JiraQAADScalingGroup-YfhGsDer5pMj" >> $GITHUB_ENV
             echo "URL=https://jiraqa.vitechinc.com/jiraqa" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.JIRAQA_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
