@@ -113,21 +113,22 @@ jobs:
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
             --comment "Upgrade to latest Amazon Linux release" \
-            --parameters 'commands=["LATEST_VERSION=\$(curl -s https://docs.aws.amazon.com/linux/al2023/release-notes/ | grep -oP \\\"Version \\\K[0-9\.]+(?=:)\\\") && sudo dnf upgrade --releasever=\$LATEST_VERSION -y"]'
+            --parameters 'commands=["dnf -y --releasever=latest update"]'
 
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart instance" \
-            --parameters 'commands=["sudo reboot"]'
-
-          sleep 120
+            --comment "Stop and Start EC2 instance" \
+            --parameters 'commands=["aws ec2 stop-instances --instance-ids $INSTANCE_ID", "sleep 60", "aws ec2 start-instances --instance-ids $INSTANCE_ID"]'
+          
+          sleep 200
 
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart Jira and HTTPD services" \
-            --parameters 'commands=["sudo service httpd restart", "sudo service jira restart"]'
+            --comment "Backup /etc/httpd/conf.d, then restart Jira and HTTPD services" \
+            --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak", "sudo service httpd restart", "sudo service jira restart"]'
+
 
           aws autoscaling exit-standby \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
@@ -189,22 +190,22 @@ jobs:
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
             --comment "Upgrade to latest Amazon Linux release" \
-            --parameters 'commands=["LATEST_VERSION=\$(curl -s https://docs.aws.amazon.com/linux/al2023/release-notes/ | grep -oP \\\"Version \\\K[0-9\.]+(?=:)\\\") && sudo dnf upgrade --releasever=\$LATEST_VERSION -y"]'
+            --parameters 'commands=["dnf -y --releasever=latest update"]'
+
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_TO_PATCH" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Stop and Start EC2 instance" \
+              --parameters 'commands=["aws ec2 stop-instances --instance-ids $INSTANCE_ID", "sleep 60", "aws ec2 start-instances --instance-ids $INSTANCE_ID"]'
+            
+          sleep 200
 
           aws ssm send-command \
             --instance-ids "$INSTANCE_TO_PATCH" \
             --document-name "AWS-RunShellScript" \
-            --comment "Restart instance" \
-            --parameters 'commands=["sudo reboot"]'
-
-          sleep 120
-
-          aws ssm send-command \
-            --instance-ids "$INSTANCE_TO_PATCH" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Restart Jira and HTTPD services" \
-            --parameters 'commands=["sudo service httpd restart", "sudo service jira restart"]'
-
+            --comment "Backup /etc/httpd/conf.d, then restart Jira and HTTPD services" \
+            --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak", "sudo service httpd restart", "sudo service jira restart"]'
+          
 
           aws autoscaling exit-standby \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
