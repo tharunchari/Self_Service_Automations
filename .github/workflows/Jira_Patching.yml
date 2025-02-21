@@ -74,7 +74,6 @@ jobs:
 
       - name: Disable Jira Plugins
         run: |
-          set -x
           PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
           for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
           do
