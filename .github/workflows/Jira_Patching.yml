@@ -4,12 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       pluginKeys:
-        description: 'Comma-separated plugin keys to disable'
-        required: true
         default: 'com.vitechinc.jira.hoursTracking,com.vitechinc.jira.defaultCommentSecurity,com.vitechinc.art.ArtJiraService'
+        required: true
+        description: 'Comma-separated plugin keys to disable'
       environment:
-        description: 'The environment to patch (jiraupg or jiraqa)'
-        required: true        
+        required: true
+        description: 'The environment to patch (jiraupg, jiraqa or jiraprod)'   
+      KEY:
+        required: true
+        description: Authentication Key for Jiraprod
+        
 
 jobs:
   Jira-Patching:
@@ -37,8 +41,20 @@ jobs:
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
             echo "SUBJECT_PREFIX=Restart of JiraQa Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=JiraQA patching is scheduled." >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.environment }}" == "jiraprod" ]; then
+                   if [ "${{ inputs.KEY }}" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
+                      echo "The KEY does not match the expected secret for jiraprod environment."
+                      exit 1
+                   fi
+            echo "Using jiraprod configuration"
+            echo "ASG_NAME=JIRAAWSPROD-JiraAWSPRODDScalingGroup-KH04DAC48ZQX" >> $GITHUB_ENV
+            echo "URL=https://jira.vitechinc.com/jira" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.JIRAPROD_ACCESS_TOKEN }}" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Restart of JiraProd Nodes for Scheduled Patching" >> $GITHUB_ENV
+            echo "BODY_PREFIX=JiraProd patching is scheduled." >> $GITHUB_ENV  
           else
-            echo "Invalid environment specified. Please choose either 'jiraupg' or 'jiraqa'."
+            echo "Invalid environment specified. Please choose either 'jiraupg', 'jiraqa', or 'jiraprod'."
             exit 1
           fi
 
