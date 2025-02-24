@@ -86,6 +86,120 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --min-size 1 
             
+      - name: Patch Each Instance
+        id: patch-each-instance
+        run: |
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          PATCH_SUCCESS=true  
 
+          for INSTANCE_ID in "${INSTANCE_IDS_ARRAY[@]}"
+          do
+            echo "Patching instance: $INSTANCE_ID"
+
+            aws autoscaling enter-standby \
+              --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+              --instance-ids "$INSTANCE_ID" \
+              --should-decrement-desired-capacity
+
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Stop confluence and HTTPD services" \
+              --parameters 'commands=["sudo service httpd stop", "sudo service confluence stop"]'
+
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Upgrade to latest Amazon Linux release" \
+              --parameters 'commands=["dnf -y --releasever=latest update"]'
+
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Reboot EC2 instance" \
+              --parameters 'commands=["sudo reboot"]'
+
+            sleep 120
+
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Backup /etc/httpd/conf.d, then restart confluence and HTTPD services" \
+              --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak", "sudo service httpd restart", "sudo service confluence restart"]'
+
+            aws autoscaling exit-standby \
+              --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+              --instance-ids "$INSTANCE_ID"
+
+            sleep 600
+
+            # Check node status using the API
+            NODE_STATUS=$(curl -X GET \
+              -H "Authorization: Bearer ${{ env.TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
+
+            INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances \
+              --instance-ids "$INSTANCE_ID" \
+              --query 'Reservations[].Instances[].PrivateIpAddress' \
+              --output text)
+
+            echo "Private IP: $INSTANCE_PRIVATE_IP"
+            echo "NODE_STATUS: $NODE_STATUS"
+            
+            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.[] | select(.nodeId == $ip and .state == "ACTIVE")')
+
+            if [[ -n "$INSTANCE_ALIVE" ]]; then
+              echo "Instance $INSTANCE_ID is alive and healthy."
+            else
+              echo "Error: Instance $INSTANCE_ID is NOT healthy. Sending notification."  
+              aws sns publish \
+                --topic-arn ${{ env.SNS_TOPIC }} \
+                --subject "${{ env.SUBJECT_PREFIX }} Failed on Node $INSTANCE_PRIVATE_IP" \
+                --message "Patching of instance $INSTANCE_ID ($INSTANCE_PRIVATE_IP) failed. Please investigate."
+                
+              PATCH_SUCCESS=false  
+              break  
+            fi
+          done
+
+          # Stop further patching if any instance failed
+          if [[ "$PATCH_SUCCESS" == "false" ]]; then
+            echo "Instances $INSTANCE_ID ($INSTANCE_PRIVATE_IP) failed the patching process. Exiting workflow."
+            exit 1
+          fi
           
+      - name: Set Auto Scaling Group to 2-2
+        run: |
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+            --min-size 2 
+
+      - name: Check URL Status Code
+        id: check_status
+        run: |
+          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}/status")
+          echo "URL Status Code: $STATUS_CODE"
+          if [[ "$STATUS_CODE" -eq 200 ]]; then
+            echo "URL is up and running with status code 200"
+            echo "status_code=200" >> $GITHUB_ENV
+          else
+            echo "Error: URL did not return status code 200. Status Code: $STATUS_CODE"
+            echo "status_code=$STATUS_CODE" >> $GITHUB_ENV
+            
+            aws sns publish \
+              --topic-arn ${{ env.SNS_TOPIC }} \
+              --subject "${{ github.event.inputs.environment }} App Down Alert - Status Code: $STATUS_CODE" \
+              --message "The app at ${{ env.URL }} is down. Status code: $STATUS_CODE. Please investigate."
+            exit 3
+
+          fi
+         
+      - name: Send post-patching notification via SNS
+        if: env.status_code == '200'
+        run: |
+          aws sns publish \
+            --topic-arn ${{ env.SNS_TOPIC }} \
+            --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
+            --message "${{ env.BODY_PREFIX }} The patching has been completed successfully, check URL: ${{ env.URL }}. Please reach out v3atlassianops@vitechinc.com for any issues."          
     
