@@ -1,0 +1,91 @@
+name: Confluence Server Patching
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        required: true
+        description: 'The environment to patch (confluence or confluencedr)'   
+      KEY:
+        required: true
+        description: Authentication Key for Confluence
+
+jobs:
+  Confluence-Patching:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write       
+
+    steps:
+      - name: Set environment-specific variables
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "confluencedr" ]; then
+            echo "Using confluencedr configuration"
+            echo "ASG_NAME=CONFLUENCEAWSDR-ConfluenceAWSPRODDScalingGroup-q2PbT1TX3oOj" >> $GITHUB_ENV
+            echo "URL=https://confluencedr.vitechinc.com/confluencedr" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Restart of ConfluenceDR Nodes for Scheduled Patching" >> $GITHUB_ENV
+            echo "BODY_PREFIX=ConfluenceDR patching is scheduled." >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.environment }}" == "confluence" ]; then
+                   if [ "${{ inputs.KEY }}" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
+                      echo "The KEY does not match the expected secret for confluence environment."
+                      exit 1
+                   fi
+            echo "Using confluence configuration"
+            echo "ASG_NAME=CONFLUENCEPROD-ConfluenceAWSPRODDScalingGroup-zAmOVDq6H2v8" >> $GITHUB_ENV
+            echo "URL=https://confluence.vitechinc.com/confluence" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Restart of Confluence Nodes for Scheduled Patching" >> $GITHUB_ENV
+            echo "BODY_PREFIX=Confluence patching is scheduled." >> $GITHUB_ENV  
+          else
+            echo "Invalid environment specified. Please choose either 'ConfluenceDR', or 'Confluence'."
+            exit 1
+          fi
+
+      - name: Set AWS region
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "confluence" ]; then
+            echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
+          else
+            echo "AWS_REGION=us-west-2" >> $GITHUB_ENV
+          fi
+          
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}  
+
+      - name: Send pre-patching notification via SNS
+        run: |
+          aws sns publish \
+            --topic-arn ${{ env.SNS_TOPIC }} \
+            --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
+            --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process."
+
+      - name: Get Auto Scaling Group Instances
+        id: get-instances
+        run: |
+          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+            --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
+            --output text | tr -s '\n' ' ')
+          echo "INSTANCE_IDS=$INSTANCE_IDS" >> $GITHUB_ENV
+          echo "Instance IDs: $INSTANCE_IDS"
+      
+          if [[ -z "$INSTANCE_IDS" ]]; then
+            echo "Error: No instances found in the Auto Scaling Group. Exiting."
+            exit 1
+          fi
+
+      - name: Set Auto Scaling Group to 1 instances 
+        run: |
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+            --min-size 1 
+            
+
+          
+    
