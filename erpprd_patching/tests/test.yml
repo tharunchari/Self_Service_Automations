@@ -1,0 +1,79 @@
+---
+- hosts: APP01-ERPPRD
+  remote_user: root
+  any_errors_fatal: true
+  max_fail_percentage: 0
+  vars:
+    app_hostname: VITECH-APP01-ERPPRD-TOM9
+    app_ip: 172.26.52.188
+    erpprd_path: erpprd
+  tasks:
+    - name: Load role variables
+      include_vars: ../vars/main.yml
+ 
+    - name: Send Initialization Email
+      import_tasks: ../tasks/initial_email.yml
+      delegate_to: localhost
+      run_once: true
+ 
+    - name: Execute shutdown task
+      import_tasks: ../tasks/shutdown.yml
+ 
+    - name: Execute snapshot task
+      import_tasks: ../tasks/snapshot.yml
+      delegate_to: localhost
+      run_once: true
+ 
+    - name: Execute yum_reboot task
+      import_tasks: ../tasks/yum_reboot.yml
+ 
+    - name: Execute tomcat_patching task
+      import_tasks: ../tasks/tomcat_patching.yml
+ 
+    - name: Execute start_application task
+      import_tasks: ../tasks/start_applcation.yml
+ 
+    - name: Send Final Email Notification
+      import_tasks: ../tasks/final_email.yml
+      delegate_to: localhost
+      run_once: true
+
+
+- hosts: APP02-ERPPRD
+  remote_user: root
+  any_errors_fatal: true
+  max_fail_percentage: 0
+  vars:
+    app_hostname: VITECH-APP02-ERPPRD-TOM9
+    app_ip: 172.26.52.189
+    erpprd_path: erpprd
+  tasks:
+    - name: Load role variables
+      include_vars: ../vars/main.yml
+ 
+    - name: Send Initialization Email
+      import_tasks: ../tasks/initial_email.yml
+      delegate_to: localhost
+      run_once: true
+ 
+    - name: Execute shutdown task
+      import_tasks: ../tasks/shutdown.yml
+ 
+    - name: Execute snapshot task
+      import_tasks: ../tasks/snapshot.yml
+      delegate_to: localhost
+      run_once: true
+ 
+    - name: Execute yum_reboot task
+      import_tasks: ../tasks/yum_reboot.yml
+ 
+    - name: Execute tomcat_patching task
+      import_tasks: ../tasks/tomcat_patching.yml
+ 
+    - name: Execute start_application task
+      import_tasks: ../tasks/start_applcation.yml
+ 
+    - name: Send Final Email Notification
+      import_tasks: ../tasks/final_email.yml
+      delegate_to: localhost
+      run_once: true

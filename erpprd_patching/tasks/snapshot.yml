@@ -1,0 +1,27 @@
+---
+# tasks file
+- name: Generate timestamp
+  set_fact:
+    timestamp_1: "{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M-%S') }}"
+
+- name: snapshots for XAND DATACENTER......
+  vmware_guest_snapshot:
+    validate_certs: no
+    hostname: "172.26.44.50"
+    username: "{{ vcusername }}@vitechinc.com"
+    password: "{{ vcpassword }}"
+    datacenter: "XAND"
+    folder: "/XAND/"
+    name: "{{ app_hostname }}"
+    state: present
+    snapshot_name: "opsbackup_{{ timestamp_1 }}"
+  register: out
+#  delegate_to: localhost
+#  ignore_errors: true
+
+- debug:
+    var: out
+
+- name: wait for 20 seconds
+  shell: sleep 20
+

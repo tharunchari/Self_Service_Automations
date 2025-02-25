@@ -1,0 +1,19 @@
+---
+# tasks file for erpprd service down
+- name: Get Java process ID
+  ansible.builtin.shell: "ps -ef | grep java | grep -v grep | awk '{print $2}'"
+  register: java_process
+  changed_when: false
+  become_user: tomcat
+  become: true
+
+ 
+- name: Kill the Java process to stop the service
+  ansible.builtin.shell: "kill -9 {{ java_process.stdout }}"
+  when: 
+    - java_process.stdout | length > 0
+  become_user: tomcat
+  become: true
+
+- name: wait for 10 seconds
+  shell: sleep 10

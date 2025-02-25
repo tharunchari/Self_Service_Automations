@@ -1,0 +1,25 @@
+---
+# tasks
+- name: Start Apache Tomcat with correct JAVA_HOME
+  ansible.builtin.shell: |
+    export JAVA_HOME=/opt/amazon-corretto-8
+    export PATH=$JAVA_HOME/bin:$PATH
+    cd /opt/erp_dryrun/apache-tomcat-9.0/bin
+    ./startup.sh
+  register: tomcat_start
+  become: yes
+  become_user: tomcat
+ 
+- name: Debug Tomcat startup output
+  ansible.builtin.debug:
+    var: tomcat_start
+ 
+- name: Check if Tomcat is running
+  ansible.builtin.shell: "ps -ef | grep java"
+  register: tomcat_status
+  ignore_errors: yes
+  become: yes
+
+- name: Debug Tomcat process status
+  ansible.builtin.debug:
+    var: tomcat_status

@@ -1,0 +1,21 @@
+---
+# tasks
+- name: Upgrade all packages (Ubuntu)
+  ansible.builtin.apt:
+    upgrade: dist
+    update_cache: yes
+  when: ansible_facts['os_family'] == "Debian"
+  async: 3600
+  poll: 10
+ 
+- name: Reboot the machine
+  ansible.builtin.reboot:
+    reboot_timeout: 300  # Reduced to 5 minutes
+ 
+- name: Perform post-reboot checks
+  ansible.builtin.shell: "uptime"
+  register: system_uptime
+ 
+- name: Print system uptime
+  ansible.builtin.debug:
+    msg: "System uptime: {{ system_uptime.stdout }}"

@@ -1,0 +1,179 @@
+---
+# tasks
+- name: Generate timestamp
+  set_fact:
+    timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M-%S') }}"
+
+- name: Ensure tomcat user owns /opt directory
+  ansible.builtin.file:
+    path: /opt
+    state: directory
+    owner: tomcat
+    group: tomcat
+    mode: '0755'
+ 
+- name: Backup current Tomcat directory
+  ansible.builtin.command: mv /opt/{{ erpprd_path }} /opt/{{ erpprd_path }}_backup_{{ timestamp }}
+  become_user: tomcat
+ 
+- name: Download Apache Tomcat {{ tomcat_version }}
+  ansible.builtin.get_url:
+    url: https://downloads.apache.org/tomcat/tomcat-9/v{{ tomcat_version }}/bin/apache-tomcat-{{ tomcat_version }}.tar.gz
+    dest: /opt/apache-tomcat-{{ tomcat_version }}.tar.gz
+    mode: '0644'
+  become_user: tomcat
+ 
+- name: Create new Tomcat directory
+  ansible.builtin.file:
+    path: /opt/{{ erpprd_path }}/apache-tomcat-9.0
+    state: directory
+    owner: tomcat
+    group: tomcat
+    mode: '0755'
+ 
+- name: Extract Apache Tomcat {{ tomcat_version }}
+  ansible.builtin.unarchive:
+    src: /opt/apache-tomcat-{{ tomcat_version }}.tar.gz
+    dest: /opt/{{ erpprd_path }}/apache-tomcat-9.0
+    remote_src: true
+    extra_opts: [--strip-components=1]
+    owner: tomcat
+    group: tomcat
+  become_user: tomcat
+
+- name: Delete Current Amazon Corretto tar file
+  ansible.builtin.file:
+    path: /opt/amazon-corretto-8.tar.gz
+    state: absent
+
+- name: Download and extract Amazon Corretto 8
+  block:
+    - name: Download Amazon Corretto 8
+      ansible.builtin.get_url:
+        url: https://corretto.aws/downloads/latest/amazon-corretto-8-x64-linux-jdk.tar.gz
+        dest: /opt/amazon-corretto-8.tar.gz
+        mode: '0644'
+      become_user: tomcat
+ 
+    - name: Extract Amazon Corretto 8
+      ansible.builtin.unarchive:
+        src: /opt/amazon-corretto-8.tar.gz
+        dest: /opt
+        remote_src: true
+        owner: tomcat
+        group: tomcat
+ 
+    - name: Find the latest extracted Corretto folder
+      ansible.builtin.shell: "ls -d /opt/amazon-corretto-8.*-linux-x64/ | sort -V | tail -n 1"
+      register: corretto_folder
+      changed_when: false 
+
+    - name: Store Corretto folder name
+      ansible.builtin.set_fact:
+        corretto_home: "{{ corretto_folder.stdout | trim }}"
+ 
+  become: true
+
+- name: Print corretto_home
+  debug:
+    msg: "{{ corretto_home }}"
+
+- name: Copy JAR files from backup to new Tomcat lib directory
+  ansible.builtin.copy:
+    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/lib/{{ item }}"
+    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/lib/"
+    remote_src: true
+    owner: tomcat
+    group: tomcat
+    mode: '0644'
+  loop:
+    - ojdbc8.jar
+    - ucp.jar
+    - jms-1.1.jar
+    - axis-jaxrpc-1.3.jar
+    - aqapi-2.0.jar
+  become_user: tomcat
+
+- name: Backup erp_dryrun webapps
+  ansible.builtin.command: cp -r /opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/webapps/erp_dryrun /opt/{{ erpprd_path }}/apache-tomcat-9.0/webapps/
+  become_user: tomcat
+
+- name: copy erp_dryrun.war from weapps
+  ansible.builtin.command: cp -r /opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/webapps/erp_dryrun.war /opt/{{ erpprd_path }}/apache-tomcat-9.0/webapps/
+  become_user: tomcat
+
+- name: Keep backup of new files (catalina.sh, startup.sh, stopdown.sh, server.xml and context.xml)
+  shell: |   
+    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/catalina.sh /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/catalina.sh_backup_{{ timestamp }}
+    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/startup.sh /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/startup.sh_backup_{{ timestamp }}
+    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/shutdown.sh /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/shutdown.sh_backup_{{ timestamp }}
+    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/server.xml /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/server.xml_backup_{{ timestamp }}
+    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/context.xml /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/context.xml_backup_{{ timestamp }}
+
+- name: Replace catalina.sh from backup to new Tomcat installation
+  ansible.builtin.copy:
+    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/bin/catalina.sh"
+    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/catalina.sh"
+    owner: tomcat
+    group: tomcat
+    mode: preserve
+    remote_src: yes
+  become_user: tomcat
+
+- name: Replace startup.sh from backup to new Tomcat installation
+  ansible.builtin.copy:
+    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/bin/startup.sh"
+    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/startup.sh"
+    owner: tomcat
+    group: tomcat
+    mode: preserve
+    remote_src: yes
+  become_user: tomcat
+
+- name: Replace shutdown.sh from backup to new Tomcat installation
+  ansible.builtin.copy:
+    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/bin/shutdown.sh"
+    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/shutdown.sh"
+    owner: tomcat
+    group: tomcat
+    mode: preserve
+    remote_src: yes
+  become_user: tomcat
+
+- name: Replace server.xnl from backup to new Tomcat installation
+  ansible.builtin.copy:
+    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/conf/server.xml"
+    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/server.xml"
+    owner: tomcat
+    group: tomcat
+    mode: preserve
+    remote_src: yes
+  become_user: tomcat
+
+- name: Replace context.xml from backup to new Tomcat installation
+  ansible.builtin.copy:
+    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/conf/context.xml"
+    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/context.xml"
+    owner: tomcat
+    group: tomcat
+    mode: preserve
+    remote_src: yes
+  become_user: tomcat
+
+- name: change owner to tomcat
+  shell: chown -R tomcat:tomcat /opt
+
+- name: Set environment variables for Tomcat user
+  ansible.builtin.lineinfile:
+    path: "/home/tomcat/.bash_profile"
+    line: "{{ item }}"
+    create: yes
+  with_items:
+    - 'export JAVA_HOME={{ corretto_home }}'
+    - 'export PATH=$JAVA_HOME/bin:$CATALINA_HOME/bin:$PATH'
+    - 'export CATALINA_HOME=/opt/{{ erpprd_path }}/apache-tomcat-9.0'
+  become_user: tomcat
+
+- name: wait for 30 seconds
+  shell: sleep 30
+

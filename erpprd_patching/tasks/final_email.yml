@@ -1,0 +1,11 @@
+---
+#Tasks
+- name: Send Email Notification - Patching Completed
+  ansible.builtin.shell: |
+    aws sns publish \
+      --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+      --message "$(echo -e "**Patching Completed** \n {{ app_hostname }} patching process is completed with Tomcat Version: {{ tomcat_version }} .\nIP Address: {{ app_ip }}\n\nTomcat Status: {{ tomcat_status.stdout }}")" \
+      --subject "Rolling Restart: {{ app_hostname }} Patching Completed"
+  args:
+    executable: /bin/bash
+  become: yes

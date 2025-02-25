@@ -1,0 +1,33 @@
+---
+# tasks file for erpprd_patching
+
+#- name: Send Email Notification
+#  import_tasks: initial_email.yml
+#  when: inventory_hostname == "localhost"
+
+#- name: Execute shutdown task
+#  import_tasks: shutdown.yml
+#  when: inventory_hostname != "localhost"
+ 
+#- name: Execute snapshot task
+#  import_tasks: snapshot.yml
+#  when: inventory_hostname == "localhost"
+
+#- name: Execute yum_reboot task
+#  import_tasks: yum_reboot.yml
+#  when: inventory_hostname != "localhost"
+
+#- name: Execute tomcat_patching task
+#  import_tasks: tomcat_patching.yml
+#  when: inventory_hostname != "localhost"
+
+#- name: Execute start_applcation task
+#  import_tasks: start_applcation.yml
+#  when: inventory_hostname != "localhost"
+
+#- name: Send final Email Notification
+#  import_tasks: final_email.yml
+#  when: inventory_hostname == "localhost"
+
+#- name: Send Email Notification
+#  import_tasks: test.yml

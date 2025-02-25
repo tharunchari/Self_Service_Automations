@@ -1,0 +1,16 @@
+---
+# tasks file for erpprd service down
+
+- name: Send Email Notification of Service Down
+  ansible.builtin.shell: |
+    aws sns publish \
+      --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+      --message "$(echo -e "Attention {{ app_hostname }} is Going Down for Patching:\nIP Address: {{ app_ip }}")" \
+      --subject "Rolling Restart: {{ app_hostname }} is Going Down for Patching"
+  ignore_errors: true
+  args:
+    executable: /bin/bash
+  become: yes
+
+- name: wait for 5 seconds
+  shell: sleep 5
