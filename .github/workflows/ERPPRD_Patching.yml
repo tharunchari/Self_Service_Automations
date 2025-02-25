@@ -20,6 +20,6 @@ env:
  
 jobs:
   start-runner:
-    uses: vitechsystems/Internal-Tools/.github/workflows/service_workflows/start_runner.yml@main
+    uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main
     secrets: inherit
  
