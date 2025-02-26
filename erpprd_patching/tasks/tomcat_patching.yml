@@ -163,15 +163,12 @@
 - name: change owner to tomcat
   shell: chown -R tomcat:tomcat /opt
 
-- name: Set environment variables for Tomcat user
+- name: Update JAVA_HOME in bash_profile
   ansible.builtin.lineinfile:
     path: "/home/tomcat/.bash_profile"
-    line: "{{ item }}"
+    regexp: '^export JAVA_HOME='
+    line: 'export JAVA_HOME={{ corretto_home }}'
     create: yes
-  with_items:
-    - 'export JAVA_HOME={{ corretto_home }}'
-    - 'export PATH=$JAVA_HOME/bin:$CATALINA_HOME/bin:$PATH'
-    - 'export CATALINA_HOME=/opt/{{ erpprd_path }}/apache-tomcat-9.0'
   become_user: tomcat
 
 - name: wait for 30 seconds
