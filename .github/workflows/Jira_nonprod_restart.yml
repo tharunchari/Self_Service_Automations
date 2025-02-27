@@ -1,0 +1,172 @@
+name: Jira NON-PROD Restart
+
+on:
+  workflow_dispatch:
+    inputs:
+      pluginKeys:
+        default: 'com.vitechinc.jira.hoursTracking,com.vitechinc.jira.defaultCommentSecurity,com.vitechinc.art.ArtJiraService'
+        required: true
+        description: 'Comma-separated plugin keys to disable'
+      environment:
+        required: true
+        description: 'The environment to patch (jiraupg or jiraqa)'  
+
+jobs:
+  Jira-Non-Pod-restart:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Set environment-specific variables
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "jiraupg" ]; then
+            echo "Using jiraupg configuration"
+            echo "ASG_NAME=JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" >> $GITHUB_ENV
+            echo "URL=https://jiraupg.vitechinc.com/jiraupg" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.JIRAUPG_ACCESS_TOKEN }}" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Restart of JiraUPG " >> $GITHUB_ENV
+            echo "BODY_PREFIX=JiraUPG Restart is scheduled." >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.environment }}" == "jiraqa" ]; then
+            echo "Using jiraqa configuration"
+            echo "ASG_NAME=JIRAQA-JiraQAADScalingGroup-YfhGsDer5pMj" >> $GITHUB_ENV
+            echo "URL=https://jiraqa.vitechinc.com/jiraqa" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.JIRAQA_ACCESS_TOKEN }}" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Restart of JiraQa " >> $GITHUB_ENV
+            echo "BODY_PREFIX=JiraQA Restart is scheduled." >> $GITHUB_ENV  
+          else
+            echo "Invalid environment specified. Please choose either 'jiraupg', or 'jiraqa'."
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Send pre-patching notification via SNS
+        run: |
+          aws sns publish \
+            --topic-arn ${{ env.SNS_TOPIC }} \
+            --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
+            --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process." 
+
+      - name: Disable Jira Plugins
+        run: |
+          PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
+          for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
+          do
+            echo "Disabling plugin: $PLUGIN_KEY"
+            curl --request PUT "${{ env.URL }}/rest/plugins/1.0/${PLUGIN_KEY}-key" \
+                 --header "Authorization: Bearer ${{ env.TOKEN }}" \
+                 --header "Content-Type: application/vnd.atl.plugins.plugin+json" \
+                 --data '{"enabled": false}'
+          done
+
+      - name: Get Auto Scaling Group Instances
+        id: get-instances
+        run: |
+          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+            --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
+            --output text | tr -s '\n' ' ')
+          echo "INSTANCE_IDS=$INSTANCE_IDS" >> $GITHUB_ENV
+          echo "Instance IDs: $INSTANCE_IDS"
+      
+          if [[ -z "$INSTANCE_IDS" ]]; then
+            echo "Error: No instances found in the Auto Scaling Group. Exiting."
+            exit 1
+          fi
+
+      - name: Restart Instances and Check Health
+        id: restart-instances
+        run: |
+          INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
+          for INSTANCE_ID in "${INSTANCE_IDS_ARRAY[@]}"; do
+            echo "Patching instance: $INSTANCE_ID"
+  
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Backup /etc/httpd/conf.d, then restart Jira and HTTPD services" \
+              --parameters 'commands=["sudo service jira restart"]'
+              
+            sleep 600
+  
+            # Check node status using the API
+            NODE_STATUS=$(curl -X GET \
+              -H "Authorization: Bearer ${{ env.TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
+  
+            # Get the private IP of the instance
+            INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances \
+              --instance-ids "$INSTANCE_ID" \
+              --query 'Reservations[].Instances[].PrivateIpAddress' \
+              --output text)
+  
+            echo "Private IP: $INSTANCE_PRIVATE_IP"
+            echo "NODE_STATUS: $NODE_STATUS"
+            
+            # Check if the instance is healthy (ACTIVE state)
+            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.[] | select(.nodeId == $ip and .state == "ACTIVE")')
+  
+            if [[ -n "$INSTANCE_ALIVE" ]]; then
+              echo "Instance $INSTANCE_ID is alive and healthy."
+            else
+              echo "Error: Instance $INSTANCE_ID is NOT healthy. Sending notification."
+    
+              aws sns publish \
+                --topic-arn ${{ env.SNS_TOPIC }} \
+                --subject "${{ env.SUBJECT_PREFIX }} Failed on Node $INSTANCE_PRIVATE_IP" \
+                --message "Restarting of instance $INSTANCE_ID ($INSTANCE_PRIVATE_IP) failed. Please investigate."
+  
+              exit 1  # Fail the workflow if any instance is not healthy
+            fi
+          done
+              
+      - name: Enable Jira Plugins
+        run: |
+          PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
+          for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
+          do
+            echo "Disabling plugin: $PLUGIN_KEY"
+            curl --request PUT "${{ env.URL }}/rest/plugins/1.0/${PLUGIN_KEY}-key" \
+                 --header "Authorization: Bearer ${{ env.TOKEN }}" \
+                 --header "Content-Type: application/vnd.atl.plugins.plugin+json" \
+                 --data '{"enabled": true}'
+          done
+
+      - name: Check URL Status Code
+        id: check_status
+        run: |
+          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}/status")
+          echo "URL Status Code: $STATUS_CODE"
+          if [[ "$STATUS_CODE" -eq 200 ]]; then
+            echo "URL is up and running with status code 200"
+            echo "status_code=200" >> $GITHUB_ENV
+          else
+            echo "Error: URL did not return status code 200. Status Code: $STATUS_CODE"
+            echo "status_code=$STATUS_CODE" >> $GITHUB_ENV
+            
+            aws sns publish \
+              --topic-arn ${{ env.SNS_TOPIC }} \
+              --subject "${{ github.event.inputs.environment }} App Down Alert - Status Code: $STATUS_CODE" \
+              --message "The app at ${{ env.URL }} is down. Status code: $STATUS_CODE. Please investigate."
+            exit 3
+
+          fi
+         
+      - name: Send post-patching notification via SNS
+        if: env.status_code == '200'
+        run: |
+          aws sns publish \
+            --topic-arn ${{ env.SNS_TOPIC }} \
+            --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
+            --message "${{ env.BODY_PREFIX }} The Restarting has been completed successfully, check URL: ${{ env.URL }}. Please reach out v3atlassianops@vitechinc.com for any issues."           
+              
