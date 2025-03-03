@@ -2,8 +2,6 @@
 # tasks
 - name: Start Apache Tomcat with correct JAVA_HOME
   ansible.builtin.shell: |
-    export JAVA_HOME=/opt/amazon-corretto-8
-    export PATH=$JAVA_HOME/bin:$PATH
     cd /opt/erp_dryrun/apache-tomcat-9.0/bin
     ./startup.sh
   register: tomcat_start
