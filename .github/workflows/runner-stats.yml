@@ -1,7 +1,10 @@
 name: Runner Stats Collection
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch: # Manually triggered
+  # Uncomment below to trigger on a schedule (e.g., every day at midnight)
+  # schedule:
+  #   - cron: "0 0 * * *"  # Runs every day at midnight UTC
 
 jobs:
   get-runner-stats:
@@ -21,7 +24,7 @@ jobs:
 
       - name: Create Python script to collect runner stats
         run: |
-          echo '
+          cat <<EOF > runner_stats.py
           import requests
           import os
           
@@ -139,7 +142,7 @@ jobs:
           
           # Collect stats and print results
           collect_stats()
-          ' > runner_stats.py
+          EOF
           
                 - name: Run Python script to collect runner stats
                   env:
