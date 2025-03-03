@@ -74,7 +74,6 @@ jobs:
           END_DATE: ${{ github.event.inputs.end_date }}
         run: |
           set -o errexit  # Exit immediately if a command fails
-          # Output file with timestamp
           output_file="runner_stats_output_$(date +%Y%m%d%H%M%S).txt"
           echo "Runner Stats Collection Report" > $output_file
           echo "===============================" >> $output_file
@@ -88,22 +87,13 @@ jobs:
           echo "Start Date: $start_date_formatted" >> $output_file
           echo "End Date: $end_date_formatted" >> $output_file
 
-          # Debugging: Ensure we can print out the formatted date
-          echo "Start Date: $start_date_formatted"
-          echo "End Date: $end_date_formatted"
-
           # Function to fetch repos for an org
           fetch_repos() {
             local org=$1
             local token=$2
             repos_url="https://api.github.com/orgs/$org/repos"
             response=$(curl -s -H "Authorization: token $token" "$repos_url")
-            if [[ $? -ne 0 ]]; then
-              echo "Error: curl command failed for $repos_url." >> $output_file
-              return 1
-            fi
-            echo "Response from $repos_url: $response" >> $output_file
-            if [[ $(echo "$response" | jq 'type') != '"array"' ]]; then
+            if [[ $? -ne 0 || $(echo "$response" | jq 'type') != '"array"' ]]; then
               echo "Error: Unable to fetch repositories for $org. Response: $response" >> $output_file
               return 1
             fi
@@ -117,12 +107,7 @@ jobs:
             local token=$3
             runners_url="https://api.github.com/repos/$org/$repo/actions/runners"
             response=$(curl -s -H "Authorization: token $token" "$runners_url")
-            if [[ $? -ne 0 ]]; then
-              echo "Error: curl command failed for $runners_url." >> $output_file
-              return 1
-            fi
-            echo "Response from $runners_url: $response" >> $output_file
-            if [[ $(echo "$response" | jq 'type') != '"object"' ]]; then
+            if [[ $? -ne 0 || $(echo "$response" | jq 'type') != '"object"' ]]; then
               echo "Error: Invalid JSON response for $runners_url. Response: $response" >> $output_file
               return 1
             fi
@@ -140,27 +125,16 @@ jobs:
             while : ; do
               runs_url="https://api.github.com/repos/$org/$repo/actions/runs?page=$page&per_page=100"
               data=$(curl -s -H "Authorization: token $token" "$runs_url")
-              if [[ $? -ne 0 ]]; then
-                echo "Error: curl command failed for $runs_url." >> $output_file
-                return 1
-              fi
-              echo "Response from $runs_url: $data" >> $output_file
-
-              if [[ "$data" == "null" || -z "$data" || $(echo "$data" | jq -r '.workflow_runs | length') == "0" ]]; then
+              if [[ $? -ne 0 || "$data" == "null" || -z "$data" || $(echo "$data" | jq -r '.workflow_runs | length') == "0" ]]; then
                 break
               fi
 
-              # Loop through all runs in the page
               echo "$data" | jq -r '.workflow_runs[] | .created_at, .run_duration_ms' | while read -r run_date; do
                 read -r run_duration
-                echo "Run Date: $run_date, Duration: $run_duration ms" >> $output_file
-
-                # Compare the run date with the date range
-                if [[ "$run_date" > "$start_date_formatted"T* && "$run_date" < "$end_date_formatted"T* ]]; then
-                  if [[ "$run_duration" -gt 0 ]]; then
-                    total_runtime=$((total_runtime + run_duration))
-                    total_runs=$((total_runs + 1))
-                  fi
+                run_date_ts=$(date -d "$run_date" +%s)
+                if [[ "$run_date_ts" -ge "$start_date_ts" && "$run_date_ts" -le "$end_date_ts" && "$run_duration" -gt 0 ]]; then
+                  total_runtime=$((total_runtime + run_duration))
+                  total_runs=$((total_runs + 1))
                 fi
               done
               page=$((page + 1))
@@ -170,11 +144,17 @@ jobs:
 
           # Main loop through organizations and repositories
           total_overall_runtime=0
+          orgs=("org1" "org2")  # Example orgs, replace with actual orgs
+          tokens=(
+            ["org1"]="${{ secrets.PROD_FINE_GRAINED_PAT }}"
+            ["org2"]="${{ secrets.QA_FINE_GRAINED_PAT }}"
+          )
+
           for org in "${orgs[@]}"; do
             echo "Processing organization: $org" >> $output_file
             token="${tokens[$org]}"
             repos=$(fetch_repos "$org" "$token")
-            if [[ $? -ne 0 ]]; then
+            if [[ $? -ne 0 || -z "$repos" ]]; then
               echo "Error fetching repositories for $org. Skipping organization." >> $output_file
               continue
             fi
@@ -192,7 +172,7 @@ jobs:
               total_runners=$((total_runners + runners))
 
               # Get workflow run details for the repo
-              read total_runs repo_runtime <<<$(fetch_runs "$org" "$repo" "$token")
+              read total_runs repo_runtime <<<$(fetch_runs "$org" "$repo" "$token"))
               if [[ $? -ne 0 ]]; then
                 echo "Error fetching runs for $repo. Skipping repo." >> $output_file
                 continue
@@ -202,12 +182,8 @@ jobs:
               total_repos=$((total_repos + 1))
             done
 
-            # Convert total runtime into hours, minutes, seconds
             echo "$org: Total Repositories: $total_repos, Total Runners: $total_runners" >> $output_file
-            echo "$org: Total Repositories: $total_repos, Total Runners: $total_runners"
             echo "  Total Runtime: $(convert_time $total_runtime)" >> $output_file
-            echo "  Total Runtime: $(convert_time $total_runtime)"
-            echo "" >> $output_file
           done
 
       - name: Upload the output file as an artifact
