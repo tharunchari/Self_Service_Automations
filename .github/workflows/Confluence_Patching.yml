@@ -149,8 +149,7 @@ jobs:
             echo "Private IP: $INSTANCE_PRIVATE_IP"
             echo "NODE_STATUS: $NODE_STATUS"
             
-            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.[] | select(.nodeId == $ipAddress and .state == "ACTIVE")')
-
+            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.nodes[] | select(.ipAddress == $ip and .state == "ACTIVE")')
             if [[ -n "$INSTANCE_ALIVE" ]]; then
               echo "Instance $INSTANCE_ID is alive and healthy."
             else
