@@ -152,6 +152,7 @@ jobs:
             INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.nodes[] | select(.ipAddress == $ip and .state == "ACTIVE")')
             if [[ -n "$INSTANCE_ALIVE" ]]; then
               echo "Instance $INSTANCE_ID is alive and healthy."
+              echo "========================================================="
             else
               echo "Error: Instance $INSTANCE_ID is NOT healthy. Sending notification."  
               aws sns publish \
