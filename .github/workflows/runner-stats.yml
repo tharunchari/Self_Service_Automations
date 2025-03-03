@@ -100,6 +100,7 @@ jobs:
               echo "Error: curl command failed for $repos_url." >> $output_file
               return 1
             fi
+            echo "Fetched repositories for $org: $response" >> $output_file  # Debug
             if [[ $(echo "$response" | jq 'type') != '"array"' ]]; then
               echo "Error: Unable to fetch repositories for $org. Response: $response" >> $output_file
               return 1
@@ -118,6 +119,7 @@ jobs:
               echo "Error: curl command failed for $runners_url." >> $output_file
               return 1
             fi
+            echo "Fetched runners for $org/$repo: $response" >> $output_file  # Debug
             if [[ $(echo "$response" | jq 'type') != '"object"' ]]; then
               echo "Error: Invalid JSON response for $runners_url. Response: $response" >> $output_file
               return 1
@@ -152,7 +154,7 @@ jobs:
               echo "$data" | jq -r '.workflow_runs[] | .created_at, .run_duration_ms' | while read -r run_date; do
                 read -r run_duration
                 # Debug: Output the raw run data
-                echo "Run Date: $run_date, Duration: $run_duration ms"
+                echo "Run Date: $run_date, Duration: $run_duration ms" >> $output_file
 
                 # Compare the run date with the date range
                 if [[ "$run_date" > "$start_date_formatted"T* && "$run_date" < "$end_date_formatted"T* ]]; then
@@ -181,32 +183,32 @@ jobs:
           # Main loop through organizations and repositories
           total_overall_runtime=0
           for org in "${orgs[@]}"; do
-            echo "Processing organization: $org"
             echo "Processing organization: $org" >> $output_file
+            echo "Processing organization: $org"
             token="${tokens[$org]}"
             repos=$(fetch_repos "$org" "$token")
             total_runners=0
             total_runtime=0
             total_repos=0
             for repo in $repos; do
-              echo "  Checking repo: $repo"
               echo "  Checking repo: $repo" >> $output_file
+              echo "  Checking repo: $repo"
               runners=$(fetch_runners "$org" "$repo" "$token")
               total_runners=$((total_runners + runners))
 
               # Get workflow run details for the repo
               read total_runs repo_runtime <<<$(fetch_runs "$org" "$repo" "$token")
               total_runtime=$((total_runtime + repo_runtime))
-              echo "    $repo: $total_runs runs, $(convert_time $repo_runtime) runtime"
               echo "    $repo: $total_runs runs, $(convert_time $repo_runtime) runtime" >> $output_file
+              echo "    $repo: $total_runs runs, $(convert_time $repo_runtime) runtime"
               total_repos=$((total_repos + 1))
             done
 
             # Convert total runtime into hours, minutes, seconds
-            echo "$org: Total Repositories: $total_repos, Total Runners: $total_runners"
             echo "$org: Total Repositories: $total_repos, Total Runners: $total_runners" >> $output_file
-            echo "  Total Runtime: $(convert_time $total_runtime)"
+            echo "$org: Total Repositories: $total_repos, Total Runners: $total_runners"
             echo "  Total Runtime: $(convert_time $total_runtime)" >> $output_file
+            echo "  Total Runtime: $(convert_time $total_runtime)"
             echo "" >> $output_file
           done
 
