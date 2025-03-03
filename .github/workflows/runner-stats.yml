@@ -202,7 +202,6 @@ jobs:
               fi
               total_runtime=$((total_runtime + repo_runtime))
               echo "    $repo: $total_runs runs, $(convert_time $repo_runtime) runtime" >> $output_file
-              echo "    $repo: $total_runs runs, $(convert_time $repo_runtime) runtime"
               total_repos=$((total_repos + 1))
             done
 
