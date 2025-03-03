@@ -1,7 +1,16 @@
 name: Runner Stats Collection
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start Date (DD/MM/YYYY)'
+        required: true
+        default: '01/01/2025'
+      end_date:
+        description: 'End Date (DD/MM/YYYY)'
+        required: true
+        default: '01/02/2025'
 
 jobs:
   get-runner-stats:
@@ -20,14 +29,21 @@ jobs:
           VITECHSYSTEMS_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
           VITECHQA_TOKEN: ${{ secrets.QA_FINE_GRAINED_PAT }}
           VITECHINFRA_TOKEN: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
+          START_DATE: ${{ github.event.inputs.start_date }}
+          END_DATE: ${{ github.event.inputs.end_date }}
         run: |
           #!/bin/bash
 
           # Output file
-          output_file="runner_stats_output.txt"
+          output_file="runner_stats_output_$(date +%Y%m%d%H%M%S).txt"
           echo "Runner Stats Collection Report" > $output_file
           echo "===============================" >> $output_file
+          echo "Date Range: $START_DATE to $END_DATE" >> $output_file
           echo "" >> $output_file
+
+          # Convert date from DD/MM/YYYY to YYYY-MM-DD format for GitHub API
+          start_date_formatted=$(date -d "$(echo $START_DATE | sed 's/\//-/g')" +%Y-%m-%d)
+          end_date_formatted=$(date -d "$(echo $END_DATE | sed 's/\//-/g')" +%Y-%m-%d)
 
           # Define organizations and their tokens
           orgs=("vitechsystems" "VitechQA" "VitechInfra")
@@ -79,10 +95,15 @@ jobs:
               if [[ "$data" == "null" ]]; then
                 break
               fi
+              run_date=$(echo "$data" | jq -r '.created_at')
               run_duration=$(echo "$data" | jq -r '.run_duration_ms // 0')
-              if [[ "$run_duration" -gt 0 ]]; then
-                total_runtime=$((total_runtime + run_duration))
-                total_runs=$((total_runs + 1))
+
+              # Filter by date range (if run_date is between start_date_formatted and end_date_formatted)
+              if [[ "$run_date" > "$start_date_formatted" && "$run_date" < "$end_date_formatted" ]]; then
+                if [[ "$run_duration" -gt 0 ]]; then
+                  total_runtime=$((total_runtime + run_duration))
+                  total_runs=$((total_runs + 1))
+                fi
               fi
               page=$((page + 1))
             done
@@ -134,4 +155,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: runner-stats-output
-          path: runner_stats_output.txt
+          path: runner_stats_output_$(date +%Y%m%d%H%M%S).txt
