@@ -19,34 +19,32 @@ jobs:
         run: |
           pip install requests
 
-      - name: Run Python script to collect runner stats
-        env:
-          VITECHSYSTEMS_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-          VITECHQA_TOKEN: ${{ secrets.QA_FINE_GRAINED_PAT }}
-          VITECHINFRA_TOKEN: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
+      - name: Create Python script to collect runner stats
         run: |
-          python -c "
+          echo '
           import requests
           import os
-
-          orgs = ['vitechsystems', 'VitechQA', 'VitechInfra']
+          
+          # Define your organizations and corresponding tokens
+          orgs = ["vitechsystems", "VitechQA", "VitechInfra"]
           tokens = {
-              'vitechsystems': os.getenv('VITECHSYSTEMS_TOKEN'),
-              'VitechQA': os.getenv('VITECHQA_TOKEN'),
-              'VitechInfra': os.getenv('VITECHINFRA_TOKEN'),
+              "vitechsystems": os.getenv("VITECHSYSTEMS_TOKEN"),
+              "VitechQA": os.getenv("VITECHQA_TOKEN"),
+              "VitechInfra": os.getenv("VITECHINFRA_TOKEN"),
           }
           
-          repos_url = 'https://api.github.com/orgs/{org}/repos'
-          runs_url = 'https://api.github.com/repos/{org}/{repo}/actions/runs'
-          runners_url = 'https://api.github.com/repos/{org}/{repo}/actions/runners'
+          # GitHub API endpoint templates
+          repos_url = "https://api.github.com/orgs/{org}/repos"
+          runs_url = "https://api.github.com/repos/{org}/{repo}/actions/runs"
+          runners_url = "https://api.github.com/repos/{org}/{repo}/actions/runners"
           
           # Function to fetch all repositories of an organization
           def fetch_repos(org, token):
               page = 1
               repos = []
-              headers = {'Authorization': f'token {token}'}
+              headers = {"Authorization": f"token {token}"}
               while True:
-                  response = requests.get(f'{repos_url.format(org=org)}?page={page}&per_page=100', headers=headers)
+                  response = requests.get(f"{repos_url.format(org=org)}?page={page}&per_page=100", headers=headers)
                   data = response.json()
                   if not data:
                       break
@@ -57,10 +55,10 @@ jobs:
           # Function to fetch the runners for a repository
           def fetch_runners(org, repo, token):
               runners = []
-              headers = {'Authorization': f'token {token}'}
-              response = requests.get(f'{runners_url.format(org=org, repo=repo)}', headers=headers)
+              headers = {"Authorization": f"token {token}"}
+              response = requests.get(f"{runners_url.format(org=org, repo=repo)}", headers=headers)
               if response.status_code == 200:
-                  runners = response.json().get('total_count', 0)
+                  runners = response.json().get("total_count", 0)
               return runners
           
           # Function to fetch all workflow runs for a repository
@@ -68,15 +66,15 @@ jobs:
               page = 1
               total_runtime = 0
               total_runs = 0
-              headers = {'Authorization': f'token {token}'}
+              headers = {"Authorization": f"token {token}"}
               while True:
-                  response = requests.get(f'{runs_url.format(org=org, repo=repo)}?page={page}&per_page=100', headers=headers)
+                  response = requests.get(f"{runs_url.format(org=org, repo=repo)}?page={page}&per_page=100", headers=headers)
                   data = response.json()
-                  if not data.get('workflow_runs'):
+                  if not data.get("workflow_runs"):
                       break
-                  for run in data['workflow_runs']:
-                      if run['status'] == 'completed' and 'run_duration_ms' in run:
-                          total_runtime += run['run_duration_ms']
+                  for run in data["workflow_runs"]:
+                      if run["status"] == "completed" and "run_duration_ms" in run:
+                          total_runtime += run["run_duration_ms"]
                           total_runs += 1
                   page += 1
               return total_runs, total_runtime
@@ -110,7 +108,7 @@ jobs:
                   total_repos = len(repos)
           
                   for repo in repos:
-                      repo_name = repo['name']
+                      repo_name = repo["name"]
                       print(f"  Checking repo: {repo_name}")
           
                       # Fetch runners
@@ -141,4 +139,13 @@ jobs:
           
           # Collect stats and print results
           collect_stats()
-          "
+          ' > runner_stats.py
+          
+                - name: Run Python script to collect runner stats
+                  env:
+                    # Using different tokens for each organization
+                    VITECHSYSTEMS_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+                    VITECHQA_TOKEN: ${{ secrets.QA_FINE_GRAINED_PAT }}
+                    VITECHINFRA_TOKEN: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
+                  run: |
+                    python runner_stats.py
