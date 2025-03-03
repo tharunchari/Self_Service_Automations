@@ -1,0 +1,144 @@
+name: Runner Stats Collection
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  get-runner-stats:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install required libraries
+        run: |
+          pip install requests
+
+      - name: Run Python script to collect runner stats
+        env:
+          VITECHSYSTEMS_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          VITECHQA_TOKEN: ${{ secrets.QA_FINE_GRAINED_PAT }}
+          VITECHINFRA_TOKEN: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
+        run: |
+          python -c "
+          import requests
+          import os
+
+          orgs = ['vitechsystems', 'VitechQA', 'VitechInfra']
+          tokens = {
+              'vitechsystems': os.getenv('VITECHSYSTEMS_TOKEN'),
+              'VitechQA': os.getenv('VITECHQA_TOKEN'),
+              'VitechInfra': os.getenv('VITECHINFRA_TOKEN'),
+          }
+          
+          repos_url = 'https://api.github.com/orgs/{org}/repos'
+          runs_url = 'https://api.github.com/repos/{org}/{repo}/actions/runs'
+          runners_url = 'https://api.github.com/repos/{org}/{repo}/actions/runners'
+          
+          # Function to fetch all repositories of an organization
+          def fetch_repos(org, token):
+              page = 1
+              repos = []
+              headers = {'Authorization': f'token {token}'}
+              while True:
+                  response = requests.get(f'{repos_url.format(org=org)}?page={page}&per_page=100', headers=headers)
+                  data = response.json()
+                  if not data:
+                      break
+                  repos.extend(data)
+                  page += 1
+              return repos
+          
+          # Function to fetch the runners for a repository
+          def fetch_runners(org, repo, token):
+              runners = []
+              headers = {'Authorization': f'token {token}'}
+              response = requests.get(f'{runners_url.format(org=org, repo=repo)}', headers=headers)
+              if response.status_code == 200:
+                  runners = response.json().get('total_count', 0)
+              return runners
+          
+          # Function to fetch all workflow runs for a repository
+          def fetch_runs(org, repo, token):
+              page = 1
+              total_runtime = 0
+              total_runs = 0
+              headers = {'Authorization': f'token {token}'}
+              while True:
+                  response = requests.get(f'{runs_url.format(org=org, repo=repo)}?page={page}&per_page=100', headers=headers)
+                  data = response.json()
+                  if not data.get('workflow_runs'):
+                      break
+                  for run in data['workflow_runs']:
+                      if run['status'] == 'completed' and 'run_duration_ms' in run:
+                          total_runtime += run['run_duration_ms']
+                          total_runs += 1
+                  page += 1
+              return total_runs, total_runtime
+          
+          # Convert time in milliseconds to seconds, minutes, and hours
+          def format_time(ms):
+              total_seconds = ms / 1000
+              hours = total_seconds // 3600
+              minutes = (total_seconds % 3600) // 60
+              seconds = total_seconds % 60
+              return hours, minutes, seconds
+          
+          # Main loop through organizations and repositories
+          def collect_stats():
+              total_runners_by_org = {}
+              total_time_by_org = {}
+          
+              for org in orgs:
+                  print(f"Processing organization: {org}")
+                  
+                  # Get the correct token for each organization
+                  token = tokens.get(org)
+                  
+                  if not token:
+                      print(f"Error: No token found for {org}")
+                      continue
+          
+                  repos = fetch_repos(org, token)
+                  total_runners = 0
+                  total_runtime = 0
+                  total_repos = len(repos)
+          
+                  for repo in repos:
+                      repo_name = repo['name']
+                      print(f"  Checking repo: {repo_name}")
+          
+                      # Fetch runners
+                      runners = fetch_runners(org, repo_name, token)
+                      total_runners += runners
+          
+                      # Fetch runs and aggregate runtime
+                      total_runs, repo_runtime = fetch_runs(org, repo_name, token)
+                      total_runtime += repo_runtime
+          
+                      print(f"    {repo_name}: {total_runs} runs, {repo_runtime / 1000} seconds runtime")
+          
+                  total_runners_by_org[org] = total_runners
+                  total_time_by_org[org] = total_runtime
+          
+                  # Convert total time into hours, minutes, seconds
+                  hours, minutes, seconds = format_time(total_runtime)
+          
+                  print(f"  {org}: Total Repositories: {total_repos}, Total Runners: {total_runners}")
+                  print(f"  Total Runtime: {total_runtime / 1000} seconds ({hours} hr {minutes} min {seconds} sec)\n")
+          
+              # Display final results
+              print("Summary:")
+              for org in orgs:
+                  total_runtime = total_time_by_org[org]
+                  hours, minutes, seconds = format_time(total_runtime)
+                  print(f"{org}: Total Runners: {total_runners_by_org[org]}, Total Runtime: {total_runtime / 1000} seconds ({hours} hr {minutes} min {seconds} sec)")
+          
+          # Collect stats and print results
+          collect_stats()
+          "
