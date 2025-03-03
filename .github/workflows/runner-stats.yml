@@ -1,11 +1,8 @@
 name: Runner Stats Collection
 
 on:
-  workflow_dispatch: # Manually triggered
-  # Uncomment below to trigger on a schedule (e.g., every day at midnight)
-  # schedule:
-  #   - cron: "0 0 * * *"  # Runs every day at midnight UTC
-
+  workflow_dispatch: 
+  
 jobs:
   get-runner-stats:
     runs-on: ubuntu-latest
@@ -13,142 +10,118 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v3
 
-      - name: Set up Python environment
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      - name: Install required libraries
+      - name: Set up Git and jq (for JSON processing)
         run: |
-          pip install requests
+          sudo apt-get update
+          sudo apt-get install -y jq
 
-      - name: Create Python script to collect runner stats
+      - name: Run shell script to collect runner stats
+        env:
+          VITECHSYSTEMS_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          VITECHQA_TOKEN: ${{ secrets.QA_FINE_GRAINED_PAT }}
+          VITECHINFRA_TOKEN: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
         run: |
-          cat <<EOF > runner_stats.py
-          import requests
-          import os
-          
-          # Define your organizations and corresponding tokens
-          orgs = ["vitechsystems", "VitechQA", "VitechInfra"]
-          tokens = {
-              "vitechsystems": os.getenv("VITECHSYSTEMS_TOKEN"),
-              "VitechQA": os.getenv("VITECHQA_TOKEN"),
-              "VitechInfra": os.getenv("VITECHINFRA_TOKEN"),
+          #!/bin/bash
+
+          # Output file
+          output_file="runner_stats_output.txt"
+          echo "Runner Stats Collection Report" > $output_file
+          echo "===============================" >> $output_file
+          echo "" >> $output_file
+
+          # Define organizations and their tokens
+          orgs=("vitechsystems" "VitechQA" "VitechInfra")
+          declare -A tokens
+          tokens["vitechsystems"]="${VITECHSYSTEMS_TOKEN}"
+          tokens["VitechQA"]="${VITECHQA_TOKEN}"
+          tokens["VitechInfra"]="${VITECHINFRA_TOKEN}"
+
+          # API endpoints
+          repos_url="https://api.github.com/orgs/{org}/repos"
+          runs_url="https://api.github.com/repos/{org}/{repo}/actions/runs"
+          runners_url="https://api.github.com/repos/{org}/{repo}/actions/runners"
+
+          # Function to fetch repos for an org
+          fetch_repos() {
+            local org=$1
+            local token=$2
+            curl -s -H "Authorization: token $token" "$repos_url" | jq -r '.[].name'
           }
-          
-          # GitHub API endpoint templates
-          repos_url = "https://api.github.com/orgs/{org}/repos"
-          runs_url = "https://api.github.com/repos/{org}/{repo}/actions/runs"
-          runners_url = "https://api.github.com/repos/{org}/{repo}/actions/runners"
-          
-          # Function to fetch all repositories of an organization
-          def fetch_repos(org, token):
-              page = 1
-              repos = []
-              headers = {"Authorization": f"token {token}"}
-              while True:
-                  response = requests.get(f"{repos_url.format(org=org)}?page={page}&per_page=100", headers=headers)
-                  data = response.json()
-                  if not data:
-                      break
-                  repos.extend(data)
-                  page += 1
-              return repos
-          
-          # Function to fetch the runners for a repository
-          def fetch_runners(org, repo, token):
-              runners = []
-              headers = {"Authorization": f"token {token}"}
-              response = requests.get(f"{runners_url.format(org=org, repo=repo)}", headers=headers)
-              if response.status_code == 200:
-                  runners = response.json().get("total_count", 0)
-              return runners
-          
-          # Function to fetch all workflow runs for a repository
-          def fetch_runs(org, repo, token):
-              page = 1
-              total_runtime = 0
-              total_runs = 0
-              headers = {"Authorization": f"token {token}"}
-              while True:
-                  response = requests.get(f"{runs_url.format(org=org, repo=repo)}?page={page}&per_page=100", headers=headers)
-                  data = response.json()
-                  if not data.get("workflow_runs"):
-                      break
-                  for run in data["workflow_runs"]:
-                      if run["status"] == "completed" and "run_duration_ms" in run:
-                          total_runtime += run["run_duration_ms"]
-                          total_runs += 1
-                  page += 1
-              return total_runs, total_runtime
-          
-          # Convert time in milliseconds to seconds, minutes, and hours
-          def format_time(ms):
-              total_seconds = ms / 1000
-              hours = total_seconds // 3600
-              minutes = (total_seconds % 3600) // 60
-              seconds = total_seconds % 60
-              return hours, minutes, seconds
-          
+
+          # Function to fetch runner count for a repo
+          fetch_runners() {
+            local org=$1
+            local repo=$2
+            local token=$3
+            curl -s -H "Authorization: token $token" "$runners_url" | jq '.total_count'
+          }
+
+          # Function to fetch workflow runs and calculate total runtime for a repo
+          fetch_runs() {
+            local org=$1
+            local repo=$2
+            local token=$3
+            local total_runs=0
+            local total_runtime=0
+            page=1
+            while : ; do
+              data=$(curl -s -H "Authorization: token $token" "$runs_url" | jq -r ".workflow_runs | .[$((page - 1))]")
+              if [[ "$data" == "null" ]]; then
+                break
+              fi
+              run_duration=$(echo "$data" | jq -r '.run_duration_ms // 0')
+              if [[ "$run_duration" -gt 0 ]]; then
+                total_runtime=$((total_runtime + run_duration))
+                total_runs=$((total_runs + 1))
+              fi
+              page=$((page + 1))
+            done
+            echo "$total_runs $total_runtime"
+          }
+
+          # Function to convert milliseconds to hours, minutes, seconds
+          convert_time() {
+            local ms=$1
+            local total_seconds=$((ms / 1000))
+            local hours=$((total_seconds / 3600))
+            local minutes=$(( (total_seconds % 3600) / 60 ))
+            local seconds=$((total_seconds % 60))
+            echo "$hours hr $minutes min $seconds sec"
+          }
+
           # Main loop through organizations and repositories
-          def collect_stats():
-              total_runners_by_org = {}
-              total_time_by_org = {}
-          
-              for org in orgs:
-                  print(f"Processing organization: {org}")
-                  
-                  # Get the correct token for each organization
-                  token = tokens.get(org)
-                  
-                  if not token:
-                      print(f"Error: No token found for {org}")
-                      continue
-          
-                  repos = fetch_repos(org, token)
-                  total_runners = 0
-                  total_runtime = 0
-                  total_repos = len(repos)
-          
-                  for repo in repos:
-                      repo_name = repo["name"]
-                      print(f"  Checking repo: {repo_name}")
-          
-                      # Fetch runners
-                      runners = fetch_runners(org, repo_name, token)
-                      total_runners += runners
-          
-                      # Fetch runs and aggregate runtime
-                      total_runs, repo_runtime = fetch_runs(org, repo_name, token)
-                      total_runtime += repo_runtime
-          
-                      print(f"    {repo_name}: {total_runs} runs, {repo_runtime / 1000} seconds runtime")
-          
-                  total_runners_by_org[org] = total_runners
-                  total_time_by_org[org] = total_runtime
-          
-                  # Convert total time into hours, minutes, seconds
-                  hours, minutes, seconds = format_time(total_runtime)
-          
-                  print(f"  {org}: Total Repositories: {total_repos}, Total Runners: {total_runners}")
-                  print(f"  Total Runtime: {total_runtime / 1000} seconds ({hours} hr {minutes} min {seconds} sec)\n")
-          
-              # Display final results
-              print("Summary:")
-              for org in orgs:
-                  total_runtime = total_time_by_org[org]
-                  hours, minutes, seconds = format_time(total_runtime)
-                  print(f"{org}: Total Runners: {total_runners_by_org[org]}, Total Runtime: {total_runtime / 1000} seconds ({hours} hr {minutes} min {seconds} sec)")
-          
-          # Collect stats and print results
-          collect_stats()
-          EOF
-          
-                - name: Run Python script to collect runner stats
-                  env:
-                    # Using different tokens for each organization
-                    VITECHSYSTEMS_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-                    VITECHQA_TOKEN: ${{ secrets.QA_FINE_GRAINED_PAT }}
-                    VITECHINFRA_TOKEN: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
-                  run: |
-                    python runner_stats.py
+          for org in "${orgs[@]}"; do
+            echo "Processing organization: $org"
+            echo "Processing organization: $org" >> $output_file
+            token="${tokens[$org]}"
+            repos=$(fetch_repos "$org" "$token")
+            total_runners=0
+            total_runtime=0
+            total_repos=0
+            for repo in $repos; do
+              echo "  Checking repo: $repo"
+              echo "  Checking repo: $repo" >> $output_file
+              runners=$(fetch_runners "$org" "$repo" "$token")
+              total_runners=$((total_runners + runners))
+
+              # Get workflow run details for the repo
+              read total_runs repo_runtime <<<$(fetch_runs "$org" "$repo" "$token")
+              total_runtime=$((total_runtime + repo_runtime))
+              echo "    $repo: $total_runs runs, $(convert_time $repo_runtime) runtime"
+              echo "    $repo: $total_runs runs, $(convert_time $repo_runtime) runtime" >> $output_file
+              total_repos=$((total_repos + 1))
+            done
+
+            # Convert total runtime into hours, minutes, seconds
+            echo "$org: Total Repositories: $total_repos, Total Runners: $total_runners"
+            echo "$org: Total Repositories: $total_repos, Total Runners: $total_runners" >> $output_file
+            echo "  Total Runtime: $(convert_time $total_runtime)"
+            echo "  Total Runtime: $(convert_time $total_runtime)" >> $output_file
+            echo "" >> $output_file
+          done
+
+      - name: Upload the output file as an artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: runner-stats-output
+          path: runner_stats_output.txt
