@@ -6,11 +6,11 @@ on:
       start_date:
         description: 'Start Date (DD/MM/YYYY)'
         required: true
-        default: '01/01/2023'
+        default: '01/02/2025'
       end_date:
         description: 'End Date (DD/MM/YYYY)'
         required: true
-        default: '31/12/2023'
+        default: '27/02/2025'
 
 jobs:
   get-runner-stats:
@@ -44,6 +44,10 @@ jobs:
           # Convert DD/MM/YYYY to YYYY-MM-DD format for GitHub API
           start_date_formatted=$(echo $START_DATE | awk -F'/' '{print $3"-"$2"-"$1}')
           end_date_formatted=$(echo $END_DATE | awk -F'/' '{print $3"-"$2"-"$1}')
+
+          # Debug: Output converted start and end dates
+          echo "Start Date: $start_date_formatted"
+          echo "End Date: $end_date_formatted"
 
           # Define organizations and their tokens
           orgs=("vitechsystems" "VitechQA" "VitechInfra")
@@ -91,20 +95,30 @@ jobs:
             page=1
             while : ; do
               runs_url="https://api.github.com/repos/$org/$repo/actions/runs?page=$page&per_page=100"
-              data=$(curl -s -H "Authorization: token $token" "$runs_url" | jq -r ".workflow_runs | .[$((page - 1))]")
-              if [[ "$data" == "null" ]]; then
+              data=$(curl -s -H "Authorization: token $token" "$runs_url")
+              
+              # Debug: Output the raw data for each page
+              echo "Fetched page $page of workflow runs data: $data" >> $output_file
+
+              if [[ "$data" == "null" || -z "$data" ]]; then
                 break
               fi
-              run_date=$(echo "$data" | jq -r '.created_at')
-              run_duration=$(echo "$data" | jq -r '.run_duration_ms // 0')
 
-              # Filter by date range (if run_date is between start_date_formatted and end_date_formatted)
-              if [[ "$run_date" > "$start_date_formatted" && "$run_date" < "$end_date_formatted" ]]; then
-                if [[ "$run_duration" -gt 0 ]]; then
-                  total_runtime=$((total_runtime + run_duration))
-                  total_runs=$((total_runs + 1))
+              # Loop through all runs in the page
+              echo "$data" | jq -r '.workflow_runs[] | .created_at, .run_duration_ms' | while read -r run_date; do
+                read -r run_duration
+                # Debug: Output the raw run data
+                echo "Run Date: $run_date, Duration: $run_duration ms"
+
+                # Compare the run date with the date range
+                if [[ "$run_date" > "$start_date_formatted"T* && "$run_date" < "$end_date_formatted"T* ]]; then
+                  # Increment total runtime if the run falls within the date range
+                  if [[ "$run_duration" -gt 0 ]]; then
+                    total_runtime=$((total_runtime + run_duration))
+                    total_runs=$((total_runs + 1))
+                  fi
                 fi
-              fi
+              done
               page=$((page + 1))
             done
             echo "$total_runs $total_runtime"
