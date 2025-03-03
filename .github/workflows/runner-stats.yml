@@ -28,18 +28,26 @@ jobs:
         run: |
           start_date="${{ github.event.inputs.start_date }}"
           end_date="${{ github.event.inputs.end_date }}"
-          
+
           # Validate date format DD/MM/YYYY
           if [[ ! "$start_date" =~ ^[0-9]{2}/[0-9]{2}/[0-9]{4}$ || ! "$end_date" =~ ^[0-9]{2}/[0-9]{2}/[0-9]{4}$ ]]; then
             echo "Error: Invalid date format. Please use DD/MM/YYYY."
             exit 1
           fi
 
-          # Convert to timestamps for comparison
-          start_date_ts=$(date -d "$start_date" +%s)
-          end_date_ts=$(date -d "$end_date" +%s)
+          # Convert to YYYY-MM-DD format for GitHub API
+          start_date_formatted=$(echo $start_date | awk -F'/' '{print $3"-"$2"-"$1}')
+          end_date_formatted=$(echo $end_date | awk -F'/' '{print $3"-"$2"-"$1}')
 
-          # Check if start date is before end date
+          # Check if the date is valid
+          start_date_ts=$(date -d "$start_date_formatted" +%s 2>/dev/null)
+          end_date_ts=$(date -d "$end_date_formatted" +%s 2>/dev/null)
+
+          if [[ -z "$start_date_ts" || -z "$end_date_ts" ]]; then
+            echo "Error: Invalid date. Ensure the date format is correct (DD/MM/YYYY)."
+            exit 1
+          fi
+
           if [[ "$start_date_ts" -gt "$end_date_ts" ]]; then
             echo "Error: Start date must be before end date."
             exit 1
