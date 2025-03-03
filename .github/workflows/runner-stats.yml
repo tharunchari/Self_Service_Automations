@@ -2,7 +2,7 @@ name: Runner Stats Collection
 
 on:
   workflow_dispatch: 
-  
+
 jobs:
   get-runner-stats:
     runs-on: ubuntu-latest
@@ -45,7 +45,14 @@ jobs:
           fetch_repos() {
             local org=$1
             local token=$2
-            curl -s -H "Authorization: token $token" "$repos_url" | jq -r '.[].name'
+            repos_url="https://api.github.com/orgs/$org/repos"
+            response=$(curl -s -H "Authorization: token $token" "$repos_url")
+            # Check if the response is empty or not
+            if [[ $(echo "$response" | jq 'type') != '"array"' ]]; then
+              echo "Error: Unable to fetch repositories for $org. Response: $response"
+              exit 1
+            fi
+            echo "$response" | jq -r '.[].name'
           }
 
           # Function to fetch runner count for a repo
@@ -53,7 +60,9 @@ jobs:
             local org=$1
             local repo=$2
             local token=$3
-            curl -s -H "Authorization: token $token" "$runners_url" | jq '.total_count'
+            runners_url="https://api.github.com/repos/$org/$repo/actions/runners"
+            response=$(curl -s -H "Authorization: token $token" "$runners_url")
+            echo "$response" | jq '.total_count'
           }
 
           # Function to fetch workflow runs and calculate total runtime for a repo
@@ -65,6 +74,7 @@ jobs:
             local total_runtime=0
             page=1
             while : ; do
+              runs_url="https://api.github.com/repos/$org/$repo/actions/runs?page=$page&per_page=100"
               data=$(curl -s -H "Authorization: token $token" "$runs_url" | jq -r ".workflow_runs | .[$((page - 1))]")
               if [[ "$data" == "null" ]]; then
                 break
