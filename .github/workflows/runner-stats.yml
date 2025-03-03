@@ -100,7 +100,8 @@ jobs:
               echo "Error: curl command failed for $repos_url." >> $output_file
               return 1
             fi
-            echo "Fetched repositories for $org: $response" >> $output_file  # Debug
+            # Debug: log the response from repos_url
+            echo "Response from $repos_url: $response" >> $output_file
             if [[ $(echo "$response" | jq 'type') != '"array"' ]]; then
               echo "Error: Unable to fetch repositories for $org. Response: $response" >> $output_file
               return 1
@@ -119,7 +120,8 @@ jobs:
               echo "Error: curl command failed for $runners_url." >> $output_file
               return 1
             fi
-            echo "Fetched runners for $org/$repo: $response" >> $output_file  # Debug
+            # Debug: log the response from runners_url
+            echo "Response from $runners_url: $response" >> $output_file
             if [[ $(echo "$response" | jq 'type') != '"object"' ]]; then
               echo "Error: Invalid JSON response for $runners_url. Response: $response" >> $output_file
               return 1
@@ -142,9 +144,8 @@ jobs:
                 echo "Error: curl command failed for $runs_url." >> $output_file
                 return 1
               fi
-
-              # Debug: Output the raw data for each page
-              echo "Fetched page $page of workflow runs data: $data" >> $output_file
+              # Debug: log the response from runs_url
+              echo "Response from $runs_url: $data" >> $output_file
 
               if [[ "$data" == "null" || -z "$data" || $(echo "$data" | jq -r '.workflow_runs | length') == "0" ]]; then
                 break
@@ -170,34 +171,35 @@ jobs:
             echo "$total_runs $total_runtime"
           }
 
-          # Function to convert milliseconds to hours, minutes, seconds
-          convert_time() {
-            local ms=$1
-            local total_seconds=$((ms / 1000))
-            local hours=$((total_seconds / 3600))
-            local minutes=$(( (total_seconds % 3600) / 60 ))
-            local seconds=$((total_seconds % 60))
-            echo "$hours hr $minutes min $seconds sec"
-          }
-
           # Main loop through organizations and repositories
           total_overall_runtime=0
           for org in "${orgs[@]}"; do
             echo "Processing organization: $org" >> $output_file
-            echo "Processing organization: $org"
             token="${tokens[$org]}"
             repos=$(fetch_repos "$org" "$token")
+            if [[ $? -ne 0 ]]; then
+              echo "Error fetching repositories for $org. Skipping organization." >> $output_file
+              continue
+            fi
+
             total_runners=0
             total_runtime=0
             total_repos=0
             for repo in $repos; do
               echo "  Checking repo: $repo" >> $output_file
-              echo "  Checking repo: $repo"
               runners=$(fetch_runners "$org" "$repo" "$token")
+              if [[ $? -ne 0 ]]; then
+                echo "Error fetching runners for $repo. Skipping repo." >> $output_file
+                continue
+              fi
               total_runners=$((total_runners + runners))
 
               # Get workflow run details for the repo
               read total_runs repo_runtime <<<$(fetch_runs "$org" "$repo" "$token")
+              if [[ $? -ne 0 ]]; then
+                echo "Error fetching runs for $repo. Skipping repo." >> $output_file
+                continue
+              fi
               total_runtime=$((total_runtime + repo_runtime))
               echo "    $repo: $total_runs runs, $(convert_time $repo_runtime) runtime" >> $output_file
               echo "    $repo: $total_runs runs, $(convert_time $repo_runtime) runtime"
