@@ -24,6 +24,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y jq
 
+      - name: Validate Input Dates
+        run: |
+          start_date="${{ github.event.inputs.start_date }}"
+          end_date="${{ github.event.inputs.end_date }}"
+          
+          # Validate date format DD/MM/YYYY
+          if [[ ! "$start_date" =~ ^[0-9]{2}/[0-9]{2}/[0-9]{4}$ || ! "$end_date" =~ ^[0-9]{2}/[0-9]{2}/[0-9]{4}$ ]]; then
+            echo "Error: Invalid date format. Please use DD/MM/YYYY."
+            exit 1
+          fi
+
+          # Convert to timestamps for comparison
+          start_date_ts=$(date -d "$start_date" +%s)
+          end_date_ts=$(date -d "$end_date" +%s)
+
+          # Check if start date is before end date
+          if [[ "$start_date_ts" -gt "$end_date_ts" ]]; then
+            echo "Error: Start date must be before end date."
+            exit 1
+          fi
+
       - name: Run shell script to collect runner stats
         env:
           VITECHSYSTEMS_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
@@ -34,14 +55,14 @@ jobs:
         run: |
           #!/bin/bash
 
-          # Output file
+          # Output file with timestamp
           output_file="runner_stats_output_$(date +%Y%m%d%H%M%S).txt"
           echo "Runner Stats Collection Report" > $output_file
           echo "===============================" >> $output_file
           echo "Date Range: $START_DATE to $END_DATE" >> $output_file
           echo "" >> $output_file
 
-          # Convert DD/MM/YYYY to YYYY-MM-DD format for GitHub API
+          # Convert DD/MM/YYYY to ISO-8601 format (YYYY-MM-DD) for GitHub API
           start_date_formatted=$(echo $START_DATE | awk -F'/' '{print $3"-"$2"-"$1}')
           end_date_formatted=$(echo $END_DATE | awk -F'/' '{print $3"-"$2"-"$1}')
 
@@ -67,10 +88,13 @@ jobs:
             local token=$2
             repos_url="https://api.github.com/orgs/$org/repos"
             response=$(curl -s -H "Authorization: token $token" "$repos_url")
-            # Check if the response is empty or not
+            if [[ $? -ne 0 ]]; then
+              echo "Error: curl command failed for $repos_url." >> $output_file
+              return 1
+            fi
             if [[ $(echo "$response" | jq 'type') != '"array"' ]]; then
-              echo "Error: Unable to fetch repositories for $org. Response: $response"
-              exit 1
+              echo "Error: Unable to fetch repositories for $org. Response: $response" >> $output_file
+              return 1
             fi
             echo "$response" | jq -r '.[].name'
           }
@@ -82,6 +106,14 @@ jobs:
             local token=$3
             runners_url="https://api.github.com/repos/$org/$repo/actions/runners"
             response=$(curl -s -H "Authorization: token $token" "$runners_url")
+            if [[ $? -ne 0 ]]; then
+              echo "Error: curl command failed for $runners_url." >> $output_file
+              return 1
+            fi
+            if [[ $(echo "$response" | jq 'type') != '"object"' ]]; then
+              echo "Error: Invalid JSON response for $runners_url. Response: $response" >> $output_file
+              return 1
+            fi
             echo "$response" | jq '.total_count'
           }
 
@@ -96,11 +128,15 @@ jobs:
             while : ; do
               runs_url="https://api.github.com/repos/$org/$repo/actions/runs?page=$page&per_page=100"
               data=$(curl -s -H "Authorization: token $token" "$runs_url")
-              
+              if [[ $? -ne 0 ]]; then
+                echo "Error: curl command failed for $runs_url." >> $output_file
+                return 1
+              fi
+
               # Debug: Output the raw data for each page
               echo "Fetched page $page of workflow runs data: $data" >> $output_file
 
-              if [[ "$data" == "null" || -z "$data" ]]; then
+              if [[ "$data" == "null" || -z "$data" || $(echo "$data" | jq -r '.workflow_runs | length') == "0" ]]; then
                 break
               fi
 
@@ -135,6 +171,7 @@ jobs:
           }
 
           # Main loop through organizations and repositories
+          total_overall_runtime=0
           for org in "${orgs[@]}"; do
             echo "Processing organization: $org"
             echo "Processing organization: $org" >> $output_file
@@ -169,4 +206,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: runner-stats-output
-          path: runner_stats_output_$(date +%Y%m%d%H%M%S).txt
+          path: runner_stats_output_*.txt
