@@ -34,6 +34,6 @@
       import_tasks: ../tasks/start_applcation.yml
  
     - name: Send Final Email Notification
-      import_tasks: ../tasks/final_email.yml
+      import_tasks: ../tasks/final_email_erp_dryrun.yml
       delegate_to: localhost
       run_once: true

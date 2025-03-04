@@ -2,7 +2,8 @@
 # tasks
 - name: Start Apache Tomcat with correct JAVA_HOME
   ansible.builtin.shell: |
-    cd /opt/erp_dryrun/apache-tomcat-9.0/bin
+    export JAVA_HOME={{ corretto_home }}
+    cd /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin
     ./startup.sh
   register: tomcat_start
   become: yes
@@ -21,3 +22,9 @@
 - name: Debug Tomcat process status
   ansible.builtin.debug:
     var: tomcat_status
+
+- name: wait for 60 seconds
+  shell: sleep 60
+
+
+

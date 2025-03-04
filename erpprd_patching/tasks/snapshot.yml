@@ -22,6 +22,6 @@
 - debug:
     var: out
 
-- name: wait for 20 seconds
-  shell: sleep 20
+- name: wait for 30 seconds
+  shell: sleep 30
 

@@ -1,8 +1,41 @@
+
 ---
 # tasks
 - name: Generate timestamp
   set_fact:
     timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M-%S') }}"
+ 
+- name: Get current Tomcat version
+  ansible.builtin.shell: "grep 'Apache Tomcat' /opt/{{ erpprd_path }}/apache-tomcat-9.0/RELEASE-NOTES | awk '{print $(NF)}'"
+  register: current_tomcat_version
+  changed_when: false
+  ignore_errors: true
+ 
+- name: Get latest Tomcat version from Apache
+  ansible.builtin.shell: "curl -s https://downloads.apache.org/tomcat/tomcat-9/ | grep -oP '(?<=v)9\\.\\d+\\.\\d+(?=/)' | sort -V | tail -n 1"
+  register: latest_tomcat_version
+  changed_when: false
+ 
+- name: Set latest Tomcat version fact
+  set_fact:
+    latest_tomcat_version: "{{ latest_tomcat_version.stdout }}"
+
+- name: Print current_tomcat_version
+  debug:
+    msg: "{{ current_tomcat_version.stdout }}"
+
+- name: Print latest_tomcat_version
+  debug:
+    msg: "{{ latest_tomcat_version }}"
+
+ 
+- name: Compare Tomcat versions and decide to patch
+  set_fact:
+    patch_tomcat: "{{ (current_tomcat_version.stdout | trim) != (latest_tomcat_version | trim) }}"
+ 
+- name: Print patch
+  debug:
+    msg: "{{ patch_tomcat }}"
 
 - name: Ensure tomcat user owns /opt directory
   ansible.builtin.file:
@@ -12,42 +45,160 @@
     group: tomcat
     mode: '0755'
  
-- name: Backup current Tomcat directory
-  ansible.builtin.command: mv /opt/{{ erpprd_path }} /opt/{{ erpprd_path }}_backup_{{ timestamp }}
-  become_user: tomcat
- 
-- name: Download Apache Tomcat {{ tomcat_version }}
-  ansible.builtin.get_url:
-    url: https://downloads.apache.org/tomcat/tomcat-9/v{{ tomcat_version }}/bin/apache-tomcat-{{ tomcat_version }}.tar.gz
-    dest: /opt/apache-tomcat-{{ tomcat_version }}.tar.gz
-    mode: '0644'
-  become_user: tomcat
- 
-- name: Create new Tomcat directory
-  ansible.builtin.file:
-    path: /opt/{{ erpprd_path }}/apache-tomcat-9.0
-    state: directory
-    owner: tomcat
-    group: tomcat
-    mode: '0755'
- 
-- name: Extract Apache Tomcat {{ tomcat_version }}
-  ansible.builtin.unarchive:
-    src: /opt/apache-tomcat-{{ tomcat_version }}.tar.gz
-    dest: /opt/{{ erpprd_path }}/apache-tomcat-9.0
-    remote_src: true
-    extra_opts: [--strip-components=1]
-    owner: tomcat
-    group: tomcat
-  become_user: tomcat
-
-- name: Delete Current Amazon Corretto tar file
-  ansible.builtin.file:
-    path: /opt/amazon-corretto-8.tar.gz
-    state: absent
-
-- name: Download and extract Amazon Corretto 8
+- name: Patch Tomcat only if needed
   block:
+    - name: Backup current Tomcat directory
+      ansible.builtin.command: mv /opt/{{ erpprd_path }} /opt/{{ erpprd_path }}_backup_{{ timestamp }}
+      become_user: tomcat
+ 
+    - name: Download Apache Tomcat {{ latest_tomcat_version }}
+      ansible.builtin.get_url:
+        url: https://downloads.apache.org/tomcat/tomcat-9/v{{ latest_tomcat_version }}/bin/apache-tomcat-{{ latest_tomcat_version }}.tar.gz
+        dest: /opt/apache-tomcat-{{ latest_tomcat_version }}.tar.gz
+        mode: '0644'
+      become_user: tomcat
+
+    - name: Create new Tomcat directory
+      ansible.builtin.file:
+        path: /opt/{{ erpprd_path }}/apache-tomcat-9.0
+        state: directory
+        owner: tomcat
+        group: tomcat
+        mode: '0755'
+ 
+    - name: Extract Apache Tomcat {{ latest_tomcat_version }}
+      ansible.builtin.unarchive:
+        src: /opt/apache-tomcat-{{ latest_tomcat_version }}.tar.gz
+        dest: /opt/{{ erpprd_path }}/apache-tomcat-9.0
+        remote_src: true
+        extra_opts: [--strip-components=1]
+        owner: tomcat
+        group: tomcat
+      become_user: tomcat
+
+    - name: Copy JAR files from backup to new Tomcat lib directory
+      ansible.builtin.copy:
+        src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/lib/{{ item }}"
+        dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/lib/"
+        remote_src: true
+        owner: tomcat
+        group: tomcat
+        mode: '0644'
+      loop:
+        - ojdbc8.jar
+        - ucp.jar
+        - jms-1.1.jar
+        - axis-jaxrpc-1.3.jar
+        - aqapi-2.0.jar
+      become_user: tomcat
+
+    - name: copy erp_dryrun.war from weapps
+      ansible.builtin.command: cp -r /opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/webapps/erp_dryrun.war /opt/{{ erpprd_path }}/apache-tomcat-9.0/webapps/
+      become_user: tomcat
+
+    - name: Keep backup of new files (catalina.sh, startup.sh, stopdown.sh, server.xml and context.xml)
+      shell: |   
+        mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/catalina.sh /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/catalina.sh_backup_{{ timestamp }}
+        mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/startup.sh /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/startup.sh_backup_{{ timestamp }}
+        mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/shutdown.sh /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/shutdown.sh_backup_{{ timestamp }}
+        mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/server.xml /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/server.xml_backup_{{ timestamp }}
+        mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/context.xml /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/context.xml_backup_{{ timestamp }}
+
+    - name: Replace catalina.sh from backup to new Tomcat installation
+      ansible.builtin.copy:
+        src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/bin/catalina.sh"
+        dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/catalina.sh"
+        owner: tomcat
+        group: tomcat
+        mode: preserve
+        remote_src: yes
+      become_user: tomcat
+
+    - name: Replace startup.sh from backup to new Tomcat installation
+      ansible.builtin.copy:
+        src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/bin/startup.sh"
+        dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/startup.sh"
+        owner: tomcat
+        group: tomcat
+        mode: preserve
+        remote_src: yes
+      become_user: tomcat
+
+    - name: Replace shutdown.sh from backup to new Tomcat installation
+      ansible.builtin.copy:
+        src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/bin/shutdown.sh"
+        dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/shutdown.sh"
+        owner: tomcat
+        group: tomcat
+        mode: preserve
+        remote_src: yes
+      become_user: tomcat
+
+    - name: Replace server.xnl from backup to new Tomcat installation
+      ansible.builtin.copy:
+        src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/conf/server.xml"
+        dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/server.xml"
+        owner: tomcat
+        group: tomcat
+        mode: preserve
+        remote_src: yes
+      become_user: tomcat
+
+    - name: Replace context.xml from backup to new Tomcat installation
+      ansible.builtin.copy:
+        src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/conf/context.xml"
+        dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/context.xml"
+        owner: tomcat
+        group: tomcat
+        mode: preserve
+        remote_src: yes
+      become_user: tomcat
+
+  when: patch_tomcat
+
+- name: Fetch current Corretto 8 version
+  ansible.builtin.shell: |
+    /opt/amazon-corretto-8.*-linux-x64/bin/java -version 2>&1 | awk -F'Corretto-' '/Corretto-/ {print $2}' | awk '{print $1}' | head -n 1
+  register: current_corretto_version
+  ignore_errors: yes
+  changed_when: false
+  become_user: tomcat
+ 
+- name: Fetch latest Corretto 8 version from AWS
+  ansible.builtin.shell: |
+    curl -sI https://corretto.aws/downloads/latest/amazon-corretto-8-x64-linux-jdk.tar.gz | grep Location | cut -d '/' -f 4
+  register: latest_corretto_version
+  ignore_errors: yes
+  changed_when: false
+  become_user: tomcat
+
+- name: Set latest Tomcat version fact
+  set_fact:
+    latest_corretto_version: "{{ latest_corretto_version.stdout }}"
+
+- name: Compare Corretto versions and decide to patch
+  set_fact:
+    patch_corretto: "{{ (current_corretto_version.stdout | trim) != (latest_corretto_version | trim) }}"
+
+- name: Print current_corretto_version.stdout
+  debug:
+    msg: "{{ current_corretto_version.stdout }}"
+
+- name: Print latest_corretto_version
+  debug:
+    msg: "{{ latest_corretto_version }}"
+
+- name: Print patch_corretto
+  debug:
+    msg: "{{ patch_corretto }}"
+ 
+- name: Patch Corretto only if needed
+  block:
+    - name: Delete current Amazon Corretto tar file
+      ansible.builtin.file:
+        path: /opt/amazon-corretto-8.tar.gz
+        state: absent
+
     - name: Download Amazon Corretto 8
       ansible.builtin.get_url:
         url: https://corretto.aws/downloads/latest/amazon-corretto-8-x64-linux-jdk.tar.gz
@@ -62,103 +213,21 @@
         remote_src: true
         owner: tomcat
         group: tomcat
- 
-    - name: Find the latest extracted Corretto folder
-      ansible.builtin.shell: "ls -d /opt/amazon-corretto-8.*-linux-x64/ | sort -V | tail -n 1"
-      register: corretto_folder
-      changed_when: false 
+      become: true
+  when: patch_corretto
 
-    - name: Store Corretto folder name
-      ansible.builtin.set_fact:
-        corretto_home: "{{ corretto_folder.stdout | trim }}"
- 
-  become: true
+- name: Find the latest extracted Corretto folder
+  ansible.builtin.shell: "ls -d /opt/amazon-corretto-8.*-linux-x64/ | sort -V | tail -n 1"
+  register: corretto_folder
+  changed_when: false
+
+- name: Store Corretto folder name
+  ansible.builtin.set_fact:
+    corretto_home: "{{ corretto_folder.stdout | trim }}"
 
 - name: Print corretto_home
   debug:
     msg: "{{ corretto_home }}"
-
-- name: Copy JAR files from backup to new Tomcat lib directory
-  ansible.builtin.copy:
-    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/lib/{{ item }}"
-    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/lib/"
-    remote_src: true
-    owner: tomcat
-    group: tomcat
-    mode: '0644'
-  loop:
-    - ojdbc8.jar
-    - ucp.jar
-    - jms-1.1.jar
-    - axis-jaxrpc-1.3.jar
-    - aqapi-2.0.jar
-  become_user: tomcat
-
-- name: Backup erp_dryrun webapps
-  ansible.builtin.command: cp -r /opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/webapps/erp_dryrun /opt/{{ erpprd_path }}/apache-tomcat-9.0/webapps/
-  become_user: tomcat
-
-- name: copy erp_dryrun.war from weapps
-  ansible.builtin.command: cp -r /opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/webapps/erp_dryrun.war /opt/{{ erpprd_path }}/apache-tomcat-9.0/webapps/
-  become_user: tomcat
-
-- name: Keep backup of new files (catalina.sh, startup.sh, stopdown.sh, server.xml and context.xml)
-  shell: |   
-    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/catalina.sh /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/catalina.sh_backup_{{ timestamp }}
-    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/startup.sh /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/startup.sh_backup_{{ timestamp }}
-    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/shutdown.sh /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/shutdown.sh_backup_{{ timestamp }}
-    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/server.xml /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/server.xml_backup_{{ timestamp }}
-    mv /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/context.xml /opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/context.xml_backup_{{ timestamp }}
-
-- name: Replace catalina.sh from backup to new Tomcat installation
-  ansible.builtin.copy:
-    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/bin/catalina.sh"
-    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/catalina.sh"
-    owner: tomcat
-    group: tomcat
-    mode: preserve
-    remote_src: yes
-  become_user: tomcat
-
-- name: Replace startup.sh from backup to new Tomcat installation
-  ansible.builtin.copy:
-    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/bin/startup.sh"
-    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/startup.sh"
-    owner: tomcat
-    group: tomcat
-    mode: preserve
-    remote_src: yes
-  become_user: tomcat
-
-- name: Replace shutdown.sh from backup to new Tomcat installation
-  ansible.builtin.copy:
-    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/bin/shutdown.sh"
-    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/bin/shutdown.sh"
-    owner: tomcat
-    group: tomcat
-    mode: preserve
-    remote_src: yes
-  become_user: tomcat
-
-- name: Replace server.xnl from backup to new Tomcat installation
-  ansible.builtin.copy:
-    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/conf/server.xml"
-    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/server.xml"
-    owner: tomcat
-    group: tomcat
-    mode: preserve
-    remote_src: yes
-  become_user: tomcat
-
-- name: Replace context.xml from backup to new Tomcat installation
-  ansible.builtin.copy:
-    src: "/opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/conf/context.xml"
-    dest: "/opt/{{ erpprd_path }}/apache-tomcat-9.0/conf/context.xml"
-    owner: tomcat
-    group: tomcat
-    mode: preserve
-    remote_src: yes
-  become_user: tomcat
 
 - name: change owner to tomcat
   shell: chown -R tomcat:tomcat /opt
@@ -173,4 +242,3 @@
 
 - name: wait for 30 seconds
   shell: sleep 30
-
