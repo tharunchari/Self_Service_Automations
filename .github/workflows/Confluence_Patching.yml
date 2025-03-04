@@ -115,13 +115,28 @@ jobs:
               --comment "Upgrade to latest Amazon Linux release" \
               --parameters 'commands=["dnf -y --releasever=latest update"]'
 
-            aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --comment "Reboot EC2 instance" \
-              --parameters 'commands=["sudo reboot"]'
+            echo "Stop the instance"
+            aws ec2 stop-instances --instance-ids "$INSTANCE_ID"
 
-            sleep 120
+            echo "Wait for the instance to stop"
+            aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID"
+
+            echo "Start the instance"
+            aws ec2 start-instances --instance-ids "$INSTANCE_ID"
+
+            echo "Wait for the instance to fully start"
+            aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+            
+            # Check instance status, fail and trigger SNS if not running
+            INSTANCE_STATE=$(aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --query 'InstanceStatuses[0].InstanceState.Name' --output text)
+            if [[ "$INSTANCE_STATE" != "running" ]]; then
+              echo "Instance $INSTANCE_ID failed to start. Triggering SNS notification."
+              aws sns publish \
+                --topic-arn $SNS_TOPIC \
+                --subject "EC2 Start Failure for Instance $INSTANCE_ID" \
+                --message "Instance $INSTANCE_ID failed to start after patching. Please investigate."
+              exit 1
+            fi
 
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
