@@ -127,6 +127,27 @@ jobs:
             echo "Wait for the instance to fully start"
             aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
             
+            echo "Waiting for SSM agent to be ready..."
+            SSM_READY=false
+            for i in {1..30}; do
+              STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
+              if [[ "$STATUS" == "Online" ]]; then
+                SSM_READY=true
+                break
+              fi
+              echo "SSM not ready yet... waiting (attempt $i)"
+              sleep 15
+            done
+
+            if [[ "$SSM_READY" == "false" ]]; then
+              echo "SSM agent is not ready. Triggering SNS notification."
+              aws sns publish \
+                --topic-arn $SNS_TOPIC \
+                --subject "SSM Not Ready for Instance $INSTANCE_ID" \
+                --message "SSM agent did not become ready after EC2 start. Please investigate."
+              exit 1
+            fi
+
             # Check instance status, fail and trigger SNS if not running
             INSTANCE_STATE=$(aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --query 'InstanceStatuses[0].InstanceState.Name' --output text)
             if [[ "$INSTANCE_STATE" != "running" ]]; then
@@ -137,6 +158,7 @@ jobs:
                 --message "Instance $INSTANCE_ID failed to start after patching. Please investigate."
               exit 1
             fi
+
 
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
