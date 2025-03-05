@@ -1,7 +1,7 @@
 name: ERPPRD Patching Pipeline
  
 on:
-#  workflow_dispatch:
+  workflow_dispatch:
 #    inputs:
 #      TOMCAT_VERSION:
 #        required: true
