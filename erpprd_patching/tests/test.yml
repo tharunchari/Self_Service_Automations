@@ -33,8 +33,11 @@
     - name: Execute start_application task
       import_tasks: ../tasks/start_applcation.yml
  
+    - name: Check HTTPS Status
+      import_tasks: ../tasks/https_status_erpprd.yml
+
     - name: Send Final Email Notification
-      import_tasks: ../tasks/final_email_erpprd.yml
+      import_tasks: ../tasks/final_email.yml
       delegate_to: localhost
       run_once: true
 
@@ -73,7 +76,10 @@
     - name: Execute start_application task
       import_tasks: ../tasks/start_applcation.yml
  
+    - name: Check HTTPS Status
+      import_tasks: ../tasks/https_status_erpprd.yml
+
     - name: Send Final Email Notification
-      import_tasks: ../tasks/final_email_erpprd.yml
+      import_tasks: ../tasks/final_email.yml
       delegate_to: localhost
       run_once: true

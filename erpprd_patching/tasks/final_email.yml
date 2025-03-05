@@ -1,22 +1,10 @@
 ---
-# Tasks
-- name: wait for 60 seconds
-  shell: sleep 60
-
-- name: Check HTTP status of Tomcat application
-  ansible.builtin.shell: "curl -Ik http://{{ app_ip }}:8081/erpprd/app | grep HTTP | awk '{print $2}'"
-  register: http_status
-  changed_when: false
- 
-- name: Print HTTP status
-  ansible.builtin.debug:
-    var: http_status.stdout
- 
+# Tasks 
 - name: Send Email Notification - Application is Up and Running
   ansible.builtin.shell: |
     aws sns publish \
       --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-      --message "$(echo -e "ERPPRD Patching Completed\n\n{{ app_hostname }} is up and running with:\n\nTomcat Version: apache-tomcat-{{ latest_tomcat_version }}\nAWS Corretto-8 Version: amazon-corretto-{{ latest_corretto_version }}\nIP Address: {{ app_ip }}\nHTTP Status: {{ http_status.stdout }}\n\nTomcat Status: {{ tomcat_status.stdout }}")" \
+      --message "$(echo -e "ERPPRD Patching Completed\n\n{{ app_hostname }} is up and running with:\n\nTomcat Version: apache-tomcat-{{ latest_tomcat_version }}\nAWS Corretto-8 Version: amazon-corretto-{{ latest_corretto_version }}\nIP Address: {{ app_ip }}\nHTTPS Status: {{ http_status.stdout }}\n\nTomcat Status: {{ tomcat_status.stdout }}")" \
       --subject "{{ app_hostname }} Application is Up and Running"
   args:
     executable: /bin/bash
@@ -27,7 +15,7 @@
   ansible.builtin.shell: |
     aws sns publish \
       --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-      --message "$(echo -e "**Patching Failed** \n {{ app_hostname }} patching process failed. Tomcat did not return HTTP 200.\nIP Address: {{ app_ip }}")" \
+      --message "$(echo -e "**Patching Failed** \n {{ app_hostname }} patching process failed. Tomcat did not return HTTPS 200.\nIP Address: {{ app_ip }}")" \
       --subject "{{ app_hostname }} Patching Failed"
   args:
     executable: /bin/bash
