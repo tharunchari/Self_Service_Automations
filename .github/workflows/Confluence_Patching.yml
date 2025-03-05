@@ -144,7 +144,7 @@ jobs:
               aws sns publish \
                 --topic-arn $SNS_TOPIC \
                 --subject "SSM Not Ready for Instance $INSTANCE_ID" \
-                --message "SSM agent did not become ready after EC2 start. Please investigate."
+                --message "SSM agent did not become ready after EC2 start in "${{ github.event.inputs.environment }}" . Please investigate."
               exit 1
             fi
 
@@ -155,7 +155,7 @@ jobs:
               aws sns publish \
                 --topic-arn $SNS_TOPIC \
                 --subject "EC2 Start Failure for Instance $INSTANCE_ID" \
-                --message "Instance $INSTANCE_ID failed to start after patching. Please investigate."
+                --message "Instance $INSTANCE_ID failed to start after "${{ github.event.inputs.environment }}" patching. Please investigate."
               exit 1
             fi
 
