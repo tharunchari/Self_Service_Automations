@@ -1,5 +1,8 @@
 ---
 # Tasks
+- name: wait for 60 seconds
+  shell: sleep 60
+
 - name: Check HTTP status of Tomcat application
   ansible.builtin.shell: "curl -Ik http://{{ app_ip }}:8081/erpprd/app | grep HTTP | awk '{print $2}'"
   register: http_status
