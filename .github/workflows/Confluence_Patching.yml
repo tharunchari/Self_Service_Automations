@@ -113,7 +113,15 @@ jobs:
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
               --comment "Upgrade to latest Amazon Linux release" \
-              --parameters 'commands=["dnf -y --releasever=latest update"]'
+              --parameters 'commands=["dnf -y --releasever=latest update"]' \
+              --query 'Command.CommandId' --output text > command-id.txt
+            COMMAND_ID=$(cat command-id.txt)
+
+            # Wait for the SSM command to complete
+            echo "Waiting for upgrade command to complete..."
+            aws ssm wait command-executed \
+              --instance-id "$INSTANCE_ID" \
+              --command-id "$COMMAND_ID"
 
             echo "Stop the instance"
             aws ec2 stop-instances --instance-ids "$INSTANCE_ID"
