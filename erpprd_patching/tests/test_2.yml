@@ -19,10 +19,10 @@
     - name: Execute shutdown task
       import_tasks: ../tasks/shutdown.yml
  
-    - name: Execute snapshot task
-      import_tasks: ../tasks/snapshot.yml
-      delegate_to: localhost
-      run_once: true
+ #   - name: Execute snapshot task
+ #     import_tasks: ../tasks/snapshot.yml
+ #     delegate_to: localhost
+ #     run_once: true
  
     - name: Execute yum_reboot task
       import_tasks: ../tasks/yum_reboot.yml
