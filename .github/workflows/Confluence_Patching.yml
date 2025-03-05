@@ -115,13 +115,24 @@ jobs:
               --comment "Upgrade to latest Amazon Linux release" \
               --parameters 'commands=["dnf -y --releasever=latest update"]' \
               --query 'Command.CommandId' --output text > command-id.txt
-            COMMAND_ID=$(cat command-id.txt)
-
-            # Wait for the SSM command to complete
-            echo "Waiting for upgrade command to complete..."
-            aws ssm wait command-executed \
-              --instance-id "$INSTANCE_ID" \
-              --command-id "$COMMAND_ID"
+              COMMAND_ID=$(cat command-id.txt)
+              echo "Waiting for upgrade command to complete..."
+              for i in {1..30}; do
+                  COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+                  echo "Current command status: $COMMAND_STATUS"     
+                  if [[ "$COMMAND_STATUS" == "Success" ]]; then
+                      echo "Command completed successfully."
+                      break
+                  elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
+                      echo "Command failed. Exiting..."
+                      exit 1
+                  fi
+                  sleep 30  
+              done              
+              if [[ "$COMMAND_STATUS" != "Success" ]]; then
+                  echo "Max attempts exceeded. Command did not complete."
+                  exit 1
+              fi
 
             echo "Stop the instance"
             aws ec2 stop-instances --instance-ids "$INSTANCE_ID"
