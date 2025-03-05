@@ -69,6 +69,7 @@ jobs:
         id: run_playbook
         run: |
           sudo ansible-playbook erpprd_patching/tests/test.yml -i erpprd_patching/tests/inventory
+        continue-on-error: true  # Capture playbook failure but don't stop workflow
  
       - name: Check App Status with Curl
         id: check_app_status
