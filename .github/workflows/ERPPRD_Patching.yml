@@ -1,18 +1,17 @@
 name: ERPPRD Patching Pipeline
  
 on:
-  workflow_dispatch:
-    inputs:
-      TOMCAT_VERSION:
-        required: true
-        description: Tomcat Version (e.g., 9.0.100)
-      APP_ENVIRONMENT:
-        required: true
-        description: APP Environment (e.g., 'PROD' or 'DR')
-
-      KEY:
-        required: true
-        description: Authentication Key for OPS Internal Tools
+#  workflow_dispatch:
+#    inputs:
+#      TOMCAT_VERSION:
+#        required: true
+#        description: Tomcat Version (e.g., 9.0.100)
+#      APP_ENVIRONMENT:
+#        required: true
+#        description: APP Environment (e.g., 'PROD' or 'DR')
+#      KEY:
+#        required: true
+#        description: Authentication Key for OPS Internal Tools
  
 env:
   RUNNER_NAME: "Internal_Tools_Automation_Server"
