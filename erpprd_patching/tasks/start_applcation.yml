@@ -23,8 +23,8 @@
   ansible.builtin.debug:
     var: tomcat_status
 
-- name: wait for 60 seconds
-  shell: sleep 60
+- name: wait for 120 seconds
+  shell: sleep 120
 
 
 
