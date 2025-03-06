@@ -71,7 +71,7 @@ jobs:
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
-            --message "$(printf "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process.\n\n **Instance IDs:**\n%s\n" "$FORMATTED_IDS")"
+            --message "$(printf "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process.\n\n **Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
 
       - name: Get Auto Scaling Group Instances
         id: get-instances
@@ -249,4 +249,4 @@ jobs:
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully.\n\n🚀 **Patched Instance IDs:**\n%s\n "$FORMATTED_IDS" \nPlease reach out to v3atlassianops@vitechinc.com for any issues.")"
+            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully.\n\n🚀 **Patched Instance IDs:**\n%s\n "$INSTANCE_IDS" \nPlease reach out to v3atlassianops@vitechinc.com for any issues.")"
