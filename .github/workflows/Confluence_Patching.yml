@@ -88,7 +88,7 @@ jobs:
           aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --min-size 1 
-
+            
       - name: Patch Each Instance
         id: patch-each-instance
         run: |
@@ -105,16 +105,16 @@ jobs:
               --instance-ids "$INSTANCE_ID" \
               --should-decrement-desired-capacity
       
-            echo "Stop services & upgrade"
+            echo "Stop services, upgrade, and handle agent restart"
             run_ssm_command "$INSTANCE_ID" "Stop services" '["sudo service httpd stop", "sudo service confluence stop"]'
             run_upgrade "$INSTANCE_ID"
+            run_ssm_command "$INSTANCE_ID" "Restart ds_agent" '["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]'
       
             echo "Restart instance"
             restart_instance "$INSTANCE_ID"
             wait_for_ssm "$INSTANCE_ID"
       
-            echo "Check instance health"
-            check_instance_health "$INSTANCE_ID"
+            echo "Restart services"
             restart_services "$INSTANCE_ID"
       
             echo "Exit standby"
@@ -162,8 +162,7 @@ jobs:
               echo "SSM not ready yet... waiting (attempt $i)"
               sleep 15
             done
-            send_sns_notification "$INSTANCE_ID" "SSM agent not ready after EC2 start"
-            exit 1
+            fail_workflow "$INSTANCE_ID" "SSM agent not ready"
           }
       
           wait_for_command() {
@@ -172,17 +171,10 @@ jobs:
               COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
               echo "Current command status: $COMMAND_STATUS"
               [[ "$COMMAND_STATUS" == "Success" ]] && return
-              [[ "$COMMAND_STATUS" == "Failed" ]] && exit 1
+              [[ "$COMMAND_STATUS" == "Failed" ]] && fail_workflow "$INSTANCE_ID" "SSM command failed"
               sleep 30
             done
-            echo "Max attempts exceeded. Command did not complete."
-            exit 1
-          }
-      
-          check_instance_health() {
-            local INSTANCE_ID=$1
-            INSTANCE_STATE=$(aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --query 'InstanceStatuses[0].InstanceState.Name' --output text)
-            [[ "$INSTANCE_STATE" != "running" ]] && send_sns_notification "$INSTANCE_ID" "Instance failed to start after patching"
+            fail_workflow "$INSTANCE_ID" "SSM command timeout"
           }
       
           restart_services() {
@@ -194,14 +186,21 @@ jobs:
             INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[].Instances[].PrivateIpAddress' --output text)
             NODE_STATUS=$(curl -X GET -H "Authorization: Bearer ${{ env.TOKEN }}" -H "Content-Type: application/json" "${{ env.URL }}/rest/zdu/cluster" | jq .)
             INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.nodes[] | select(.ipAddress == $ip and .state == "ACTIVE")')
-            [[ -z "$INSTANCE_ALIVE" ]] && send_sns_notification "$INSTANCE_ID" "Instance not healthy after patching"
+            [[ -z "$INSTANCE_ALIVE" ]] && fail_workflow "$INSTANCE_ID" "Instance not healthy after patching"
           }
       
           send_sns_notification() {
             local INSTANCE_ID=$1
             local MESSAGE=$2
             aws sns publish --topic-arn ${{ env.SNS_TOPIC }} --subject "$MESSAGE for Instance $INSTANCE_ID" --message "$MESSAGE in ${{ github.event.inputs.environment }}. Please investigate."
-            PATCH_SUCCESS=false
+          }
+      
+          fail_workflow() {
+            local INSTANCE_ID=$1
+            local ERROR_MESSAGE=$2
+            send_sns_notification "$INSTANCE_ID" "$ERROR_MESSAGE"
+            echo "Patching failed for instance $INSTANCE_ID: $ERROR_MESSAGE"
+            exit 1
           }
       
           for INSTANCE_ID in "${INSTANCE_IDS_ARRAY[@]}"; do
