@@ -41,7 +41,7 @@ jobs:
             # Send notification for invalid key
             aws sns publish \
               --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-              --message "**ERPPRD-PROD Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n\n$(date +%Y-%m-%d)" \
+              --message "$(echo -e "**ERPPRD-PROD Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n$(date +%Y-%m-%d)")" \
               --subject "ERPPRD-PROD Patching Aborted: Invalid Key"
             exit 1
           fi
@@ -92,7 +92,7 @@ jobs:
           fi
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "ERPPRD-PROD Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\n\n Please check the GitHub Actions logs for more details." \
+            --message "$(echo -e "ERPPRD-PROD Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\n\n Please check the GitHub Actions logs for more details.")" \
             --subject "ERPPRD-PROD Patching Failed"
  
       - name: Send Notification on Success
@@ -100,7 +100,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "**ERPPRD-PROD Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n\n$(date +%Y-%m-%d)" \
+            --message "$(echo -e "**ERPPRD-PROD Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)")" \
             --subject "ERPPRD-PROD Patching Completed"
  
       - name: Send Notification on App Down
@@ -108,7 +108,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "**Attention: ERPPRD-PROD Patch Status: SUCCESS but App is Down**\n\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n\n$(date +%Y-%m-%d)" \
+            --message "$(echo -e "**Attention: ERPPRD-PROD Patch Status: SUCCESS but App is Down**\n\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)")" \
             --subject "ERPPRD-PROD Patching Completed but App is Down"
 
   stop-runner:
