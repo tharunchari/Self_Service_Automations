@@ -178,6 +178,11 @@ jobs:
               exit 1
             fi
 
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "ds_agent tasks" \
+              --comment "Stop ds_agent remove dsa_filt and start ds_agent" \
+              --parameters 'commands=["service ds_agent stop", "sleep 120", "sudo rmmod dsa_filt", "service ds_agent start"]'
 
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
