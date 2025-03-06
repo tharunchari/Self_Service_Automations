@@ -47,11 +47,7 @@ jobs:
 
       - name: Set AWS region
         run: |
-          if [ "${{ github.event.inputs.environment }}" == "confluence" ]; then
-            echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
-          else
-            echo "AWS_REGION=us-west-2" >> $GITHUB_ENV
-          fi
+          echo "AWS_REGION=${{ github.event.inputs.environment == 'confluence' && 'us-east-1' || 'us-west-2' }}" >> $GITHUB_ENV
           
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -187,25 +183,29 @@ jobs:
                 --instance-ids "$INSTANCE_ID" \
                 --document-name "AWS-RunShellScript" \
                 --comment "Stop ds_agent, remove dsa_filt, and start ds_agent" \
-                --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]'
+                --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]' \
                 --query 'Command.CommandId' --output text > command-id.txt
               COMMAND_ID=$(cat command-id.txt)
-              echo "Waiting for upgrade command to complete..."
+              echo "Waiting for command to complete..."
               for i in {1..30}; do
-                  COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
-                  echo "Current command status: $COMMAND_STATUS"     
-                  if [[ "$COMMAND_STATUS" == "Success" ]]; then
-                      echo "Command completed successfully."
-                      break
-                  elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
-                      echo "Command failed. Exiting..."
-                      exit 1
-                  fi
-                  sleep 30  
-              done              
-              if [[ "$COMMAND_STATUS" != "Success" ]]; then
-                  echo "Max attempts exceeded. Command did not complete."
+                COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+                echo "Current command status: $COMMAND_STATUS"
+                
+                if [[ "$COMMAND_STATUS" == "Success" ]]; then
+                  echo "Command completed successfully."
+                  break
+                elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
+                  echo "Command failed. Exiting..."
                   exit 1
+                fi
+                
+                sleep 30  
+              done              
+              
+              # Check if the command was successful
+              if [[ "$COMMAND_STATUS" != "Success" ]]; then
+                echo "Max attempts exceeded. Command did not complete."
+                exit 1
               fi
 
             aws ssm send-command \
