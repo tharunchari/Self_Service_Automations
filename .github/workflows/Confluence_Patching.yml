@@ -221,32 +221,57 @@ jobs:
       - name: Check URL Status Code
         id: check_status
         run: |
-          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}/status")
-          echo "URL Status Code: $STATUS_CODE"
-          if [[ "$STATUS_CODE" -eq 200 ]]; then
-            echo "URL is up and running with status code 200"
-            echo "status_code=200" >> $GITHUB_ENV
-          else
-            echo "Error: URL did not return status code 200. Status Code: $STATUS_CODE"
+          check_url_status() {
+            local url=$1
+            local max_attempts=3
+            local delay=10
+            local attempt=0
+          
+            while (( attempt < max_attempts )); do
+              STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "$url")
+              echo "URL Status Code: $STATUS_CODE"
+          
+              if [[ "$STATUS_CODE" -eq 200 ]]; then
+                echo "URL is up and running with status code 200"
+                echo "status_code=200" >> $GITHUB_ENV
+                return 0
+              else
+                echo "Attempt $((attempt + 1))/$max_attempts failed. Status Code: $STATUS_CODE"
+                ((attempt++))
+                sleep $delay
+              fi
+            done
+          
+            echo "Error: URL did not return status code 200 after $max_attempts attempts. Status Code: $STATUS_CODE"
             echo "status_code=$STATUS_CODE" >> $GITHUB_ENV
-            
+          
             aws sns publish \
               --topic-arn ${{ env.SNS_TOPIC }} \
               --subject "${{ github.event.inputs.environment }} App Down Alert - Status Code: $STATUS_CODE" \
               --message "The app at ${{ env.URL }} is down. Status code: $STATUS_CODE. Please investigate."
             exit 3
-
+          }
+          
+          echo "Check the URL status"
+          check_url_status "${{ env.URL }}/status"
+          
+          echo "Send notification if the status is healthy"
+          if [[ "$status_code" -eq 200 ]]; then
+            INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+              --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+              --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
+              --output text)
+          
+            MESSAGE="${{ env.BODY_PREFIX }} The patching has been completed successfully.
+           **Patched Instance IDs:**
+          $INSTANCE_IDS
+          
+          Please reach out to v3atlassianops@vitechinc.com for any issues."
+          
+            aws sns publish \
+              --topic-arn ${{ env.SNS_TOPIC }} \
+              --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
+              --message "$MESSAGE"
+          else
+            echo "Skipping post-patching notification due to failed URL status check."
           fi
-         
-      - name: Send post-patching notification via SNS
-        if: env.status_code == '200'
-        run: |
-          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
-            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
-            --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text)
-      
-          aws sns publish \
-            --topic-arn ${{ env.SNS_TOPIC }} \
-            --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully.\n\n🚀 **Patched Instance IDs:**\n%s\n "$INSTANCE_IDS" \nPlease reach out to v3atlassianops@vitechinc.com for any issues.")"
