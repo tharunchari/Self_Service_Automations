@@ -65,8 +65,8 @@ jobs:
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text | tr -s '\n' '\n')
-          
+            --output text)
+          FORMATTED_IDS=$(echo "$INSTANCE_IDS" | tr ' ' '\n' | sed 's/^/`/; s/$/`/')
           if [[ -z "$INSTANCE_IDS" ]]; then
             echo "No instances found in the Auto Scaling Group. Exiting."
             exit 1
@@ -75,7 +75,7 @@ jobs:
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
-            --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process. \n\n **Instance IDs:**\n$(echo "$INSTANCE_IDS" | sed 's/^/`/; s/$/`/')"
+            --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process. \n\n **Instance IDs:**\n$FORMATTED_IDS"
 
       - name: Get Auto Scaling Group Instances
         id: get-instances
@@ -187,7 +187,7 @@ jobs:
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
               --comment "Stop ds_agent remove dsa_filt and start ds_agent" \
-              --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]'
+              --parameters 'commands=["service ds_agent stop", "sleep 200", "sudo rmmod dsa_filter", "service ds_agent start"]'
 
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
@@ -269,10 +269,11 @@ jobs:
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text | tr -s '\n' '\n')
+            --output text)
+            FORMATTED_IDS=$(echo "$INSTANCE_IDS" | tr ' ' '\n' | sed 's/^/`/; s/$/`/')
       
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "${{ env.BODY_PREFIX }} The patching has been completed successfully. Check URL: ${{ env.URL }}.\n\n**Patched Instance IDs:**\n$(echo "$INSTANCE_IDS" | sed 's/^/`/; s/$/`/')\n\nPlease reach out to v3atlassianops@vitechinc.com for any issues."          
+            --message "${{ env.BODY_PREFIX }} The patching has been completed successfully. Check URL: ${{ env.URL }}.\n\n**Patched Instance IDs:**\n$FORMATTED_IDS\n\nPlease reach out to v3atlassianops@vitechinc.com for any issues."          
     
