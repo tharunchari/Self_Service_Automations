@@ -65,7 +65,7 @@ jobs:
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text | tr -s '\n' ' ')
+            --output text | tr -s '\n' '\n')
           
           if [[ -z "$INSTANCE_IDS" ]]; then
             echo "No instances found in the Auto Scaling Group. Exiting."
@@ -75,7 +75,7 @@ jobs:
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
-            --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process. Instance IDs: $INSTANCE_IDS"
+            --message "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process. \n\n **Instance IDs:**\n$(echo "$INSTANCE_IDS" | sed 's/^/`/; s/$/`/')"
 
       - name: Get Auto Scaling Group Instances
         id: get-instances
@@ -269,10 +269,10 @@ jobs:
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text | tr -s '\n' ' ')
+            --output text | tr -s '\n' '\n')
       
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "${{ env.BODY_PREFIX }} The patching has been completed successfully, check URL: ${{ env.URL }}. Patched Instance IDs: $INSTANCE_IDS. Please reach out v3atlassianops@vitechinc.com for any issues."RL }}. Please reach out v3atlassianops@vitechinc.com for any issues."          
+            --message "${{ env.BODY_PREFIX }} The patching has been completed successfully. Check URL: ${{ env.URL }}.\n\n**Patched Instance IDs:**\n$(echo "$INSTANCE_IDS" | sed 's/^/`/; s/$/`/')\n\nPlease reach out to v3atlassianops@vitechinc.com for any issues."          
     
