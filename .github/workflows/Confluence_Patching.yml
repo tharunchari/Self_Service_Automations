@@ -186,9 +186,11 @@ jobs:
           verify_node_status() {
             local INSTANCE_ID=$1
             INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[].Instances[].PrivateIpAddress' --output text)
+            echo "Instnace IP : $INSTANCE_PRIVATE_IP"
             NODE_STATUS=$(curl -X GET -H "Authorization: Bearer ${{ env.TOKEN }}" -H "Content-Type: application/json" "${{ env.URL }}/rest/zdu/cluster" | jq .)
+            echo "Node Status : $NODE_STATUS"
             INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.nodes[] | select(.ipAddress == $ip and .state == "ACTIVE")')
-            [[ -z "$INSTANCE_ALIVE" ]] && fail_workflow "$INSTANCE_ID" "Instance not healthy after patching"
+            [[ -z "$INSTANCE_ALIVE" ]] && fail_workflow "$INSTANCE_ID($INSTANCE_PRIVATE_IP)" "Instance not healthy after patching"
           }
       
           send_sns_notification() {
