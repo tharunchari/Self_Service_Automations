@@ -111,10 +111,9 @@ jobs:
           }
 
           declare -A ORG_TOKENS=(
-            [org1]="${{ secrets.PROD_FINE_GRAINED_PAT }}"
-            [org2]="${{ secrets.INFRA_FINE_GRAINED_PAT }}"
+            [org1]="${{ secrets.INFRA_FINE_GRAINED_PAT }}"
           )
-
+           # [org1]="${{ secrets.PROD_FINE_GRAINED_PAT }}"
           for org in "${!ORG_TOKENS[@]}"; do
             process_org_repos "$org" "${ORG_TOKENS[$org]}"
           done
