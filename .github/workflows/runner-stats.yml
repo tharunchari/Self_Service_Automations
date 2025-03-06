@@ -21,8 +21,10 @@ jobs:
 
       - name: Set up required tools
         run: |
+          echo "Setting up required tools..."
           sudo apt-get update
           sudo apt-get install -y jq curl
+          echo "Tools installed successfully."
 
       - name: Validate and format input dates
         run: |
@@ -97,13 +99,14 @@ jobs:
               for run_id in $run_ids; do
                 # Fetch timing for each workflow run
                 timing=$(curl -s -H "Authorization: token $token" "https://api.github.com/repos/$org/$repo/actions/runs/$run_id/timing")
-                duration=$(echo "$timing" | jq '.total_duration') # This assumes the timing endpoint returns total_duration in minutes
+                duration=$(echo "$timing" | jq '.total_duration // 0') # Default to 0 if not available
                 total_minutes=$((total_minutes + duration))
                 run_count=$((run_count + 1))
               done
 
               echo "    Total workflow runs: $run_count" >> $output_file
               echo "    Total runner minutes used: $total_minutes" >> $output_file
+              echo "  Repo: $repo | Runs: $run_count | Total Minutes: $total_minutes"
             done
           }
 
@@ -116,6 +119,8 @@ jobs:
             process_org_repos "$org" "${ORG_TOKENS[$org]}"
           done
 
+          echo "Runner stats collection completed."
+
       - name: Upload output file as an artifact
         uses: actions/upload-artifact@v4
         with:
@@ -126,3 +131,4 @@ jobs:
         run: |
           echo "Cleaning up temporary files..."
           rm -f runner_stats_output_*.txt
+          echo "Cleanup completed."
