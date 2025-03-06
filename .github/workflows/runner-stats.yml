@@ -86,14 +86,30 @@ jobs:
 
             for repo in $repo_names; do
               echo "  Checking repo: $repo" >> $output_file
-              runners=$(curl -s -H "Authorization: token $token" "https://api.github.com/repos/$org/$repo/actions/runners" | jq '.total_count')
-              echo "    Runners: $runners" >> $output_file
+              
+              # Fetch workflow runs
+              workflow_runs=$(fetch_paginated_data "https://api.github.com/repos/$org/$repo/actions/runs" "$token")
+              run_ids=$(echo "$workflow_runs" | jq -r '.workflow_runs[].id')
+
+              total_minutes=0
+              run_count=0
+
+              for run_id in $run_ids; do
+                # Fetch timing for each workflow run
+                timing=$(curl -s -H "Authorization: token $token" "https://api.github.com/repos/$org/$repo/actions/runs/$run_id/timing")
+                duration=$(echo "$timing" | jq '.total_duration') # This assumes the timing endpoint returns total_duration in minutes
+                total_minutes=$((total_minutes + duration))
+                run_count=$((run_count + 1))
+              done
+
+              echo "    Total workflow runs: $run_count" >> $output_file
+              echo "    Total runner minutes used: $total_minutes" >> $output_file
             done
           }
 
           declare -A ORG_TOKENS=(
             [org1]="${{ secrets.PROD_FINE_GRAINED_PAT }}"
-            [org2]="${{ secrets.QA_FINE_GRAINED_PAT }}"
+            [org2]="${{ secrets.INFRA_FINE_GRAINED_PAT }}"
           )
 
           for org in "${!ORG_TOKENS[@]}"; do
