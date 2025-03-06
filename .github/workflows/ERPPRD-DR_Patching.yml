@@ -41,7 +41,7 @@ jobs:
             # Send notification for invalid key
             aws sns publish \
               --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-              --message "**ERPPRD-DR Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n\n$(date +%Y-%m-%d)" \
+              --message "$(echo -e "**ERPPRD-DR Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n\n$(date +%Y-%m-%d)")" \
               --subject "ERPPRD-DR Patching Aborted: Invalid Key"
             exit 1
           fi
