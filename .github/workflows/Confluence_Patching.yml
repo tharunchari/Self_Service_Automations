@@ -65,8 +65,8 @@ jobs:
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text)
-          FORMATTED_IDS=$(echo "$INSTANCE_IDS" | tr ' ' '\n' | sed 's/^/`/; s/$/`/')
+            --output text | tr -s '\n' ' ')
+
           if [[ -z "$INSTANCE_IDS" ]]; then
             echo "No instances found in the Auto Scaling Group. Exiting."
             exit 1
@@ -269,8 +269,7 @@ jobs:
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text)
-            FORMATTED_IDS=$(echo "$INSTANCE_IDS" | tr ' ' '\n' | sed 's/^/`/; s/$/`/')
+            --output text | tr -s '\n' ' ')
       
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
