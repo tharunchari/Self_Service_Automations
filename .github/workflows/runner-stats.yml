@@ -2,132 +2,42 @@ name: Runner Stats Collection
 
 on:
   workflow_dispatch:
-    inputs:
-      start_date:
-        description: 'Start Date (DD/MM/YYYY)'
-        required: true
-        default: '01/02/2025'
-      end_date:
-        description: 'End Date (DD/MM/YYYY)'
-        required: true
-        default: '27/02/2025'
 
 jobs:
-  get-runner-stats:
+  collect-usage:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the repository
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
-      - name: Set up required tools
-        run: |
-          echo "Setting up required tools..."
-          sudo apt-get update
-          sudo apt-get install -y jq curl
-          echo "Tools installed successfully."
-
-      - name: Validate and format input dates
-        run: |
-          set -o errexit
-          start_date="${{ github.event.inputs.start_date }}"
-          end_date="${{ github.event.inputs.end_date }}"
-
-          echo "Validating input dates..."
-
-          if ! date -d "$(echo $start_date | awk -F'/' '{print $3"-"$2"-"$1}')" >/dev/null 2>&1 || \
-             ! date -d "$(echo $end_date | awk -F'/' '{print $3"-"$2"-"$1}')" >/dev/null 2>&1; then
-            echo "Error: Invalid date format. Use DD/MM/YYYY."
-            exit 1
-          fi
-
-          start_date_iso=$(date -d "$(echo $start_date | awk -F'/' '{print $3"-"$2"-"$1}')" +%Y-%m-%d)
-          end_date_iso=$(date -d "$(echo $end_date | awk -F'/' '{print $3"-"$2"-"$1}')" +%Y-%m-%d)
-
-          if [[ $(date -d "$start_date_iso" +%s) -gt $(date -d "$end_date_iso" +%s) ]]; then
-            echo "Error: Start date must be before end date."
-            exit 1
-          fi
-
-          echo "Validated dates: $start_date_iso to $end_date_iso"
-          echo "START_DATE=$start_date_iso" >> $GITHUB_ENV
-          echo "END_DATE=$end_date_iso" >> $GITHUB_ENV
-
-      - name: Collect runner stats
+      - name: Get Runner Usage
         env:
-          VITECHSYSTEMS_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-          VITECHQA_TOKEN: ${{ secrets.QA_FINE_GRAINED_PAT }}
-          VITECHINFRA_TOKEN: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          output_file="runner_stats_output_$(date +%Y%m%d%H%M%S).txt"
-          echo "Runner Stats Collection Report" > $output_file
-          echo "===============================\n" >> $output_file
-          echo "Date Range: $START_DATE to $END_DATE\n" >> $output_file
+          ORGS=("vitechsystems" "VitechInfra") # List of organizations
+          echo "Organization,Repository,Run ID,Duration" > usage_report.csv
 
-          fetch_paginated_data() {
-            local url="$1"
-            local token="$2"
-            local page=1
-            local result="[]"
-            
-            while : ; do
-              page_data=$(curl -s -H "Authorization: token $token" "$url?page=$page&per_page=100")
-              if [[ -z "$page_data" || "$page_data" == "[]" ]]; then break; fi
-              result=$(echo "$result $page_data" | jq -s add)
-              page=$((page + 1))
-            done
-            echo "$result"
-          }
+          for ORG in "${ORGS[@]}"; do
+            REPO_LIST=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/orgs/$ORG/repos?per_page=100" | jq -r '.[].full_name')
 
-          process_org_repos() {
-            local org=$1
-            local token=$2
-            echo "Processing organization: $org" >> $output_file
-            
-            repos=$(fetch_paginated_data "https://api.github.com/orgs/$org/repos" "$token")
-            repo_names=$(echo "$repos" | jq -r '.[].name')
+            for REPO in $REPO_LIST; do
+              RUNS=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/$REPO/actions/runs")
 
-            for repo in $repo_names; do
-              echo "  Checking repo: $repo" >> $output_file
-              
-              # Fetch workflow runs
-              workflow_runs=$(fetch_paginated_data "https://api.github.com/repos/$org/$repo/actions/runs" "$token")
-              run_ids=$(echo "$workflow_runs" | jq -r '.workflow_runs[].id')
+              RUN_IDS=$(echo $RUNS | jq -r '.workflow_runs[].id')
+              for RUN_ID in $RUN_IDS; do
+                TIMING=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+                  "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/timing")
 
-              total_minutes=0
-              run_count=0
-
-              for run_id in $run_ids; do
-                # Fetch timing for each workflow run
-                timing=$(curl -s -H "Authorization: token $token" "https://api.github.com/repos/$org/$repo/actions/runs/$run_id/timing")
-                duration=$(echo "$timing" | jq '.total_duration // 0') # Default to 0 if not available
-                total_minutes=$((total_minutes + duration))
-                run_count=$((run_count + 1))
+                DURATION=$(echo $TIMING | jq '.total_duration' | awk '{print $1/60}') # Convert seconds to minutes
+                echo "$ORG,$REPO,$RUN_ID,$DURATION" >> usage_report.csv
               done
-
-              echo "    Total workflow runs: $run_count" >> $output_file
-              echo "    Total runner minutes used: $total_minutes" >> $output_file
-              echo "  Repo: $repo | Runs: $run_count | Total Minutes: $total_minutes"
             done
-          }
-
-          declare -A ORG_TOKENS=(
-            [org1]="${{ secrets.INFRA_FINE_GRAINED_PAT }}"
-          )
-           # [org1]="${{ secrets.PROD_FINE_GRAINED_PAT }}"
-          for org in "${!ORG_TOKENS[@]}"; do
-            process_org_repos "$org" "${ORG_TOKENS[$org]}"
           done
 
-          echo "Runner stats collection completed."
-
-      - name: Upload output file as an artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload report
+        uses: actions/upload-artifact@v2
         with:
-          name: runner-stats-output
-          path: runner_stats_output_*.txt
-
-      - name: Cleanup
-        run: |
-          echo "Cleaning up temporary files..."
-          rm -f runner_stats_output_*.txt
-          echo "Cleanup completed."
+          name: usage-report
+          path: usage_report.csv
