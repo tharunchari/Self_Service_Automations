@@ -105,15 +105,17 @@ jobs:
               --instance-ids "$INSTANCE_ID" \
               --should-decrement-desired-capacity
       
-            echo "Stop services, upgrade, and handle agent restart"
+            echo "Stop services, upgrade"
             run_ssm_command "$INSTANCE_ID" "Stop services" '["sudo service httpd stop", "sudo service confluence stop"]'
             run_upgrade "$INSTANCE_ID"
-            run_ssm_command "$INSTANCE_ID" "Restart ds_agent" '["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]'
-      
+           
             echo "Restart instance"
             restart_instance "$INSTANCE_ID"
             wait_for_ssm "$INSTANCE_ID"
-      
+
+            echo "ds_agent tasks"
+            run_ssm_command "$INSTANCE_ID" "Restart ds_agent" '["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]'
+            
             echo "Restart services"
             restart_services "$INSTANCE_ID"
       
