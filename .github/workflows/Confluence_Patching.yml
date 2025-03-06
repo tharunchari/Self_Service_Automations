@@ -88,174 +88,130 @@ jobs:
           aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --min-size 1 
-            
+
       - name: Patch Each Instance
         id: patch-each-instance
         run: |
           INSTANCE_IDS_ARRAY=(${{ env.INSTANCE_IDS }})
           PATCH_SUCCESS=true  
-
-          for INSTANCE_ID in "${INSTANCE_IDS_ARRAY[@]}"
-          do
+      
+          patch_instance() {
+            local INSTANCE_ID=$1
             echo "Patching instance: $INSTANCE_ID"
-
+      
+            echo "Enter standby"
             aws autoscaling enter-standby \
               --auto-scaling-group-name "${{ env.ASG_NAME }}" \
               --instance-ids "$INSTANCE_ID" \
               --should-decrement-desired-capacity
-
-            aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --comment "Stop confluence and HTTPD services" \
-              --parameters 'commands=["sudo service httpd stop", "sudo service confluence stop"]'
-
-            aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --comment "Upgrade to latest Amazon Linux release" \
-              --parameters 'commands=["dnf -y --releasever=latest update"]' \
-              --query 'Command.CommandId' --output text > command-id.txt
-              COMMAND_ID=$(cat command-id.txt)
-              echo "Waiting for upgrade command to complete..."
-              for i in {1..30}; do
-                  COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
-                  echo "Current command status: $COMMAND_STATUS"     
-                  if [[ "$COMMAND_STATUS" == "Success" ]]; then
-                      echo "Command completed successfully."
-                      break
-                  elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
-                      echo "Command failed. Exiting..."
-                      exit 1
-                  fi
-                  sleep 30  
-              done              
-              if [[ "$COMMAND_STATUS" != "Success" ]]; then
-                  echo "Max attempts exceeded. Command did not complete."
-                  exit 1
-              fi
-
-            echo "Stop the instance"
-            aws ec2 stop-instances --instance-ids "$INSTANCE_ID"
-
-            echo "Wait for the instance to stop"
-            aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID"
-
-            echo "Start the instance"
-            aws ec2 start-instances --instance-ids "$INSTANCE_ID"
-
-            echo "Wait for the instance to fully start"
-            aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
-            
-            echo "Waiting for SSM agent to be ready..."
-            SSM_READY=false
-            for i in {1..30}; do
-              STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
-              if [[ "$STATUS" == "Online" ]]; then
-                SSM_READY=true
-                break
-              fi
-              echo "SSM not ready yet... waiting (attempt $i)"
-              sleep 15
-            done
-
-            if [[ "$SSM_READY" == "false" ]]; then
-              echo "SSM agent is not ready. Triggering SNS notification."
-              aws sns publish \
-                --topic-arn $SNS_TOPIC \
-                --subject "SSM Not Ready for Instance $INSTANCE_ID" \
-                --message "SSM agent did not become ready after EC2 start in "${{ github.event.inputs.environment }}" . Please investigate."
-              exit 1
-            fi
-
-            # Check instance status, fail and trigger SNS if not running
-            INSTANCE_STATE=$(aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --query 'InstanceStatuses[0].InstanceState.Name' --output text)
-            if [[ "$INSTANCE_STATE" != "running" ]]; then
-              echo "Instance $INSTANCE_ID failed to start. Triggering SNS notification."
-              aws sns publish \
-                --topic-arn $SNS_TOPIC \
-                --subject "EC2 Start Failure for Instance $INSTANCE_ID" \
-                --message "Instance $INSTANCE_ID failed to start after "${{ github.event.inputs.environment }}" patching. Please investigate."
-              exit 1
-            fi
-
-              aws ssm send-command \
-                --instance-ids "$INSTANCE_ID" \
-                --document-name "AWS-RunShellScript" \
-                --comment "Stop ds_agent, remove dsa_filt, and start ds_agent" \
-                --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]' \
-                --query 'Command.CommandId' --output text > command-id.txt
-              COMMAND_ID=$(cat command-id.txt)
-              echo "Waiting for command to complete..."
-              for i in {1..30}; do
-                COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
-                echo "Current command status: $COMMAND_STATUS"
-                
-                if [[ "$COMMAND_STATUS" == "Success" ]]; then
-                  echo "Command completed successfully."
-                  break
-                elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
-                  echo "Command failed. Exiting..."
-                  exit 1
-                fi
-                
-                sleep 30  
-              done              
-              
-              # Check if the command was successful
-              if [[ "$COMMAND_STATUS" != "Success" ]]; then
-                echo "Max attempts exceeded. Command did not complete."
-                exit 1
-              fi
-
-            aws ssm send-command \
-              --instance-ids "$INSTANCE_ID" \
-              --document-name "AWS-RunShellScript" \
-              --comment "Backup /etc/httpd/conf.d, then restart confluence and HTTPD services" \
-              --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak", "sudo service httpd restart", "sudo service confluence restart"]'
-
+      
+            echo "Stop services & upgrade"
+            run_ssm_command "$INSTANCE_ID" "Stop services" '["sudo service httpd stop", "sudo service confluence stop"]'
+            run_upgrade "$INSTANCE_ID"
+      
+            echo "Restart instance"
+            restart_instance "$INSTANCE_ID"
+            wait_for_ssm "$INSTANCE_ID"
+      
+            echo "Check instance health"
+            check_instance_health "$INSTANCE_ID"
+            restart_services "$INSTANCE_ID"
+      
+            echo "Exit standby"
             aws autoscaling exit-standby \
               --auto-scaling-group-name "${{ env.ASG_NAME }}" \
               --instance-ids "$INSTANCE_ID"
-
+      
             sleep 600
-
-            # Check node status using the API
-            NODE_STATUS=$(curl -X GET \
-              -H "Authorization: Bearer ${{ env.TOKEN }}" \
-              -H "Content-Type: application/json" \
-              "${{ env.URL }}/rest/zdu/cluster" | jq .)
-
-            INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances \
+            verify_node_status "$INSTANCE_ID"
+          }
+      
+          run_ssm_command() {
+            local INSTANCE_ID=$1
+            local COMMENT=$2
+            local COMMANDS=$3
+      
+            aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
-              --query 'Reservations[].Instances[].PrivateIpAddress' \
-              --output text)
-
-            echo "Private IP: $INSTANCE_PRIVATE_IP"
-            echo "NODE_STATUS: $NODE_STATUS"
-            
-            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.nodes[] | select(.ipAddress == $ip and .state == "ACTIVE")')
-            if [[ -n "$INSTANCE_ALIVE" ]]; then
-              echo "Instance $INSTANCE_ID is alive and healthy."
-              echo "========================================================="
-            else
-              echo "Error: Instance $INSTANCE_ID is NOT healthy. Sending notification."  
-              aws sns publish \
-                --topic-arn ${{ env.SNS_TOPIC }} \
-                --subject "${{ env.SUBJECT_PREFIX }} Failed on Node $INSTANCE_PRIVATE_IP" \
-                --message "Patching of instance $INSTANCE_ID ($INSTANCE_PRIVATE_IP) failed. Please investigate."
-                
-              PATCH_SUCCESS=false  
-              break  
-            fi
-          done
-
-          # Stop further patching if any instance failed
-          if [[ "$PATCH_SUCCESS" == "false" ]]; then
-            echo "Instances $INSTANCE_ID ($INSTANCE_PRIVATE_IP) failed the patching process. Exiting workflow."
+              --document-name "AWS-RunShellScript" \
+              --comment "$COMMENT" \
+              --parameters "commands=$COMMANDS" \
+              --query 'Command.CommandId' --output text > command-id.txt
+      
+            COMMAND_ID=$(cat command-id.txt)
+            wait_for_command "$COMMAND_ID"
+          }
+      
+          run_upgrade() {
+            run_ssm_command "$1" "Upgrade Amazon Linux" '["dnf -y --releasever=latest update"]'
+          }
+      
+          restart_instance() {
+            local INSTANCE_ID=$1
+            aws ec2 stop-instances --instance-ids "$INSTANCE_ID"
+            aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID"
+            aws ec2 start-instances --instance-ids "$INSTANCE_ID"
+            aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+          }
+      
+          wait_for_ssm() {
+            local INSTANCE_ID=$1
+            for i in {1..30}; do
+              STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
+              [[ "$STATUS" == "Online" ]] && return
+              echo "SSM not ready yet... waiting (attempt $i)"
+              sleep 15
+            done
+            send_sns_notification "$INSTANCE_ID" "SSM agent not ready after EC2 start"
             exit 1
-          fi
-          
+          }
+      
+          wait_for_command() {
+            local COMMAND_ID=$1
+            for i in {1..30}; do
+              COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+              echo "Current command status: $COMMAND_STATUS"
+              [[ "$COMMAND_STATUS" == "Success" ]] && return
+              [[ "$COMMAND_STATUS" == "Failed" ]] && exit 1
+              sleep 30
+            done
+            echo "Max attempts exceeded. Command did not complete."
+            exit 1
+          }
+      
+          check_instance_health() {
+            local INSTANCE_ID=$1
+            INSTANCE_STATE=$(aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --query 'InstanceStatuses[0].InstanceState.Name' --output text)
+            [[ "$INSTANCE_STATE" != "running" ]] && send_sns_notification "$INSTANCE_ID" "Instance failed to start after patching"
+          }
+      
+          restart_services() {
+            run_ssm_command "$1" "Restart services" '["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak", "sudo service httpd restart", "sudo service confluence restart"]'
+          }
+      
+          verify_node_status() {
+            local INSTANCE_ID=$1
+            INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[].Instances[].PrivateIpAddress' --output text)
+            NODE_STATUS=$(curl -X GET -H "Authorization: Bearer ${{ env.TOKEN }}" -H "Content-Type: application/json" "${{ env.URL }}/rest/zdu/cluster" | jq .)
+            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.nodes[] | select(.ipAddress == $ip and .state == "ACTIVE")')
+            [[ -z "$INSTANCE_ALIVE" ]] && send_sns_notification "$INSTANCE_ID" "Instance not healthy after patching"
+          }
+      
+          send_sns_notification() {
+            local INSTANCE_ID=$1
+            local MESSAGE=$2
+            aws sns publish --topic-arn ${{ env.SNS_TOPIC }} --subject "$MESSAGE for Instance $INSTANCE_ID" --message "$MESSAGE in ${{ github.event.inputs.environment }}. Please investigate."
+            PATCH_SUCCESS=false
+          }
+      
+          for INSTANCE_ID in "${INSTANCE_IDS_ARRAY[@]}"; do
+            patch_instance "$INSTANCE_ID" || break
+          done
+      
+          [[ "$PATCH_SUCCESS" == "false" ]] && exit 1
+      
+          echo "All instances patched successfully."
+
       - name: Set Auto Scaling Group to 2-2
         run: |
           aws autoscaling update-auto-scaling-group \
