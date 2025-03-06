@@ -61,7 +61,7 @@ jobs:
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text | tr -s '\n' ' ')
+            --output text)
 
           if [[ -z "$INSTANCE_IDS" ]]; then
             echo "No instances found in the Auto Scaling Group. Exiting."
@@ -288,7 +288,7 @@ jobs:
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text | tr -s '\n' ' ')
+            --output text)
       
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
