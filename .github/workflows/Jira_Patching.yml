@@ -125,7 +125,7 @@ jobs:
               --should-decrement-desired-capacity
 
           aws ssm send-command \
-            --instance-ids "$INSTANCE_TO_PATCH" \
+            --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --comment "Stop Jira and HTTPD services" \
             --parameters 'commands=["sudo service httpd stop", "sudo service jira stop"]'
@@ -201,7 +201,7 @@ jobs:
                          
 
             aws ssm send-command \
-            --instance-ids "$INSTANCE_TO_PATCH" \
+            --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --comment "Backup /etc/httpd/conf.d, then restart Jira and HTTPD services" \
             --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak", "sudo service httpd restart", "sudo service jira restart"]'
