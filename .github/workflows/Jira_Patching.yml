@@ -212,21 +212,23 @@ jobs:
 
             sleep 600
 
-            # Check node status using the API
+            echo "Check node status using the API"
             NODE_STATUS=$(curl -X GET \
-            -H "Authorization: Bearer ${{ env.TOKEN }}" \
-            -H "Content-Type: application/json" \
-            "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
-
+              -H "Authorization: Bearer ${{ env.TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
+            
             INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances \
               --instance-ids "$INSTANCE_ID" \
               --query 'Reservations[].Instances[].PrivateIpAddress' \
               --output text)
-
+            
             echo "Private IP: $INSTANCE_PRIVATE_IP"
             echo "NODE_STATUS: $NODE_STATUS"
             
-            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.nodes[] | select(.nodeId == $ip and .state == "ACTIVE")')
+            # Correctly access nodes
+            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.[] | select(.nodeId == $ip and .state == "ACTIVE")')
+
             if [[ -n "$INSTANCE_ALIVE" ]]; then
               echo "Instance $INSTANCE_ID is alive and healthy."
               echo "========================================================="
