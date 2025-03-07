@@ -1,25 +1,27 @@
-name: Fetch Metrics Usage
+name: Fetch Previous Month Runner Usage
 
 on:
- # schedule:
-   # - cron: '0 0 1 * *' # Runs at midnight on the first day of each month
+  #schedule:
+  #  - cron: '0 0 1 * *' # Runs at midnight on the first day of each month
   workflow_dispatch: # Allows manual trigger
 
 jobs:
-  fetch-metrics:
+  fetch-runner-usage:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Get Organization Usage
+      - name: Fetch Actions Usage
         run: |
-          echo "Fetching Organization Usage..."
+          echo "Fetching GitHub Actions usage for VitechInfra (Previous Month)..."
           curl -H "Authorization: Bearer ${{ secrets.INFRA_FINE_GRAINED_PAT }}" \
                -H "Accept: application/vnd.github.v3+json" \
-               "https://api.github.com/orgs/VitechInfra/actions/usage"
+               "https://api.github.com/orgs/VitechInfra/actions/usage" \
+               | jq '.'
 
-      - name: Get Runner Groups
+      - name: Fetch Runner Groups
         run: |
           echo "Fetching Runner Groups..."
           curl -H "Authorization: Bearer ${{ secrets.INFRA_FINE_GRAINED_PAT }}" \
                -H "Accept: application/vnd.github.v3+json" \
-               "https://api.github.com/orgs/VitechInfra/actions/runner-groups"
+               "https://api.github.com/orgs/VitechInfra/actions/runner-groups" \
+               | jq '.'
