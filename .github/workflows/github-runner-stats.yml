@@ -10,24 +10,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v2
+      - name: Get Organization Usage
+        run: |
+          echo "Fetching Organization Usage..."
+          curl -H "Authorization: Bearer ${{ secrets.INFRA_FINE_GRAINED_PAT }}" \
+               -H "Accept: application/vnd.github.v3+json" \
+               "https://api.github.com/orgs/VitechInfra/actions/usage"
 
-    - name: Get Usage Metrics
-      run: |
-        curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-             -H "Accept: application/vnd.github.v3+json" \
-             "https://api.github.com/orgs/VitechInfra/actions/usage"
-      
-    - name: Save Metrics to File
-      run: |
-        curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-             -H "Accept: application/vnd.github.v3+json" \
-             "https://api.github.com/orgs/VitechInfra/actions/usage" \
-             -o metrics-usage.json
-
-    - name: Upload Usage Report
-      uses: actions/upload-artifact@v4
-      with:
-        name: metrics-usage
-        path: metrics-usage.json
+      - name: Get Runner Groups
+        run: |
+          echo "Fetching Runner Groups..."
+          curl -H "Authorization: Bearer ${{ secrets.INFRA_FINE_GRAINED_PAT }}" \
+               -H "Accept: application/vnd.github.v3+json" \
+               "https://api.github.com/orgs/VitechInfra/actions/runner-groups"
