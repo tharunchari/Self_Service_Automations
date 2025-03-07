@@ -178,7 +178,7 @@ jobs:
                 --message "Instance $INSTANCE_ID failed to start after "${{ github.event.inputs.environment }}" patching. Please investigate."
               exit 1
             fi
-
+             echo "ds_agent tasks"
               aws ssm send-command \
                 --instance-ids "$INSTANCE_ID" \
                 --document-name "AWS-RunShellScript" \
