@@ -1,0 +1,25 @@
+name: Get Usage Metrics
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  fetch-usage-metrics:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Fetch usage metrics
+        run: |
+          ORGANIZATION="VitechInfra"
+          TOKEN="${{ secrets.INFRA_FINE_GRAINED_PAT }}" 
+          DATE_RANGE_TYPE="DATE_RANGE_TYPE_PREVIOUS_MONTH"
+
+          response=$(curl -s -H "Authorization: Bearer $TOKEN" \
+            "https://api.github.com/orgs/$ORGANIZATION/actions/metrics/usage?dateRangeType=$DATE_RANGE_TYPE")
+
+          echo "Response: $response"
