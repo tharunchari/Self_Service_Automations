@@ -93,7 +93,7 @@
       become_user: tomcat
 
     - name: copy erp_dryrun.war from weapps
-      ansible.builtin.command: cp -r /opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/webapps/erp_dryrun.war /opt/{{ erpprd_path }}/apache-tomcat-9.0/webapps/
+      ansible.builtin.command: cp -r /opt/{{ erpprd_path }}_backup_{{ timestamp }}/apache-tomcat-9.0/webapps/{{ erpprd_path }}.war /opt/{{ erpprd_path }}/apache-tomcat-9.0/webapps/
       become_user: tomcat
 
     - name: Keep backup of new files (catalina.sh, startup.sh, stopdown.sh, server.xml and context.xml)
