@@ -35,12 +35,7 @@ jobs:
         env:
           GITHUB_PAT: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
 
-      - name: Send Notification (via Slack)
-        uses: rtCamp/action-slack-notify@v2
-        env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_MESSAGE: "GitHub Runner Usage Data for VitechInfra: Self-hosted: $SELF_HOSTED_MINUTES min, Hosted: $HOSTED_MINUTES min. 📊"
-
+     
       - name: Upload Usage Data as Artifact
         uses: actions/upload-artifact@v3
         with:
