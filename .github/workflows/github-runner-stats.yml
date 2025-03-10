@@ -23,7 +23,8 @@ jobs:
                         "$GITHUB_API_URL")
 
 
-          QUERY='{ "query": "query { organization(login: \"vitechsystems\") { actionsUsage(period: PREVIOUS_MONTH) { totalMinutesUsed totalPaidMinutesUsed minutesUsedBreakdown { UBUNTU MACOS WINDOWS total } } } }" }'
+           QUERY='{ "query": "query { organization(login: \"VitechInfra\") { actionsUsage(period: PREVIOUS_MONTH) { totalMinutesUsed totalPaidMinutesUsed minutesUsedBreakdown { UBUNTU MACOS WINDOWS total } } } }" }'
+
 
           RESPONSE=$(curl -X POST https://api.github.com/graphql \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
