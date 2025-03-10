@@ -17,8 +17,8 @@ jobs:
         run: |
           echo "Fetching GitHub Actions runner usage..."
           #GITHUB_API_URL="https://api.github.com/orgs/VitechInfra/actions/usage"
-          GITHUB_API_URL="https://api.github.com/orgs/VitechInfra/settings/billing/actions"
-          RESPONSE=$(curl -H "Authorization: Bearer ${{ secrets.INFRA_FINE_GRAINED_PAT }}" \
+          GITHUB_API_URL="https://api.github.com/orgs/vitechsystems/settings/billing/actions"
+          RESPONSE=$(curl -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
                         -H "Accept: application/vnd.github.v3+json" \
                         "$GITHUB_API_URL")
           echo "Full API Response:"
