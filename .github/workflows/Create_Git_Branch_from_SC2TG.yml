@@ -19,10 +19,16 @@ on:
       TARGET_BRANCH:
         required: true
         description: Target branch name
-      SOURCE_VERSION:
+      SOURCE_CLIENT_VERSION:
         required: true
         description: Pom file version of source
-      TARGET_VERSION:
+      TARGET_CLIENT_VERSION:
+        required: true
+        description: Pom file version of target
+      SOURCE_PROD_VERSION:
+        required: true
+        description: Pom file version of source
+      TARGET_PROD_VERSION:
         required: true
         description: Pom file version of target
       Commit_Number:
@@ -92,8 +98,10 @@ jobs:
           TARGET_REPO_NAME1="${{ github.event.inputs.TARGET_REPO_NAME }}"
           SOURCE_BRANCH="${{ inputs.SOURCE_BRANCH }}"
           TARGET_BRANCH="${{ inputs.TARGET_BRANCH }}"
-          SOURCE_VERSION="${{ inputs.SOURCE_VERSION }}"
-          TARGET_VERSION="${{ inputs.TARGET_VERSION }}"
+          SOURCE_CLIENT_VERSION="${{ inputs.SOURCE_CLIENT_VERSION }}"
+          TARGET_CLIENT_VERSION="${{ inputs.TARGET_CLIENT_VERSION }}"
+          SOURCE_PROD_VERSION="${{ inputs.SOURCE_PROD_VERSION }}"
+          TARGET_PROD_VERSION="${{ inputs.TARGET_PROD_VERSION }}"
           COMMIT_NUMBER="${{ inputs.Commit_Number }}"
           set -x
           mkdir Branch_creation
@@ -144,9 +152,11 @@ jobs:
             echo "Updating pom files and committing code..."
 
             # Updating pom files, committing and pushing changes
-            find . -name pom.xml | xargs sed -i 's/'"${SOURCE_VERSION}"'/'"${TARGET_VERSION}"'/g'
+            find . -name pom.xml | xargs sed -i 's/'"${SOURCE_CLIENT_VERSION}"'/'"${TARGET_CLIENT_VERSION}"'/g
+            sleep 10
+            find . -name pom.xml | xargs sed -i 's/'"${SOURCE_PROD_VERSION}"'/'"${TARGET_PROD_VERSION}"'/g''
             git add -u
-            git commit -m "Updated pom files to version ${TARGET_VERSION}"
+            git commit -m "Updated pom files to version ${TARGET_CLIENT_VERSION}"
             git push -u origin $TARGET_BRANCH
           else
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
