@@ -32,9 +32,12 @@ jobs:
           echo "Full API Response:"
           echo "$RESPONSE" | jq .
           echo "$RESPONSE" > runner_usage.json
+          
+          SELF_HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.data.organization.actionsUsage.totalMinutesUsed // 0')
+          HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.data.organization.actionsUsage.totalPaidMinutesUsed // 0')
 
-          SELF_HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.billable."SELF_HOSTED".total_ms // 0')
-          HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.billable."GITHUB_HOSTED".total_ms // 0')
+          #SELF_HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.billable."SELF_HOSTED".total_ms // 0')
+          #HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.billable."GITHUB_HOSTED".total_ms // 0')
 
           SELF_HOSTED_MINUTES=$(jq '.billable."SELF_HOSTED".total_ms // 0' runner_usage.json)
           HOSTED_MINUTES=$(jq '.billable."GITHUB_HOSTED".total_ms // 0' runner_usage.json)
