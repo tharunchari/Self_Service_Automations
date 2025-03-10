@@ -1,8 +1,8 @@
 name: Fetch and Notify GitHub Runner Usage
 
 on:
- # schedule:
-    #- cron: '0 0 1 * *'  # Runs on the 1st of every month
+  #schedule:
+   # - cron: '0 0 1 * *'  # Runs on the 1st of every month
   workflow_dispatch:    # Allows manual trigger
 
 jobs:
@@ -13,41 +13,29 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v2
 
-      - name: Fetch and Process Runner Usage Data
+      - name: Fetch and Process Runner Usage Data (GraphQL)
         run: |
-          echo "Fetching GitHub Actions runner usage..."
-          #GITHUB_API_URL="https://api.github.com/orgs/VitechInfra/actions/usage"
-          GITHUB_API_URL="https://api.github.com/orgs/vitechsystems/settings/billing/actions"
-          #RESPONSE=$(curl -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
-                        -H "Accept: application/vnd.github.v3+json" \
-                        "$GITHUB_API_URL")
-          QUERY='{\"query\":\"query { organization(login: \\\"VitechInfra\\\") { actionsUsage(period: PREVIOUS_MONTH) { totalMinutesUsed totalPaidMinutesUsed minutesUsedBreakdown { UBUNTU MACOS WINDOWS total } } } }\"}'
+          echo "Fetching GitHub Actions runner usage for the previous month (via GraphQL)..."
+
+          QUERY='{\"query\":\"query { organization(login: \\\"vitechsystems\\\") { actionsUsage(period: PREVIOUS_MONTH) { totalMinutesUsed totalPaidMinutesUsed minutesUsedBreakdown { UBUNTU MACOS WINDOWS total } } } }\"}'
 
           RESPONSE=$(curl -X POST https://api.github.com/graphql \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             -H "Content-Type: application/json" \
             --data "$QUERY")
 
-                        
           echo "Full API Response:"
           echo "$RESPONSE" | jq .
           echo "$RESPONSE" > runner_usage.json
-          
+
           SELF_HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.data.organization.actionsUsage.totalMinutesUsed // 0')
           HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.data.organization.actionsUsage.totalPaidMinutesUsed // 0')
 
-          #SELF_HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.billable."SELF_HOSTED".total_ms // 0')
-          #HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.billable."GITHUB_HOSTED".total_ms // 0')
-
-          SELF_HOSTED_MINUTES=$(jq '.billable."SELF_HOSTED".total_ms // 0' runner_usage.json)
-          HOSTED_MINUTES=$(jq '.billable."GITHUB_HOSTED".total_ms // 0' runner_usage.json)
-
-          SELF_HOSTED_MINUTES=$((SELF_HOSTED_MINUTES / 60000))
-          HOSTED_MINUTES=$((HOSTED_MINUTES / 60000))
-
-          echo "GitHub Actions Usage Summary:" 
+          echo "GitHub Actions Usage Summary (Previous Month):"
           echo "--------------------------------------"
           echo "Self-hosted Runner Minutes: $SELF_HOSTED_MINUTES"
           echo "GitHub-hosted Runner Minutes: $HOSTED_MINUTES"
 
-    
+          # Set output variables
+          echo "SELF_HOSTED_MINUTES=$SELF_HOSTED_MINUTES" >> $GITHUB_ENV
+          echo "HOSTED_MINUTES=$HOSTED_MINUTES" >> $GITHUB_ENV
