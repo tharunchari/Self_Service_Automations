@@ -17,7 +17,7 @@ jobs:
         run: |
           echo "Fetching GitHub Actions runner usage for the previous month (via GraphQL)..."
 
-          QUERY='{\"query\":\"query { organization(login: \\\"vitechsystems\\\") { actionsUsage(period: PREVIOUS_MONTH) { totalMinutesUsed totalPaidMinutesUsed minutesUsedBreakdown { UBUNTU MACOS WINDOWS total } } } }\"}'
+          QUERY='{ "query": "query { organization(login: \"vitechsystems\") { actionsUsage(period: PREVIOUS_MONTH) { totalMinutesUsed totalPaidMinutesUsed minutesUsedBreakdown { UBUNTU MACOS WINDOWS total } } } }" }'
 
           RESPONSE=$(curl -X POST https://api.github.com/graphql \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
