@@ -18,7 +18,7 @@ jobs:
           echo "Fetching GitHub Actions runner usage..."
           #GITHUB_API_URL="https://api.github.com/orgs/VitechInfra/actions/usage"
           GITHUB_API_URL="https://api.github.com/orgs/VitechInfra/settings/billing/actions"
-          RESPONSE=$(curl -H "Authorization: Bearer ${{ secrets.ORG_METRICS_PAT }}" \
+          RESPONSE=$(curl -H "Authorization: Bearer ${{ secrets.INFRA_FINE_GRAINED_PAT }}" \
                         -H "Accept: application/vnd.github.v3+json" \
                         "$GITHUB_API_URL")
           echo "Full API Response:"
@@ -38,8 +38,6 @@ jobs:
           echo "--------------------------------------"
           echo "Self-hosted Runner Minutes: $SELF_HOSTED_MINUTES"
           echo "GitHub-hosted Runner Minutes: $HOSTED_MINUTES"
-        env:
-          GITHUB_PAT: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
 
      
       - name: Upload Usage Data as Artifact
