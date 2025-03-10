@@ -21,16 +21,16 @@ on:
         description: Target branch name
       SOURCE_CLIENT_VERSION:
         required: true
-        description: Pom file version of source
+        description: Client Pom file version of source
       TARGET_CLIENT_VERSION:
         required: true
-        description: Pom file version of target
+        description: Client Pom file version of target
       SOURCE_PROD_VERSION:
         required: true
-        description: Pom file version of source
+        description: Prod Pom file version of source
       TARGET_PROD_VERSION:
         required: true
-        description: Pom file version of target
+        description: Prod Pom file version of target
       Commit_Number:
         default: "HEAD"
         required: true
