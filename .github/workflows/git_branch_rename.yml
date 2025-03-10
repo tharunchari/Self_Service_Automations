@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: write
+      contents: read
     needs: Check-Repository-type_And_Branch-Name
     steps:
     - name: Check if Branch Exists
@@ -54,7 +54,7 @@ jobs:
         curl -L \
         -X POST \
         -H "Accept: application/vnd.github+json" \
-        -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+        -H "Authorization: Bearer ${{ secrets.PROD_CLASSIC_PAT }}" \
         -H "X-GitHub-Api-Version: 2022-11-28" \
         https://api.github.com/repos/vitechsystems/${{ inputs.REPO_NAME }}/branches/${{ inputs.EXISTING_BRANCH_NAME }}/rename \
         -d '{"new_name":"${{ inputs.NEW_BRANCH_NAME }}"}'
