@@ -16,11 +16,17 @@ jobs:
       - name: Fetch and Process Runner Usage Data
         run: |
           echo "Fetching GitHub Actions runner usage..."
-          GITHUB_API_URL="https://api.github.com/orgs/VitechInfra/actions/usage"
+          #GITHUB_API_URL="https://api.github.com/orgs/VitechInfra/actions/usage"
+          GITHUB_API_URL="https://api.github.com/orgs/VitechInfra/settings/billing/actions"
           RESPONSE=$(curl -H "Authorization: Bearer ${{ secrets.ORG_METRICS_PAT }}" \
                         -H "Accept: application/vnd.github.v3+json" \
                         "$GITHUB_API_URL")
+          echo "Full API Response:"
+          echo "$RESPONSE" | jq .
           echo "$RESPONSE" > runner_usage.json
+
+          SELF_HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.billable."SELF_HOSTED".total_ms // 0')
+          HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.billable."GITHUB_HOSTED".total_ms // 0')
 
           SELF_HOSTED_MINUTES=$(jq '.billable."SELF_HOSTED".total_ms // 0' runner_usage.json)
           HOSTED_MINUTES=$(jq '.billable."GITHUB_HOSTED".total_ms // 0' runner_usage.json)
