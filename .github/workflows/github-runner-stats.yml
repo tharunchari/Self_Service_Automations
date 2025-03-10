@@ -1,32 +1,48 @@
-name: Fetch Previous Month Runner Usage
+name: Fetch and Notify GitHub Runner Usage
 
 on:
-  #schedule:
-  #  - cron: '0 0 1 * *' # Runs at midnight on the first day of each month
-  workflow_dispatch: # Allows manual trigger
+  schedule:
+    - cron: '0 0 1 * *'  # Runs on the 1st of every month
+  workflow_dispatch:    # Allows manual trigger
 
 jobs:
-  fetch-runner-usage:
+  fetch-usage:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Fetch Actions Usage
-        run: |
-          echo "Fetching GitHub Actions usage for VitechInfra (Previous Month)..."
-          curl -H "Authorization: Bearer ${{ secrets.INFRA_FINE_GRAINED_PAT }}" \
-               -H "Accept: application/vnd.github.v3+json" \
-               "https://api.github.com/orgs/VitechInfra/actions/usage"
+      - name: Checkout Code
+        uses: actions/checkout@v2
 
-          curl -L \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/enterprises/ENTERPRISE/settings/billing/usage     
-
-      - name: Fetch Runner Groups
+      - name: Fetch and Process Runner Usage Data
         run: |
-          echo "Fetching Runner Groups..."
-          curl -H "Authorization: Bearer ${{ secrets.INFRA_FINE_GRAINED_PAT }}" \
-               -H "Accept: application/vnd.github.v3+json" \
-               "https://api.github.com/orgs/VitechInfra/actions/runner-groups" \
-               | jq '.'
+          echo "Fetching GitHub Actions runner usage..."
+          GITHUB_API_URL="https://api.github.com/orgs/VitechInfra/actions/usage"
+          RESPONSE=$(curl -H "Authorization: Bearer ${{ secrets.ORG_METRICS_PAT }}" \
+                        -H "Accept: application/vnd.github.v3+json" \
+                        "$GITHUB_API_URL")
+          echo "$RESPONSE" > runner_usage.json
+
+          SELF_HOSTED_MINUTES=$(jq '.billable."SELF_HOSTED".total_ms // 0' runner_usage.json)
+          HOSTED_MINUTES=$(jq '.billable."GITHUB_HOSTED".total_ms // 0' runner_usage.json)
+
+          SELF_HOSTED_MINUTES=$((SELF_HOSTED_MINUTES / 60000))
+          HOSTED_MINUTES=$((HOSTED_MINUTES / 60000))
+
+          echo "GitHub Actions Usage Summary:" 
+          echo "--------------------------------------"
+          echo "Self-hosted Runner Minutes: $SELF_HOSTED_MINUTES"
+          echo "GitHub-hosted Runner Minutes: $HOSTED_MINUTES"
+        env:
+          GITHUB_PAT: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
+
+      - name: Send Notification (via Slack)
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_MESSAGE: "GitHub Runner Usage Data for VitechInfra: Self-hosted: $SELF_HOSTED_MINUTES min, Hosted: $HOSTED_MINUTES min. 📊"
+
+      - name: Upload Usage Data as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: runner-usage-data
+          path: runner_usage.json
