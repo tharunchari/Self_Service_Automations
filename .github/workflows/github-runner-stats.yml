@@ -37,7 +37,7 @@ jobs:
 
      
       - name: Upload Usage Data as Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: runner-usage-data
           path: runner_usage.json
