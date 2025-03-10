@@ -1,8 +1,8 @@
 name: Fetch and Notify GitHub Runner Usage
 
 on:
-  schedule:
-    - cron: '0 0 1 * *'  # Runs on the 1st of every month
+ # schedule:
+    #- cron: '0 0 1 * *'  # Runs on the 1st of every month
   workflow_dispatch:    # Allows manual trigger
 
 jobs:
@@ -21,11 +21,7 @@ jobs:
           #RESPONSE=$(curl -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
                         -H "Accept: application/vnd.github.v3+json" \
                         "$GITHUB_API_URL")
-
-
-          
-          QUERY='{"query":"query { organization(login: \"VitechInfra\") { actionsUsage(period: PREVIOUS_MONTH) { totalMinutesUsed totalPaidMinutesUsed minutesUsedBreakdown { UBUNTU MACOS WINDOWS total } } } }"}'
-
+          QUERY='{\"query\":\"query { organization(login: \\\"VitechInfra\\\") { actionsUsage(period: PREVIOUS_MONTH) { totalMinutesUsed totalPaidMinutesUsed minutesUsedBreakdown { UBUNTU MACOS WINDOWS total } } } }\"}'
 
           RESPONSE=$(curl -X POST https://api.github.com/graphql \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
@@ -51,9 +47,4 @@ jobs:
           echo "Self-hosted Runner Minutes: $SELF_HOSTED_MINUTES"
           echo "GitHub-hosted Runner Minutes: $HOSTED_MINUTES"
 
-     
-      - name: Upload Usage Data as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: runner-usage-data
-          path: runner_usage.json
+    
