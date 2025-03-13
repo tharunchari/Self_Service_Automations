@@ -5,8 +5,8 @@ on:
       KEY:
         required: true
         description: Authentication Key for OPS Internal Tools
-#  schedule:
-#    - cron: '0 3 1-7 * 3'  # 1st Wednesday of every month at 10 PM EST (22:00 UTC)
+  schedule:
+    - cron: '0 3 1-7 * 3'  # 1st Wednesday of every month at 10 PM EST (22:00 UTC)
  
 env:
   RUNNER_NAME: "Internal_Tools_Automation_Server"
@@ -88,7 +88,7 @@ jobs:
           fi
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "ERPPRD-DR Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\nPlease check the GitHub Actions logs for more details.")" \
+            --message "$(echo -e "ERPPRD-DR Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\nPlease check the GitHub Actions logs for more details.\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.\nPlease take action.")" \
             --subject "ERPPRD-DR Patching Failed"
  
       - name: Send Notification on Success
@@ -96,7 +96,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "**ERPPRD-DR Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)")" \
+            --message "$(echo -e "**ERPPRD-DR Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.")" \
             --subject "ERPPRD-DR Patching Completed"
  
       - name: Send Notification on App Down
@@ -104,7 +104,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "**Attention: ERPPRD-DR Patch Status: SUCCESS but App is Down**\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)")" \
+            --message "$(echo -e "**Attention: ERPPRD-DR Patch Status: SUCCESS but App is Down**\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.\nPlease take action.")" \
             --subject "ERPPRD-DR Patching Completed but App is Down"
 
   stop-runner:
