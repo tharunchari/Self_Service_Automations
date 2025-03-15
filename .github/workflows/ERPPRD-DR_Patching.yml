@@ -5,8 +5,8 @@ on:
       KEY:
         required: true
         description: Authentication Key for OPS Internal Tools
-  schedule:
-    - cron: '0 3 1-7 * 3'  # 1st Wednesday of every month at 10 PM EST (22:00 UTC)
+#  schedule:
+#    - cron: '0 3 1-7 * 3'  # 1st Wednesday of every month at 10 PM EST (22:00 UTC)
  
 env:
   RUNNER_NAME: "Internal_Tools_Automation_Server"
