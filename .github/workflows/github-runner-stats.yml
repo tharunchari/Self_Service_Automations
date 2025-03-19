@@ -1,41 +1,29 @@
-name: Fetch and Notify GitHub Runner Usage
+name: Fetch GitHub Billing Usage
 
 on:
+  workflow_dispatch:
   #schedule:
-   # - cron: '0 0 1 * *'  # Runs on the 1st of every month
-  workflow_dispatch:    # Allows manual trigger
+    #- cron: '0 0 * * *'  # Runs daily at midnight
 
 jobs:
   fetch-usage:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v2
-
-      - name: Fetch and Process Runner Usage Data (GraphQL)
+      - name: Make API Request
         run: |
-          echo "Fetching GitHub Actions runner usage for the previous month (via GraphQL)..."
+          response=$(curl -L \ 
+            -H "Accept: application/vnd.github+json" \ 
+            -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \ 
+            -H "X-GitHub-Api-Version: 2022-11-28" \ 
+            https://api.github.com/organizations/vitechsystems/settings/billing/usage)
+          echo "$response" > usage.json
 
-          QUERY='{ "query": "query { organization(login: \"vitechsystems\") { actionsUsage(period: PREVIOUS_MONTH) { totalMinutesUsed totalPaidMinutesUsed minutesUsedBreakdown { UBUNTU MACOS WINDOWS total } } } }" }'
+      - name: Process JSON and Calculate Total
+        run: |
+          total=$(jq '[.usageItems[].quantity] | add' usage.json)
+          echo "Total Usage: $total minutes"
+          echo "TOTAL_USAGE=$total" >> $GITHUB_ENV
 
-          RESPONSE=$(curl -X POST https://api.github.com/graphql \
-            -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
-            -H "Content-Type: application/json" \
-            --data "$QUERY")
-
-          echo "Full API Response:"
-          echo "$RESPONSE" | jq .
-          echo "$RESPONSE" > runner_usage.json
-
-          SELF_HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.data.organization.actionsUsage.totalMinutesUsed // 0')
-          HOSTED_MINUTES=$(echo "$RESPONSE" | jq '.data.organization.actionsUsage.totalPaidMinutesUsed // 0')
-
-          echo "GitHub Actions Usage Summary (Previous Month):"
-          echo "--------------------------------------"
-          echo "Self-hosted Runner Minutes: $SELF_HOSTED_MINUTES"
-          echo "GitHub-hosted Runner Minutes: $HOSTED_MINUTES"
-
-          # Set output variables
-          echo "SELF_HOSTED_MINUTES=$SELF_HOSTED_MINUTES" >> $GITHUB_ENV
-          echo "HOSTED_MINUTES=$HOSTED_MINUTES" >> $GITHUB_ENV
+      - name: Print Total Usage
+        run: |
+          echo "Total minutes used across repositories: ${{ env.TOTAL_USAGE }}"
