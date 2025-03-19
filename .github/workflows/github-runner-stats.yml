@@ -3,7 +3,7 @@ name: Fetch GitHub Billing Usage
 on:
   workflow_dispatch:
   #schedule:
-    #- cron: '0 0 * * *'  # Runs daily at midnight
+   # - cron: '0 0 * * *'  # Runs daily at midnight
 
 jobs:
   fetch-usage:
@@ -29,7 +29,7 @@ jobs:
 
             echo "$response" > "$ORG-usage.json"
 
-            org_total=$(jq '[.usageItems[].quantity] | add' "$ORG-usage.json")
+            org_total=$(jq '[.usageItems[].quantity] | add | floor' "$ORG-usage.json")
             echo "Total Usage for $ORG: $org_total minutes"
 
             echo "${ORG^^}_USAGE=$org_total" >> $GITHUB_ENV  # Store separately
