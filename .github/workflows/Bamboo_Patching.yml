@@ -1,0 +1,194 @@
+name: Bamboo Server Patching
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        required: true
+        description: 'The environment to patch (bamboodr or bamboo)'
+      KEY:
+        required: true
+        description: 'Authentication Key for Bamboo'
+
+jobs:
+  Jira-Patching:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Set environment-specific variables
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "bamboodr" ]; then
+            echo "Using bamboodr configuration"
+            echo "URL=https://bamboodr.vitechinc.com/bamboodr" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.Bamboodr_ACCESS_TOKEN }}" >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.environment }}" == "bamboo" ]; then
+            if [ "${{ inputs.KEY }}" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
+              echo "The KEY does not match the expected secret for bamboo environment."
+              exit 1
+            fi
+            echo "Using bamboo configuration"
+            echo "URL=https://bamboo.vitechinc.com/bamboo" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.Bamboo_ACCESS_TOKEN }}" >> $GITHUB_ENV
+          else
+            echo "Invalid environment specified. Please choose either 'bamboodr' or 'bamboo'."
+            exit 1
+          fi
+
+          echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+          echo "SUBJECT_PREFIX=Restart of ${environment} for Scheduled Patching" >> $GITHUB_ENV
+          echo "BODY_PREFIX=${environment} patching is scheduled." >> $GITHUB_ENV
+
+      - name: Set AWS region
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "bamboo" ]; then
+            echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
+          else
+            echo "AWS_REGION=us-west-2" >> $GITHUB_ENV
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Send pre-patching notification via SNS
+        run: |
+          INSTANCE_IDS=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.environment }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
+
+          if [[ -z "$INSTANCE_IDS" ]]; then
+            echo "No instances found with name ${{ github.event.inputs.environment }}. Exiting."
+            exit 1
+          fi
+
+          aws sns publish \
+            --topic-arn ${{ env.SNS_TOPIC }} \
+            --subject "${{ env.SUBJECT_PREFIX }}" \
+            --message "$(printf "${{ env.BODY_PREFIX }} application will be down during this process.\n\n **Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
+
+      - name: Disable All Agents
+        env:
+          BASE_URL: ${{ env.URL }}/rest/api/latest
+        run: |
+          AGENTS=$(curl -s -X GET "$BASE_URL/agent")
+          if [ $? -ne 0 ]; then
+              echo "Failed to retrieve agents."
+              exit 1
+          fi
+          AGENT_IDS=$(echo "$AGENTS" | jq -r '.agents[].id')
+          for AGENT_ID in $AGENT_IDS; do
+              curl -s -X POST "$BASE_URL/agent/$AGENT_ID/enable" -H "Content-Type: application/json" -H "Authorization: Bearer ${{ secrets.TOKEN }}" -d '{"enabled": false}'
+              echo "Disabled agent with ID: $AGENT_ID"
+          done
+
+      - name: Patch Each Instance
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.environment }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
+
+          echo "Patching instance: $INSTANCE_ID"
+
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Stop confluence and HTTPD services" \
+            --parameters 'commands=["sudo service httpd stop", "sudo service bamboo stop"]'
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Upgrade to latest Amazon Linux release" \
+            --parameters 'commands=["dnf -y --releasever=latest update"]' \
+            --query 'Command.CommandId' --output text)
+
+          echo "Waiting for upgrade command to complete..."
+          for i in {1..30}; do
+              COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+              echo "Current command status: $COMMAND_STATUS"
+              if [[ "$COMMAND_STATUS" == "Success" ]]; then
+                  echo "Command completed successfully."
+                  break
+              elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
+                  echo "Command failed. Exiting..."
+                  exit 1
+              fi
+              sleep 30
+          done
+
+          echo "Stop the instance"
+          aws ec2 stop-instances --instance-ids "$INSTANCE_ID"
+          aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID"
+          echo "Start the instance"
+          aws ec2 start-instances --instance-ids "$INSTANCE_ID"
+          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+
+          echo "Waiting for SSM agent to be ready..."
+          SSM_READY=false
+          for i in {1..30}; do
+            STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
+            if [[ "$STATUS" == "Online" ]]; then
+              SSM_READY=true
+              break
+            fi
+            echo "SSM not ready yet... waiting (attempt $i)"
+            sleep 15
+          done
+
+          if [[ "$SSM_READY" == "false" ]]; then
+            echo "SSM agent is not ready. Triggering SNS notification."
+            aws sns publish \
+              --topic-arn ${{ env.SNS_TOPIC }} \
+              --subject "SSM Not Ready for Instance $INSTANCE_ID" \
+              --message "SSM agent did not become ready after EC2 start in ${{ github.event.inputs.environment }}. Please investigate."
+            exit 1
+          fi
+
+          INSTANCE_STATE=$(aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --query 'InstanceStatuses[0].InstanceState.Name' --output text)
+          if [[ "$INSTANCE_STATE" != "running" ]]; then
+            echo "Instance $INSTANCE_ID failed to start. Triggering SNS notification."
+            aws sns publish \
+              --topic-arn ${{ env.SNS_TOPIC }} \
+              --subject "EC2 Start Failure for Instance $INSTANCE_ID" \
+              --message "Instance $INSTANCE_ID failed to start after ${{ github.event.inputs.environment }} patching. Please investigate."
+            exit 1
+          fi
+
+          aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Stop ds_agent, remove dsa_filt, and start ds_agent" \
+            --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]'
+
+          sleep 600
+
+      - name: Check URL Status Code
+        id: check_status
+        run: |
+          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}")
+          echo "URL Status Code: $STATUS_CODE"
+          if [[ "$STATUS_CODE" -eq 200 ]]; then
+            echo "URL is up and running with status code 200"
+            echo "status_code=200" >> $GITHUB_ENV
+          else
+            echo "Error: URL did not return status code 200. Status Code: $STATUS_CODE"
+            echo "status_code=$STATUS_CODE" >> $GITHUB_ENV
+            
+            aws sns publish \
+              --topic-arn ${{ env.SNS_TOPIC }} \
+              --subject "${{ github.event.inputs.environment }} App Down Alert - Status Code: $STATUS_CODE" \
+              --message "The app at ${{ env.URL }} is down. Status code: $STATUS_CODE. Please investigate."
+            exit 3
+          fi
+
+      - name: Send post-patching notification via SNS
+        if: env.status_code == '200'
+        run: |
+          INSTANCE_IDS=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=${{ github.event.inputs.environment }}" --query "Reservations[*].Instances[*].InstanceId" --output text)
+
+          aws sns publish \
+            --topic-arn ${{ env.SNS_TOPIC }} \
+            --subject "${{ env.SUBJECT_PREFIX }} Completed" \
+            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully. Please reach out to v3atlassianops@vitechinc.com for any issues.\n\n **Patched Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
