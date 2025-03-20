@@ -25,23 +25,23 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${ORG_PAT[$ORG]}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/organizations/$ORG/settings/billing/usage?days=30")
+              "https://api.github.com/organizations/$ORG/settings/billing/usage")
 
             echo "$response" > "$ORG-usage.json"
 
-            org_total=$(jq '[.usageItems[].quantity] | add | floor' "$ORG-usage.json")
-            echo "Total Usage for $ORG: $org_total minutes"
+            org_total=$(jq '[.usageItems[] | select(.product == "Actions" and .unitType == "minutes") | .quantity] | add | floor' "$ORG-usage.json")
+            echo "Total Minutes Used for $ORG: $org_total minutes"
 
-            echo "${ORG^^}_USAGE=$org_total" >> $GITHUB_ENV  # Store separately
+            echo "${ORG^^}_TOTAL_MINUTES_USED=$org_total" >> $GITHUB_ENV  # Store separately
 
             total_usage=$((total_usage + org_total))
           done
 
-          echo "Grand Total Usage: $total_usage minutes"
-          echo "TOTAL_USAGE=$total_usage" >> $GITHUB_ENV
+          echo "Grand Total Minutes Used: $total_usage minutes"
+          echo "TOTAL_MINUTES_USED=$total_usage" >> $GITHUB_ENV
 
       - name: Print Individual and Grand Total Usage
         run: |
-          echo "Total minutes used in vitechsystems: ${{ env.VITECHSYSTEMS_USAGE }}"
-          echo "Total minutes used in VitechInfra: ${{ env.VITECHINFRA_USAGE }}"
-          echo "Grand total minutes used: ${{ env.TOTAL_USAGE }}"
+          echo "Total minutes used in vitechsystems: ${{ env.VITECHSYSTEMS_TOTAL_MINUTES_USED }}"
+          echo "Total minutes used in VitechInfra: ${{ env.VITECHINFRA_TOTAL_MINUTES_USED }}"
+          echo "Grand total minutes used: ${{ env.TOTAL_MINUTES_USED }}"
