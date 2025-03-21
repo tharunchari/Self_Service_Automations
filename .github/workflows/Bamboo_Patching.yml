@@ -73,14 +73,26 @@ jobs:
           BASE_URL: ${{ env.URL }}/rest/api/latest
         run: |
           AGENTS=$(curl -s -X GET "$BASE_URL/agent")
+          echo "Agents Response: $AGENTS"
+      
           if [ $? -ne 0 ]; then
-              echo "Failed to retrieve agents."
-              exit 1
+            echo "Failed to retrieve agents."
+            exit 1
           fi
+          
           AGENT_IDS=$(echo "$AGENTS" | jq -r '.agents[].id')
+          if [ -z "$AGENT_IDS" ]; then
+            echo "No agents found."
+            exit 1
+          fi
+      
           for AGENT_ID in $AGENT_IDS; do
-              curl -s -X POST "$BASE_URL/agent/$AGENT_ID/disable" -H "Content-Type: application/json" -H "Authorization: Bearer ${{ secrets.TOKEN }}" -d '{"enabled": false}'
+            curl -s -X PUT "$BASE_URL/agent/$AGENT_ID/disable" -H "Content-Type: application/json" -H "Authorization: Bearer ${{ secrets.TOKEN }}" -d '{"enabled": false}'
+            if [ $? -eq 0 ]; then
               echo "Disabled agent with ID: $AGENT_ID"
+            else
+              echo "Failed to disable agent with ID: $AGENT_ID"
+            fi
           done
 
       - name: Patch Each Instance
@@ -162,21 +174,32 @@ jobs:
 
           sleep 600
           
-      - name: Enable All Agents
-        env:
-          BASE_URL: ${{ env.URL }}/rest/api/latest
-        run: |
-          AGENTS=$(curl -s -X GET "$BASE_URL/agent")
-          if [ $? -ne 0 ]; then
-              echo "Failed to retrieve agents."
-              exit 1
-          fi
-          AGENT_IDS=$(echo "$AGENTS" | jq -r '.agents[].id')
-          for AGENT_ID in $AGENT_IDS; do
-              curl -s -X POST "$BASE_URL/agent/$AGENT_ID/enable" -H "Content-Type: application/json" -H "Authorization: Bearer ${{ secrets.TOKEN }}" -d '{"enabled": false}'
-              echo "Enable agent with ID: $AGENT_ID"
-          done
+          - name: Enable All Agents
+            env:
+              BASE_URL: ${{ env.URL }}/rest/api/latest
+            run: |
+              AGENTS=$(curl -s -X GET "$BASE_URL/agent")
+              echo "Agents Response: $AGENTS"
           
+              if [ $? -ne 0 ]; then
+                echo "Failed to retrieve agents."
+                exit 1
+              fi
+              
+              AGENT_IDS=$(echo "$AGENTS" | jq -r '.agents[].id')
+              if [ -z "$AGENT_IDS" ]; then
+                echo "No agents found."
+                exit 1
+              fi
+          
+              for AGENT_ID in $AGENT_IDS; do
+                curl -s -X PUT "$BASE_URL/agent/$AGENT_ID/enable" -H "Content-Type: application/json" -H "Authorization: Bearer ${{ secrets.TOKEN }}" -d '{"enabled": true}'
+                if [ $? -eq 0 ]; then
+                  echo "Enabled agent with ID: $AGENT_ID"
+                else
+                  echo "Failed to enable agent with ID: $AGENT_ID"
+                fi
+              done
 
       - name: Check URL Status Code
         id: check_status
