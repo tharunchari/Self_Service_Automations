@@ -1,0 +1,19 @@
+name: Time Test
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 6"  # Runs every Saturday at 03:00 AM UTC (10:00 PM EST Of FRIDAY)
+ 
+env:
+  RUNNER_NAME: "Internal_Tools_Automation_Server"
+  INSTANCE_ID: "i-020530b54ac86537b"
+ 
+jobs:
+  run_on_last_saturday:
+    uses: vitechsystems/github-runner-testing/.github/workflows/time_test.yml@main
+    secrets: inherit
+
+  start-runner:
+    needs: run_on_last_saturday
+    uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main
+    secrets: inherit
