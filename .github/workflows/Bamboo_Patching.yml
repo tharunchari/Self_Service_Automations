@@ -23,25 +23,25 @@ jobs:
           if [ "${{ github.event.inputs.environment }}" == "bamboodr" ]; then
             echo "Using bamboodr configuration"
             echo "URL=https://bamboodr.vitechinc.com/bamboodr" >> $GITHUB_ENV
-            echo "TOKEN=${{ secrets.Bamboodr_ACCESS_TOKEN }}" >> $GITHUB_ENV
-            echo "SNS_TOPIC=arn:aws:sns:us-west-2:YOUR_ACCOUNT_ID:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.bamboodr_ACCESS_TOKEN }}" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Restart of bambooDR Nodes for Scheduled Patching" >> $GITHUB_ENV
+            echo "BODY_PREFIX=bambooDR patching is scheduled." >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.environment }}" == "bamboo" ]; then
-            if [ "${{ inputs.KEY }}" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
-              echo "The KEY does not match the expected secret for bamboo environment."
-              exit 1
-            fi
+                   if [ "${{ inputs.KEY }}" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
+                      echo "The KEY does not match the expected secret for bamboo environment."
+                      exit 1
+                   fi
             echo "Using bamboo configuration"
             echo "URL=https://bamboo.vitechinc.com/bamboo" >> $GITHUB_ENV
-            echo "TOKEN=${{ secrets.Bamboo_ACCESS_TOKEN }}" >> $GITHUB_ENV
-            echo "SNS_TOPIC=arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.bamboo_ACCESS_TOKEN }}" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SUBJECT_PREFIX=Restart of bamboo Nodes for Scheduled Patching" >> $GITHUB_ENV
+            echo "BODY_PREFIX=bamboo patching is scheduled." >> $GITHUB_ENV  
           else
-            echo "Invalid environment specified. Please choose either 'bamboodr' or 'bamboo'."
+            echo "Invalid environment specified. Please choose either 'bambooDR', or 'bamboo'."
             exit 1
           fi
-
-          echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
-          echo "SUBJECT_PREFIX=Restart of ${environment} for Scheduled Patching" >> $GITHUB_ENV
-          echo "BODY_PREFIX=${environment} patching is scheduled." >> $GITHUB_ENV
 
       - name: Set AWS region
         run: |
@@ -92,7 +92,7 @@ jobs:
           aws ssm send-command \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --comment "Stop confluence and HTTPD services" \
+            --comment "Stop bamboo and HTTPD services" \
             --parameters 'commands=["sudo service httpd stop", "sudo service bamboo stop"]'
 
           COMMAND_ID=$(aws ssm send-command \
