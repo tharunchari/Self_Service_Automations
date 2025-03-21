@@ -81,7 +81,7 @@ jobs:
           fi
           AGENT_IDS=$(echo "$AGENTS" | jq -r '.agents[].id')
           for AGENT_ID in $AGENT_IDS; do
-              curl -s -X POST "$BASE_URL/agent/$AGENT_ID/enable" -H "Content-Type: application/json" -H "Authorization: Bearer ${{ secrets.TOKEN }}" -d '{"enabled": false}'
+              curl -s -X POST "$BASE_URL/agent/$AGENT_ID/disable" -H "Content-Type: application/json" -H "Authorization: Bearer ${{ secrets.TOKEN }}" -d '{"enabled": false}'
               echo "Disabled agent with ID: $AGENT_ID"
           done
 
@@ -163,6 +163,22 @@ jobs:
             --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]'
 
           sleep 600
+          
+      - name: Enable All Agents
+        env:
+          BASE_URL: ${{ env.URL }}/rest/api/latest
+        run: |
+          AGENTS=$(curl -s -X GET "$BASE_URL/agent")
+          if [ $? -ne 0 ]; then
+              echo "Failed to retrieve agents."
+              exit 1
+          fi
+          AGENT_IDS=$(echo "$AGENTS" | jq -r '.agents[].id')
+          for AGENT_ID in $AGENT_IDS; do
+              curl -s -X POST "$BASE_URL/agent/$AGENT_ID/enable" -H "Content-Type: application/json" -H "Authorization: Bearer ${{ secrets.TOKEN }}" -d '{"enabled": false}'
+              echo "Enable agent with ID: $AGENT_ID"
+          done
+          
 
       - name: Check URL Status Code
         id: check_status
