@@ -24,7 +24,7 @@ jobs:
             echo "Using bamboodr configuration"
             echo "URL=https://bamboodr.vitechinc.com/bamboodr" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.Bamboodr_ACCESS_TOKEN }}" >> $GITHUB_ENV
-            echo "SNS_TOPIC=arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-west-2:YOUR_ACCOUNT_ID:Internal-Tools_Patching" >> $GITHUB_ENV
           elif [ "${{ github.event.inputs.environment }}" == "bamboo" ]; then
             if [ "${{ inputs.KEY }}" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
               echo "The KEY does not match the expected secret for bamboo environment."
@@ -33,7 +33,7 @@ jobs:
             echo "Using bamboo configuration"
             echo "URL=https://bamboo.vitechinc.com/bamboo" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.Bamboo_ACCESS_TOKEN }}" >> $GITHUB_ENV
-            echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
+            echo "SNS_TOPIC=arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:Internal-Tools_Patching" >> $GITHUB_ENV
           else
             echo "Invalid environment specified. Please choose either 'bamboodr' or 'bamboo'."
             exit 1
