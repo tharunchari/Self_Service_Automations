@@ -181,7 +181,7 @@ jobs:
       - name: Check URL Status Code
         id: check_status
         run: |
-          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}")
+          STATUS_CODE=$(curl -L --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}/allPlans.action")
           echo "URL Status Code: $STATUS_CODE"
           if [[ "$STATUS_CODE" -eq 200 ]]; then
             echo "URL is up and running with status code 200"
