@@ -205,4 +205,4 @@ jobs:
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully. Please reach out to v3atlassianops@vitechinc.com for any issues.\n\n **Patched Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
+            --message "$(printf "The patching has been completed successfully. Please reach out to v3atlassianops@vitechinc.com for any issues.\n\n **Patched Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
