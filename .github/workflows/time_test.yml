@@ -17,7 +17,7 @@ jobs:
     secrets: inherit
  
   start-runner:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && needs.run_on_last_saturday.result == 'success')
+#    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && needs.run_on_last_saturday.result == 'success')
     needs: [run_on_last_saturday]
     uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main
     secrets: inherit
