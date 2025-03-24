@@ -10,7 +10,7 @@ env:
  
 jobs:
   run_on_last_saturday:
-    if: github.event_name == 'schedule'  # ✅ Run only for scheduled runs
+#    if: github.event_name == 'schedule'  # ✅ Run only for scheduled runs
     uses: vitechsystems/github-runner-testing/.github/workflows/time_test.yml@main
     with:
       run_type: 2nd_last_saturday  # ✅ Passing as input
