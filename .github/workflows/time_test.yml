@@ -1,8 +1,8 @@
 name: Time Test
 on:
   workflow_dispatch:
-#  schedule:
-#    - cron: "0 3 * * 6"  # Runs every Saturday at 03:00 AM UTC (10:00 PM EST Of FRIDAY)
+  schedule:
+    - cron: "*/5 * * * *"  # Runs every Saturday at 03:00 AM UTC (10:00 PM EST Of FRIDAY)
  
 env:
   RUNNER_NAME: "Internal_Tools_Automation_Server"
@@ -10,12 +10,13 @@ env:
  
 jobs:
   run_on_last_saturday:
+    if: github.event_name == 'schedule'  # ✅ Run only for scheduled runs
     uses: vitechsystems/github-runner-testing/.github/workflows/time_test.yml@main
     with:
       run_type: 2nd_last_saturday  # ✅ Passing as input
     secrets: inherit
-
+ 
   start-runner:
-    needs: run_on_last_saturday
+    if: github.event_name == 'workflow_dispatch' || success()  # ✅ Always run if manually triggered, otherwise wait for `run_on_last_saturday`
     uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main
     secrets: inherit
