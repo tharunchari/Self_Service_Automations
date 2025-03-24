@@ -7,6 +7,7 @@ on:
 env:
   RUNNER_NAME: "Internal_Tools_Automation_Server"
   INSTANCE_ID: "i-020530b54ac86537b"
+  RUN_TYPE: last_saturday
  
 jobs:
   run_on_last_saturday:
