@@ -110,41 +110,75 @@ jobs:
           aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
 
           echo "Waiting for SSM agent to be ready..."
-          SSM_READY=false
-          for i in {1..30}; do
-            STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
-            if [[ "$STATUS" == "Online" ]]; then
-              SSM_READY=true
-              break
+            SSM_READY=false
+            for i in {1..30}; do
+              STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
+              if [[ "$STATUS" == "Online" ]]; then
+                SSM_READY=true
+                break
+              fi
+              echo "SSM not ready yet... waiting (attempt $i)"
+              sleep 15
+            done
+
+            if [[ "$SSM_READY" == "false" ]]; then
+              echo "SSM agent is not ready. Triggering SNS notification."
+              aws sns publish \
+                --topic-arn $SNS_TOPIC \
+                --subject "SSM Not Ready for Instance $INSTANCE_ID" \
+                --message "SSM agent did not become ready after EC2 start in "${{ github.event.inputs.environment }}" . Please investigate."
+              exit 1
             fi
-            echo "SSM not ready yet... waiting (attempt $i)"
-            sleep 15
-          done
 
-          if [[ "$SSM_READY" == "false" ]]; then
-            echo "SSM agent is not ready. Triggering SNS notification."
-            aws sns publish \
-              --topic-arn ${{ env.SNS_TOPIC }} \
-              --subject "SSM Not Ready for Instance $INSTANCE_ID" \
-              --message "SSM agent did not become ready after EC2 start in ${{ github.event.inputs.environment }}. Please investigate."
-            exit 1
-          fi
+            # Check instance status, fail and trigger SNS if not running
+            INSTANCE_STATE=$(aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --query 'InstanceStatuses[0].InstanceState.Name' --output text)
+            if [[ "$INSTANCE_STATE" != "running" ]]; then
+              echo "Instance $INSTANCE_ID failed to start. Triggering SNS notification."
+              aws sns publish \
+                --topic-arn $SNS_TOPIC \
+                --subject "EC2 Start Failure for Instance $INSTANCE_ID" \
+                --message "Instance $INSTANCE_ID failed to start after "${{ github.event.inputs.environment }}" patching. Please investigate."
+              exit 1
+            fi
+             echo "ds_agent tasks"
+              aws ssm send-command \
+                --instance-ids "$INSTANCE_ID" \
+                --document-name "AWS-RunShellScript" \
+                --comment "Stop ds_agent, remove dsa_filt, and start ds_agent" \
+                --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]' \
+                --query 'Command.CommandId' --output text > command-id.txt
+              COMMAND_ID=$(cat command-id.txt)
+              echo "Waiting for command to complete..."
+              for i in {1..30}; do
+                COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+                echo "Current command status: $COMMAND_STATUS"
+                
+                if [[ "$COMMAND_STATUS" == "Success" ]]; then
+                  echo "Command completed successfully."
+                  break
+                elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
+                  echo "Command failed. Exiting..."
+                  exit 1
+                fi
+                
+                sleep 30  
+              done              
+              
+              # Check if the command was successful
+              if [[ "$COMMAND_STATUS" != "Success" ]]; then
+                echo "Max attempts exceeded. Command did not complete."
+                exit 1
+              fi
 
-          INSTANCE_STATE=$(aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --query 'InstanceStatuses[0].InstanceState.Name' --output text)
-          if [[ "$INSTANCE_STATE" != "running" ]]; then
-            echo "Instance $INSTANCE_ID failed to start. Triggering SNS notification."
-            aws sns publish \
-              --topic-arn ${{ env.SNS_TOPIC }} \
-              --subject "EC2 Start Failure for Instance $INSTANCE_ID" \
-              --message "Instance $INSTANCE_ID failed to start after ${{ github.event.inputs.environment }} patching. Please investigate."
-            exit 1
-          fi
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Backup /etc/httpd/conf.d, then restart bamboo and HTTPD services" \
+              --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak", "sudo service httpd restart", "sudo service bamboo restart"]'
 
-          aws ssm send-command \
-            --instance-ids "$INSTANCE_ID" \
-            --document-name "AWS-RunShellScript" \
-            --comment "Stop ds_agent, remove dsa_filt, and start ds_agent" \
-            --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]'
+            aws autoscaling exit-standby \
+              --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+              --instance-ids "$INSTANCE_ID"
 
           sleep 600
 
