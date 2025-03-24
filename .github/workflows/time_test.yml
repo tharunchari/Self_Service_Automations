@@ -2,7 +2,7 @@ name: Time Test
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"  # Runs every Saturday at 03:00 AM UTC (10:00 PM EST Of FRIDAY)
+    - cron: "*/10 * * * *"  # Runs every Saturday at 03:00 AM UTC (10:00 PM EST Of FRIDAY)
  
 env:
   RUNNER_NAME: "Internal_Tools_Automation_Server"
