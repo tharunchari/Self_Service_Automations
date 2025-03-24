@@ -12,6 +12,8 @@ env:
 jobs:
   run_on_last_saturday:
     uses: vitechsystems/github-runner-testing/.github/workflows/time_test.yml@main
+    with:
+      run_type: ${{ env.RUN_TYPE }}  # ✅ Passing as input
     secrets: inherit
 
   start-runner:
