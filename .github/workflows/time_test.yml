@@ -26,8 +26,5 @@ jobs:
  
   start-runner: 
     needs: [run_on_last_saturday, dummy_for_dispatch]  # Depends on both jobs 
-    if: | 
-      (github.event_name == 'workflow_dispatch') ||  
-      (github.event_name == 'schedule' && needs.run_on_last_saturday.outputs.should_proceed == 'true') 
     uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main 
     secrets: inherit
