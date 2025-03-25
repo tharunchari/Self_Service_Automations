@@ -11,16 +11,16 @@ env:
 jobs:
   run_on_last_saturday:
     # Only run this job if triggered manually (workflow_dispatch)
-    if: github.event_name == 'workflow_dispatch'
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     uses: vitechsystems/github-runner-testing/.github/workflows/time_test.yml@main
     with:
       run_type: 2nd_last_saturday
     secrets: inherit
  
   start-runner:
-    # Conditionally apply 'needs' only for workflow_dispatch
-    needs: ${{ github.event_name == 'workflow_dispatch' && 'run_on_last_saturday' || '' }}
+    # Always list the dependency, but control execution with 'if'
+    needs: run_on_last_saturday
     # Run unconditionally for schedule, or after success for workflow_dispatch
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && success())
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && success()) }}
     uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main
     secrets: inherit
