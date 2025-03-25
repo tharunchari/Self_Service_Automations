@@ -26,6 +26,6 @@ jobs:
  
   start-runner: 
     needs: [run_on_last_saturday, dummy_for_dispatch]
-    if: success() || failure() && (needs.run_on_last_saturday.result == 'success' || needs.dummy_for_dispatch.result == 'success')
+    if: always()
     uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main 
     secrets: inherit
