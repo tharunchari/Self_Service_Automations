@@ -9,13 +9,18 @@ env:
   INSTANCE_ID: "i-020530b54ac86537b"
  
 jobs:
-  run_on_last_saturday:
-    uses: vitechsystems/github-runner-testing/.github/workflows/time_test.yml@main
-    with:
-      run_type: 2nd_last_saturday
-    secrets: inherit
+  run_on_last_saturday: 
+    if: github.event_name == 'schedule'  # Only runs for scheduled trigger 
+    uses: vitechsystems/github-runner-testing/.github/workflows/time_test.yml@main 
+    with: 
+      run_type: 2nd_last_saturday 
+    secrets: inherit 
  
-  start-runner:
-    needs: run_on_last_saturday
-    uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main
+  start-runner: 
+    # Run directly for workflow_dispatch, or after run_on_last_saturday with success condition 
+    if: | 
+      github.event_name == 'workflow_dispatch' ||  
+      (github.event_name == 'schedule' && needs.run_on_last_saturday.outputs.should_proceed == 'true') 
+    needs: [run_on_last_saturday]  # Still dependent, but conditional logic handles skipping 
+    uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main 
     secrets: inherit
