@@ -16,11 +16,18 @@ jobs:
       run_type: 2nd_last_saturday 
     secrets: inherit 
  
+  # Dummy job to satisfy the 'needs' dependency for workflow_dispatch 
+  dummy_for_dispatch: 
+    if: github.event_name == 'workflow_dispatch'  # Only runs for manual trigger 
+    runs-on: ubuntu-latest 
+    steps: 
+      - name: Dummy Step 
+        run: echo "This is a dummy job to satisfy the dependency for workflow_dispatch." 
+ 
   start-runner: 
-    # Run directly for workflow_dispatch, or after run_on_last_saturday with success condition 
+    needs: [run_on_last_saturday, dummy_for_dispatch]  # Depends on both jobs 
     if: | 
-      github.event_name == 'workflow_dispatch' ||  
+      (github.event_name == 'workflow_dispatch') ||  
       (github.event_name == 'schedule' && needs.run_on_last_saturday.outputs.should_proceed == 'true') 
-    needs: [run_on_last_saturday]  # Still dependent, but conditional logic handles skipping 
     uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main 
     secrets: inherit
