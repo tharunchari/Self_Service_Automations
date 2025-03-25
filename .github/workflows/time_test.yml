@@ -22,7 +22,8 @@ jobs:
     runs-on: ubuntu-latest 
     steps: 
       - name: Dummy Step 
-        run: echo "This is a dummy job to satisfy the dependency for workflow_dispatch." 
+        run: echo "This is a dummy job to satisfy the dependency for workflow_dispatch."
+      - run: exit 1
  
   start-runner: 
     needs: [run_on_last_saturday, dummy_for_dispatch]
