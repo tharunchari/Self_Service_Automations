@@ -10,7 +10,7 @@ env:
  
 jobs:
   run_on_last_saturday: 
-    if: github.event_name == 'schedule'  # Only runs for scheduled trigger 
+    if: github.event_name == 'workflow_dispatch'  # Only runs for scheduled trigger 
     uses: vitechsystems/github-runner-testing/.github/workflows/time_test.yml@main 
     with: 
       run_type: 2nd_last_saturday 
@@ -18,7 +18,7 @@ jobs:
  
   # Dummy job to satisfy the 'needs' dependency for workflow_dispatch 
   dummy_for_dispatch: 
-    if: github.event_name == 'workflow_dispatch'  # Only runs for manual trigger 
+    if: github.event_name == 'schedule'  # Only runs for manual trigger 
     runs-on: ubuntu-latest 
     steps: 
       - name: Dummy Step 
