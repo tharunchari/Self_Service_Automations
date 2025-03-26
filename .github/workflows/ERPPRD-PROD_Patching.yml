@@ -6,15 +6,28 @@ on:
         required: true
         description: Authentication Key for OPS Internal Tools
 #  schedule:
-#    - cron: '0 3 8-14 * 3'  # 1st Wednesday of every month at 10 PM EST (22:00 UTC)
- 
-env:
-  RUNNER_NAME: "Internal_Tools_Automation_Server"
-  INSTANCE_ID: "i-020530b54ac86537b"
+#    - cron: '0 3 * * 6'  # 1st Wednesday of every month at 10 PM EST (22:00 UTC)
  
 jobs:
-  start-runner:
-    uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main
+  run_on_last_saturday: 
+    if: github.event_name == 'schedule'  # Only runs for scheduled trigger 
+    uses: vitechsystems/service_workflows/.github/workflows/time_last_saturday.yml@main 
+    with: 
+      run_type: last_saturday 
+    secrets: inherit 
+ 
+  # Dummy job to satisfy the 'needs' dependency for workflow_dispatch 
+  dummy_for_dispatch: 
+    if: github.event_name == 'workflow_dispatch'  # Only runs for manual trigger 
+    runs-on: ubuntu-latest 
+    steps: 
+      - name: Dummy Step 
+        run: echo "This is a dummy job to satisfy the dependency for workflow_dispatch."
+ 
+  start-runner: 
+    needs: [run_on_last_saturday, dummy_for_dispatch]
+    if: always() && ((needs.run_on_last_saturday.result == 'success' && needs.run_on_last_saturday.outputs.should_proceed == 'true') || needs.dummy_for_dispatch.result == 'success')
+    uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main 
     secrets: inherit
  
   execute-job:
