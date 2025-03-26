@@ -28,7 +28,8 @@ jobs:
             echo "$response" > "$ORG-usage.json"
             cat "$ORG-usage.json"
 
-            org_total=$(jq '[.usageItems[]? | select((.product | ascii_downcase) == "actions" and (.unitType | ascii_downcase) == "minutes") | .quantity // 0] | add' "$ORG-usage.json")
+            #org_total=$(jq '[.usageItems[]? | select((.product | ascii_downcase) == "actions" and (.unitType | ascii_downcase) == "minutes") | .quantity // 0] | add' "$ORG-usage.json")
+            org_total=$(jq '[.usageItems[]? | select((.product | ascii_downcase) == "actions" and (.unitType | ascii_downcase) == "minutes") ] | group_by(.sku) | map(map(.quantity // 0) | add) | add' "$ORG-usage.json")
             echo "Total Minutes Used for $ORG: $org_total minutes"
 
             echo "${ORG^^}_TOTAL_MINUTES_USED=$org_total" >> $GITHUB_ENV  # Store separately
