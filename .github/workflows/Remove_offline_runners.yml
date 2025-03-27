@@ -1,0 +1,52 @@
+name: Remove Offline GitHub Runners
+ 
+on:
+  schedule:
+    - cron: '0 0 * * 1' # Runs every Monday at midnight UTC
+  workflow_dispatch: # Allows manual triggering
+ 
+jobs:
+  cleanup-runners:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+ 
+      - name: Remove Offline Runners
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG: "vitechsystems"
+        run: |
+          # Get list of offline runners except "Internal_Tools_Automation_Server"
+          RUNNERS=$(curl -s -L \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/orgs/$ORG/actions/runners" | jq '[.runners[] | select(.status == "offline" and .name != "Internal_Tools_Automation_Server")]')
+ 
+          # Check if there are any offline runners
+          if [[ $(echo "$RUNNERS" | jq length) -eq 0 ]]; then
+            echo "No offline runners found."
+            exit 0
+          fi
+ 
+          # Extract runner IDs
+          RUNNER_IDS=$(echo "$RUNNERS" | jq -r '.[].id')
+ 
+          # Loop through runner IDs and remove them
+          for ID in $RUNNER_IDS; do
+            echo "Removing runner with ID: $ID"
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/orgs/$ORG/actions/runners/$ID")
+ 
+            if [[ "$RESPONSE" == "204" ]]; then
+              echo "Successfully removed runner ID: $ID"
+            else
+              echo "Failed to remove runner ID: $ID (HTTP Status: $RESPONSE)"
+            fi
+          done
+ 
+          echo "Cleanup completed."
