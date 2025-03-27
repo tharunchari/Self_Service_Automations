@@ -14,7 +14,7 @@ jobs:
  
       - name: Remove Offline Runners
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
           ORG: "vitechsystems"
         run: |
           # Get list of offline runners except "Internal_Tools_Automation_Server"
