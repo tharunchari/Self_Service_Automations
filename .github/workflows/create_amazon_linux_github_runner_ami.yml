@@ -116,7 +116,7 @@ jobs:
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
             --message "$MESSAGE" \
-            --subject "New Amazon Linux AMI Created on $(date +%Y-%m-%d)"
+            --subject "New Amazon Linux AMI Created for GitHub Self-Hosted Runners on $(date +%Y-%m-%d)"
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
 
