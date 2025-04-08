@@ -19,7 +19,7 @@ env:
  
 jobs:
   start-runner:
-    uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     secrets: inherit
   
   execute-job:
@@ -102,5 +102,5 @@ jobs:
   stop-runner:
     needs: execute-job
     if: always()  # Ensures this job runs even if execute-job fails
-    uses: vitechsystems/service_workflows/.github/workflows/stop_runner.yml@main
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     secrets: inherit
