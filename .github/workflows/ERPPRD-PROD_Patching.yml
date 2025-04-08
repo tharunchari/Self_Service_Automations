@@ -11,7 +11,7 @@ on:
 jobs:
   run_on_last_saturday: 
     if: github.event_name == 'schedule'  # Only runs for scheduled trigger 
-    uses: vitechsystems/service_workflows/.github/workflows/time_last_saturday.yml@main 
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/time_last_saturday.yml@main 
     with: 
       run_type: last_saturday 
     secrets: inherit 
@@ -27,7 +27,7 @@ jobs:
   start-runner: 
     needs: [run_on_last_saturday, dummy_for_dispatch]
     if: always() && ((needs.run_on_last_saturday.result == 'success' && needs.run_on_last_saturday.outputs.should_proceed == 'true') || needs.dummy_for_dispatch.result == 'success')
-    uses: vitechsystems/service_workflows/.github/workflows/start_runner.yml@main 
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main 
     secrets: inherit
  
   execute-job:
@@ -127,5 +127,5 @@ jobs:
   stop-runner:
     needs: execute-job
     if: always()  # Ensures this job runs even if execute-job fails
-    uses: vitechsystems/service_workflows/.github/workflows/stop_runner.yml@main
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     secrets: inherit
