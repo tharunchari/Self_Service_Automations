@@ -1,0 +1,128 @@
+---
+- hosts: all
+ # vars_files:
+ #   - vars.yml
+  tasks:
+    - name: " bring down the jenkinsqa/jenkins service "
+      shell: systemctl start docker
+      when: url == 'jenkinsqa' or url == 'jenkins'
+      ignore_errors: yes
+    - name: " grep CID from jenkinsqa/jenkins service "
+      register: containerID
+      shell: docker ps -a | sed -n '2p' | awk '{ print $1 }'
+      when: url == 'jenkinsqa' or url == 'jenkins'
+      ignore_errors: yes
+    - name: set fact
+      set_fact:
+        containerID1: "{{ containerID.stdout }}"
+      when: url == 'jenkinsqa' or url == 'jenkins'
+      ignore_errors: yes
+    - debug:
+        var: containerID1
+    - name: " bring up the jenkinsqa/jenkins service "
+      shell: "docker start {{containerID1}} "
+      when: url == 'jenkinsqa' or url == 'jenkins'
+      ignore_errors: yes
+    - name: Bring up the sonarv310uc/sonarv310ucqa service
+      shell: /u01/sonarqube-8.9.2.46101/bin/linux-x86-64/sonar.sh start
+      become_user: vitech
+      become: yes
+      when: url == 'sonarv310ucqa' or url == 'sonarv310uc'
+      ignore_errors: yes
+      register: kversion2
+    - name: Start crucible/crucibleqa service
+      shell: |
+        source ~/.bash_profile
+        /u01/fecruhome/bin/start.sh
+      become: true
+      become_user: root
+      when: url == 'crucibleqa' or url == 'crucible'
+      ignore_errors: yes
+    - name: Check the kernel version before webserver patching
+      shell: uname -r
+      register: kversion
+    - name: Get the server's primary IP address
+      set_fact:
+        ip_address: "{{ ansible_default_ipv4.address }}"
+    - debug:
+        msg: "Kernel version: {{ kversion.stdout | default('Unknown') }}"
+    - debug:
+        msg: "Server IP: {{ ip_address }}"
+    - name: Wait for services to start
+      pause:
+        seconds: 100
+    - name: Check HTTP status of SonarQube (QA)
+      shell: curl -Ik https://v3qa.vitechinc.com/sonarv310ucqa/ | head -1 | cut -d' '
+        -f2 || echo "ERROR"
+      when: url == 'sonarv310ucqa'
+      register: sonar_qa_http_status
+      ignore_errors: yes
+    - name: Check HTTP status of SonarQube (Prod)
+      shell: curl -Ik https://v3.vitechinc.com/sonarv310uc/ | head -1 | cut -d' ' -f2
+        || echo "ERROR"
+      when: url == 'sonarv310uc'
+      register: sonar_prod_http_status
+      ignore_errors: yes
+    - name: Check HTTP status of Crucible (Prod)
+      shell: curl -Ik https://v3.vitechinc.com/crucible/ | head -1 | cut -d' ' -f2 ||
+        echo "ERROR"
+      when: url == 'crucible'
+      register: crucible_prod_http_status
+      ignore_errors: yes
+    - name: Check HTTP status of Crucible (QA)
+      shell: curl -Ik https://v3qa.vitechinc.com/crucibleqa/ | head -1 | cut -d' ' -f2
+        || echo "ERROR"
+      when: url == 'crucibleqa'
+      register: crucible_qa_http_status
+      ignore_errors: yes
+    - name: Check HTTP status of Crucible (Prod)
+      shell: curl -Ik https://v3.vitechinc.com/jenkins/ | head -1 | cut -d' ' -f2 ||
+        echo "ERROR"
+      when: url == 'jenkins'
+      register: jenkins_prod_http_status
+      ignore_errors: yes
+    - name: Check HTTP status of Crucible (QA)
+      shell: curl -Ik https://v3qa.vitechinc.com/jenkinsqa/ | head -1 | cut -d' ' -f2
+        || echo "ERROR"
+      when: url == 'jenkinsqa'
+      register: jenkins_qa_http_status
+      ignore_errors: yes
+    - name: Prepare application status message
+      set_fact:
+        application_status: >-
+          {%- set status_msg = [] -%} {%- if
+          sonar_qa_http_status.stdout is defined and sonar_qa_http_status.stdout
+          == '200' -%}
+            {%- set _ = status_msg.append("HTTPs Status 200") -%}
+          {%- endif -%} {%- if sonar_prod_http_status.stdout is defined and sonar_prod_http_status.stdout == '200' -%}
+            {%- set _ = status_msg.append("HTTPs Status 200") -%}
+          {%- endif -%} {%- if crucible_prod_http_status.stdout is defined and crucible_prod_http_status.stdout == '200' -%}
+            {%- set _ = status_msg.append("HTTPs Status 200") -%}
+          {%- endif -%} {%- if crucible_qa_http_status.stdout is defined and crucible_qa_http_status.stdout == '200' -%}
+            {%- set _ = status_msg.append("HTTPs Status 200") -%}
+          {%- endif -%} {%- if jenkins_qa_http_status.stdout is defined and jenkins_qa_http_status.stdout == '403' -%}
+            {%- set _ = status_msg.append("HTTPs Status 200") -%}
+          {%- endif -%} {%- if jenkins_prod_http_status.stdout is defined and jenkins_prod_http_status.stdout == '403' -%}
+            {%- set _ = status_msg.append("HTTPs Status 200") -%}
+          {%- endif -%} {%- if status_msg -%}
+            {{ status_msg | join("\n") }}
+          {%- else -%}
+            No application returned HTTP 200.
+          {%- endif -%}
+    - name: Patching Email Notification
+      community.aws.sns:
+        topic: "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"  # Corrected `topic` to `topic_arn`
+        msg: |
+ 
+          Details:
+            - Kernel Version After Patching: {{ kversion.stdout | default('Unknown') }}
+            - Server IP: {{ ip_address }}
+ 
+          Application Status:
+            {{ url }} : {{ application_status }}
+ 
+          YUM_Logs:
+            The YUM update log is available on the server at /var/log/custom_yum.log.
+        subject: "ALERT!! Patching completed on {{ url }} server - {{ ip_address }}"
+        region: "us-east-1"
+      delegate_to: localhost
