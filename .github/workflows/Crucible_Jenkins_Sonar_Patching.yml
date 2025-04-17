@@ -1,0 +1,203 @@
+---
+name: Jenkins Patching Pipeline
+on:
+  workflow_dispatch:
+    inputs:
+      APP_ENVIRONMENT:
+        required: true
+        description: Application Environment (e.g., 'prod' or 'qa')
+        type: choice
+        options:
+          - prod
+          - qa
+      APP_COMPONENT:
+        required: true
+        description: Application Component
+        type: choice
+        options:
+          - crucible
+          - sonarv310uc
+          - jenkins
+          - crucibleqa
+          - sonarv310ucqa
+          - jenkinsqa
+      KEY:
+        required: true
+        description: Authentication Key for OPS Internal Tools
+
+env:
+  RUNNER_NAME: Internal_Tools_Automation_Server
+  INSTANCE_ID: i-020530b54ac86537b
+jobs:
+  start-runner:
+    uses: vitechsystems/Internal-Tools/.github/workflows/start_runner.yml@main
+    secrets: inherit
+  execute-job:
+    name: Execute Job on Self-Hosted Runner
+    needs: start-runner
+    runs-on: Internal_Tools_Automation_Server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Validate Authentication Key
+        id: validate_key
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [[ "${{ inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
+            echo "Invalid authentication key."
+            # Send notification for invalid key
+            aws sns publish \
+              --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+              --message "$(echo -e "**${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n$(date +%Y-%m-%d)")" \
+              --subject "${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Patching Aborted: Invalid Key"
+            exit 1
+          fi
+
+      - name: Set Inventory Path Dynamically
+        id: set_inventory
+        run: >
+          APP_ENV="${{ github.event.inputs.APP_ENVIRONMENT }}"
+
+          APP_COMP="${{ github.event.inputs.APP_COMPONENT }}"
+
+
+          # Validate component based on environment
+
+          if [[ "$APP_ENV" == "prod" ]]; then
+            VALID_COMPONENTS=("crucible" "sonarv310uc" "jenkins")
+          elif [[ "$APP_ENV" == "qa" ]]; then
+            VALID_COMPONENTS=("crucibleqa" "sonarv310ucqa" "jenkinsqa")
+          else
+            echo "Error: Invalid environment selected!"
+            exit 1
+          fi
+
+
+          # Check if the selected component is valid
+
+          if [[ ! " ${VALID_COMPONENTS[@]} " =~ " ${APP_COMP} " ]]; then
+            echo "Error: Invalid component selected for environment $APP_ENV"
+            exit 1
+          fi
+
+
+          # Construct inventory path dynamically
+
+          INVENTORY_PATH="Jenkins_Patching/inventory/${APP_ENV}/${APP_COMP}/hosts"
+
+          INVENTORY_PATH1="Jenkins_Patching/inventory/snapshots/${APP_ENV}/${APP_COMP}/hosts"
+
+
+          echo "Using Inventory Path: $INVENTORY_PATH"
+
+          echo "Using Inventory Path1: $INVENTORY_PATH1"
+
+
+          echo "INVENTORY_PATH=$INVENTORY_PATH" >> $GITHUB_ENV
+
+          echo "INVENTORY_PATH1=$INVENTORY_PATH1" >> $GITHUB_ENV
+
+
+          # Clear the previous inventory file content if any
+
+          echo "" > $INVENTORY_PATH
+
+          # Define the inventory based on the APP_ENV and APP_COMP
+
+          echo "[all]" >> $INVENTORY_PATH
+
+          # Add hosts based on APP_ENV and APP_COMP
+
+          if [[ "$APP_ENV" == "prod" ]]; then
+            if [[ "$APP_COMP" == "crucible" ]]; then
+              echo "172.26.44.151 ansible_user=root ansible_ssh_pass=$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$" >> $INVENTORY_PATH
+            elif [[ "$APP_COMP" == "sonarv310uc" ]]; then
+              echo "172.26.49.240 ansible_user=root ansible_ssh_pass=\"${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}\"" >> $INVENTORY_PATH
+            elif [[ "$APP_COMP" == "jenkins" ]]; then
+              echo "172.26.52.150 ansible_user=root ansible_ssh_pass=$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$" >> $INVENTORY_PATH
+            fi
+          elif [[ "$APP_ENV" == "qa" ]]; then
+            if [[ "$APP_COMP" == "crucibleqa" ]]; then
+              echo "172.26.48.5 ansible_user=root ansible_ssh_pass=$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$" >> $INVENTORY_PATH
+            elif [[ "$APP_COMP" == "sonarv310ucqa" ]]; then
+              echo "172.26.49.203 ansible_user=root ansible_ssh_pass=\"${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}\"" >> $INVENTORY_PATH
+            elif [[ "$APP_COMP" == "jenkinsqa" ]]; then
+              echo "172.26.56.140 ansible_user=root ansible_ssh_pass=$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$" >> $INVENTORY_PATH
+            fi
+          else
+            echo "Error: Invalid environment selected!"
+            exit 1
+            fi  
+      - name: Send the Mail Notification 
+        run: >
+          pwd
+
+          ls -la
+
+          sudo ansible-playbook Jenkins_Patching/mail.yaml -i $INVENTORY_PATH --extra-vars "app_component=${{ github.event.inputs.APP_COMPONENT }}" -vvv
+        continue-on-error: false
+        
+      - name: Stop the System Service
+        run: >
+          pwd
+
+          ls -la
+
+          sudo ansible-playbook Jenkins_Patching/stop.yaml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
+        continue-on-error: false
+
+
+      - name: Take System Snapshot
+        run: |
+          pwd
+          ls -la
+          sudo ansible-playbook Jenkins_Patching/snapshot.yml -i $INVENTORY_PATH1 \
+          --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" \
+          --extra-vars "vcusername=${{ vars.VC_USERNAME }}" \
+          --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv
+        continue-on-error: false
+        
+      - name: Apply System Patches and Reboot
+        run: >
+          pwd
+
+          ls -la
+
+          sudo ansible-playbook Jenkins_Patching/PatchandReboot.yml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
+        continue-on-error: false
+
+      - name: wait for 180 seconds
+        run: sleep 180
+      - name: Start the system service
+        run: >
+          pwd
+
+          ls -la
+
+          sudo ansible-playbook Jenkins_Patching/startandmail.yaml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
+        continue-on-error: false
+        
+
+  notify-on-failure:  # ✅ Now inside "jobs"
+    name: Send Failure Notification
+    needs: execute-job
+    if: ${{ always() && needs.execute-job.result == 'failure' }}  # Ensures it runs only if execute-job fails
+    runs-on: Internal_Tools_Automation_Server
+    steps:
+      - name: Set Inventory Path Again
+        run: echo "INVENTORY_PATH=Jenkins_Patching/inventory/${{ github.event.inputs.APP_ENVIRONMENT }}/${{ github.event.inputs.APP_COMPONENT }}/hosts" >> $GITHUB_ENV
+ 
+      - name: Debug Inventory Path
+        run: echo "Using INVENTORY_PATH=$INVENTORY_PATH"
+ 
+      - name: Send Failure Email
+        run: |
+          sudo ansible-playbook Jenkins_Patching/failure_notify.yaml -i $INVENTORY_PATH \
+          --extra-vars "app_component=${{ github.event.inputs.APP_COMPONENT }}"
