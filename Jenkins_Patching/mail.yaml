@@ -1,0 +1,32 @@
+- hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Check the kernel version before webserver patching
+      shell: uname -r
+      register: kversion
+ 
+    - name: Get the server's primary IP address
+      set_fact:
+        ip_address: "{{ ansible_default_ipv4.address }}"
+
+    - name: Define the URL variable dynamically
+      set_fact:
+        url: "{{ app_component }}"
+      
+#    - debug:
+#        msg: "Kernel version: {{ kversion.stdout }}"
+ 
+#    - debug:
+#        msg: "Server IP: {{ ip_address }}"
+ 
+    - name: Send Patching Notification via AWS SNS
+      community.aws.sns:
+        topic: "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"  # Use topic_arn instead of topic
+        msg: |
+        
+          Details:
+             - Server IP: {{ ip_address }}
+             - Kernel Version Before Patching: {{ kversion.stdout }}
+        subject: "ALERT!! {{ url }} Server {{ ip_address }} is Going Down for Patching"  # Ensure subject is set
+        region: "us-east-1"  # Corrected indentation
+      delegate_to: localhost  # Ensures SNS command runs on the Ansible control machine
