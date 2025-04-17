@@ -1,0 +1,73 @@
+---
+- hosts: all
+  tasks:
+    - name: check the kernel verison before webserver patching
+      shell: uname -r
+      register: kversion
+ 
+    - debug:
+        var: kversion
+ 
+    - name: " grep CID from jenkinsqa/jenkins service "
+      register: containerID
+      shell: docker ps -a | grep 8080 | awk '{ print $1 }'
+      when: url == 'jenkinsqa' or url == 'jenkins'
+      ignore_errors: true
+ 
+    - name: set fact
+      set_fact:
+        containerID1: "{{ containerID.stdout }}"
+      when: url == 'jenkinsqa' or url == 'jenkins'
+      ignore_errors: true
+ 
+    - debug:
+        var: containerID1
+ 
+    - name: " bring down the jenkinsqa/jenkins service "
+      shell: docker stop {{containerID1}} && systemctl stop docker
+      when: url == 'jenkinsqa' or url == 'jenkins'
+      ignore_errors: true
+  
+ 
+    - name: bring down the sonarv310uc/sonarv310ucqa service down
+      shell: /u01/sonarqube-8.9.2.46101/bin/linux-x86-64/sonar.sh stop
+      when: url == 'sonarv310ucqa' or  url == 'sonarv310uc'
+      become_user: vitech
+      become: yes
+      ignore_errors: true
+      register: kversion2
+    - debug:
+        var: kversion2
+
+    - name: Find PID of crucible/crucibleqa service running on port 3333
+      shell: "ps -ef | grep '[j]ava' | grep 'Dcom.sun.management.jmxremote.port=3333' | awk '{print $2}'"
+      register: PIDCRUCI
+      when: url == 'crucibleqa' or url == 'crucible'
+      ignore_errors: true
+    - debug:
+        var: PIDCRUCI.stdout
+    - name: set fact
+      set_fact:
+        PIDCRU: "{{ PIDCRUCI.stdout }}"
+      when: url == 'crucibleqa' or url == 'crucible'
+      ignore_errors: true
+    - debug:
+        var: PIDCRU
+    - name: bring down the crucible/crucibleqa service
+      shell: kill -9 {{ PIDCRU }}
+      when: url == 'crucibleqa' or url == 'crucible'
+      ignore_errors: true
+      
+  rescue:
+    - name: Send Patching Notification via AWS SNS
+      community.aws.sns:
+        topic: "arn:aws:sns:us-east-1:389180911583:Testing"  # Use topic_arn instead of topic
+        msg: |
+          ALERT!! {{ url }}  Patching job failed .
+          Details:
+            - Server IP: {{ ip_address }}
+            - Kernel Version Before Patching: {{ kversion.stdout }}
+        subject: "{{ url }} Patchingis failed "  # Ensure subject is set
+        region: "us-east-1"  # Corrected indentation
+      delegate_to: localhost  # Ensures SNS command runs on the Ansible control machine
+ 
