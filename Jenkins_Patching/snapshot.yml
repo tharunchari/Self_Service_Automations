@@ -1,0 +1,30 @@
+
+---
+
+- hosts: all
+#  var_files:
+#    - hostname.yaml
+  gather_facts: no
+  tasks:
+      - name: Generate timestamp
+        set_fact:
+           timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M-%S') }}"
+
+      - name: snapshots for XAND DATACENTER......
+        vmware_guest_snapshot:
+          validate_certs: no
+          hostname: "172.26.44.50"
+          username: "{{ vcusername }}@vitechinc.com"
+          password: "{{ vcpassword }}"
+          datacenter: "XAND"
+          folder: "/XAND/"
+          name: "{{ inventory_hostname|upper }}"
+          state: present
+          snapshot_name: "opsbackup_{{ timestamp }}"
+        register: out
+        delegate_to: localhost
+        when: url == 'crucibleqa' or url == 'crucible'  or url == 'sonarv310ucqa' or  url == 'sonarv310uc' or url == 'jenkinsqa' or url == 'jenkins'
+
+        
+    #  - debug:
+    #     var: out
