@@ -1,0 +1,33 @@
+---
+- hosts: all
+  tasks:
+ 
+    - name: Ensure custom YUM log file exists
+      file:
+        path: /var/log/custom_yum.log
+        state: touch
+        mode: '0644'
+      become: yes
+ 
+    - name: Clean the YUM cache and log output
+      shell: yum clean all && rm -rf /var/cache/yum/* && sleep 60 &>> /var/log/custom_yum.log
+      become: yes
+ 
+    - name: Upgrade ALL OS packages and log output
+      shell: yum update -y '*' &>> /var/log/custom_yum.log
+      become: yes
+      register: updateos
+      ignore_errors: yes
+ 
+    - debug:
+        var: updateos
+ 
+    - name: Reboot the server
+      shell: "sleep 5 && reboot"
+      async: 1
+      poll: 0
+      ignore_errors: yes
+ 
+    - name: Pause for 60 seconds after upgrading packages
+      pause:
+        seconds: 60
