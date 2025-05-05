@@ -1,0 +1,88 @@
+
+name: Start Runner Service
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  security-events: write
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      example_input:
+        required: false
+        type: string
+ 
+env:
+  RUNNER_NAME: "Internal_Tools_Automation_Server"
+  INSTANCE_ID: "i-020530b54ac86537b"
+
+jobs:
+  start-runner:
+    name: Check Runner Status
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check Self-Hosted Runner Status
+        id: check-status
+        run: |
+          RUNNER_DATA=$(curl -s -H "Authorization: Bearer ${{ secrets.PROD_CLASSIC_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/orgs/vitechsystems/actions/runners | \
+            jq -r '.runners[] | select(.name == "Internal_Tools_Automation_Server")')
+ 
+          echo "Runner Data: $RUNNER_DATA"
+ 
+          RUNNER_STATUS=$(echo "$RUNNER_DATA" | jq -r '.status')
+          RUNNER_BUSY=$(echo "$RUNNER_DATA" | jq -r '.busy')
+ 
+          echo "Runner Status: $RUNNER_STATUS"
+          echo "Runner Busy: $RUNNER_BUSY"
+ 
+          echo "runner_status=$RUNNER_STATUS" >> $GITHUB_ENV
+          echo "runner_busy=$RUNNER_BUSY" >> $GITHUB_ENV
+ 
+      - name: Checking the Runner Status
+        if: env.runner_status == 'online' && env.runner_busy == 'false'
+        run: echo "Runner is online with idle state."
+
+      - name: Set up AWS CLI
+        if: env.runner_status == 'online' && env.runner_busy == 'true'
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Sending an email message to re-run the workflow
+        if: env.runner_status == 'online' && env.runner_busy == 'true'
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "The GitHub self-hosted runner is currently busy. Please retry in 10 minutes." \
+            --subject "Testing - GitHub Runner Busy"
+
+      - name: Set up AWS CLI
+        if: env.runner_status == 'offline'
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Start EC2 Instance
+        if: env.runner_status == 'offline'
+        run: |
+          aws ec2 start-instances --instance-ids $INSTANCE_ID --region ${{ vars.AWS_REGION }}
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region ${{ vars.AWS_REGION }}
+          echo "EC2 instance started."
+
+      - name: Run Command on EC2 Instance to start the runner service
+        if: env.runner_status == 'offline'
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets Key=instanceids,Values=$INSTANCE_ID \
+            --parameters "commands=['cd /actions-runner && sudo ./svc.sh start']" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
