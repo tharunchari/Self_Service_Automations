@@ -21,7 +21,7 @@ jobs:
         run: |
           aws ssm create-association \
             --name "AWS-RunShellScript" \
-            --targets "Key=instanceids,Values=${{ ${{ inputs.INSTANCE_ID }} }}" \
+            --targets "Key=instanceids,Values=${{ inputs.INSTANCE_ID }}" \
             --parameters commands="sudo -u ec2-user /actions-runner/config.sh remove --pat ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             --region ${{ vars.AWS_REGION }}
         shell: bash
