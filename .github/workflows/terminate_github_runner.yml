@@ -1,0 +1,51 @@
+name: TERMINATE_GITHUB_RUNNER
+on:
+  workflow_dispatch:
+    inputs:
+      INSTANCE_ID:
+        required: true
+        description: AWS EC2 Instance ID
+jobs:
+  terminate_github_runner:
+    name: Check Runner Status
+    runs-on: ubuntu-24.04
+    steps:       
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Run Command on EC2 Instance to remove runner from GitHub
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets "Key=instanceids,Values=${{ ${{ inputs.INSTANCE_ID }} }}" \
+            --parameters commands="sudo -u ec2-user /actions-runner/config.sh remove --pat ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+      - name: Get the associations IDS
+        id: get_associations
+        run: |
+          ASSOC_IDS_2=$(aws ssm describe-effective-instance-associations --instance-id "${{ inputs.INSTANCE_ID }}" | jq -r '.Associations[].AssociationId')
+          EOF_2=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "ASSOC_IDS_2<<$EOF_2" >> $GITHUB_ENV
+          echo "$ASSOC_IDS_2" >> $GITHUB_ENV
+          echo "$EOF_2" >> $GITHUB_ENV
+ 
+      - name: Delete associations
+        run: |
+          for ASSOC_ID_2 in $ASSOC_IDS_2
+          do
+            aws ssm delete-association --association-id $ASSOC_ID_2
+          done
+
+      - name: Workflow will be in sleep mode until GITHUB runner gets removed from GitHub
+        run: |
+          sleep 10
+          
+      - name: Terminate Self Hosted Runner instance
+        run: |
+          aws ec2 terminate-instances --instance-ids "${{ inputs.INSTANCE_ID }}" --region ${{ vars.AWS_REGION }}
