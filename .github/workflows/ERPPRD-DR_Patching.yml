@@ -9,30 +9,30 @@ on:
 #    - cron: '0 3 * * 6'  # 1st Wednesday of every month at 10 PM EST (22:00 UTC)
  
 jobs:
-  run_on_last_saturday: 
-    if: github.event_name == 'schedule'  # Only runs for scheduled trigger 
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/time_last_saturday.yml@main 
-    with: 
-      run_type: 2nd_last_saturday 
-    secrets: inherit 
+  run_on_last_saturday:
+    if: github.event_name == 'schedule'
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/time_last_saturday.yml@main
+    with:
+      run_type: 2nd_last_saturday
+    secrets: inherit
+
+  start-runner-scheduled:
+    if: github.event_name == 'schedule' && needs.run_on_last_saturday.result == 'success' && needs.run_on_last_saturday.outputs.should_proceed == 'true'
+    needs: run_on_last_saturday
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    secrets: inherit
  
-  # Dummy job to satisfy the 'needs' dependency for workflow_dispatch 
-  dummy_for_dispatch: 
-    if: github.event_name == 'workflow_dispatch'  # Only runs for manual trigger 
-    runs-on: ubuntu-latest 
-    steps: 
-      - name: Dummy Step 
-        run: echo "This is a dummy job to satisfy the dependency for workflow_dispatch."
- 
-  start-runner: 
-    needs: [run_on_last_saturday, dummy_for_dispatch]
-    if: always() && ((needs.run_on_last_saturday.result == 'success' && needs.run_on_last_saturday.outputs.should_proceed == 'true') || needs.dummy_for_dispatch.result == 'success')
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main 
+  start-runner-manual:
+    if: github.event_name == 'workflow_dispatch'
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     secrets: inherit
  
   execute-job:
     name: Execute Job on Self-Hosted Runner
-    needs: start-runner
+    needs: [start-runner-scheduled, start-runner-manual]
+    if: |
+      (github.event_name == 'schedule' && needs.start-runner-scheduled.result == 'success') ||
+      (github.event_name == 'workflow_dispatch' && needs.start-runner-manual.result == 'success')
     runs-on: Internal_Tools_Automation_Server
     steps:
       - name: Checkout repository
@@ -122,6 +122,6 @@ jobs:
 
   stop-runner:
     needs: execute-job
-    if: always()  # Ensures this job runs even if execute-job fails
+    if: always()
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     secrets: inherit
