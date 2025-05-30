@@ -31,8 +31,8 @@ jobs:
     name: Execute Job on Self-Hosted Runner
     needs: [start-runner-scheduled, start-runner-manual]
     if: |
-      (github.event_name == 'schedule' && needs.start-runner-scheduled.result == 'success') ||
-      (github.event_name == 'workflow_dispatch' && needs.start-runner-manual.result == 'success')
+      (needs.start-runner-scheduled.result == 'success') ||
+      (needs.start-runner-manual.result == 'success')
     runs-on: Internal_Tools_Automation_Server
     steps:
       - name: Checkout repository
