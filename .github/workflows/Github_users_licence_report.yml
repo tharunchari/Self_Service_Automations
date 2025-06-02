@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
  
     env:
-      GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+      GITHUB_PAT: ${{ secrets.CLASSIC_PAT }}
      # SES_SENDER_EMAIL: ${{ secrets.SES_SENDER_EMAIL }}
      # SES_RECIPIENT_EMAIL: ${{ secrets.SES_RECIPIENT_EMAIL }}
  
