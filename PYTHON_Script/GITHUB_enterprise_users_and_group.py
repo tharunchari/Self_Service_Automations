@@ -16,7 +16,7 @@ from botocore.exceptions import ClientError
  
 # ===== CONFIGURATION =====
 
-GITHUB_TOKEN = os.environ["GITHUB_PAT"]  # Replace with actual token
+GITHUB_TOKEN = os.environ["CLASSIC_PAT"]  # Replace with actual token
 
 ENTERPRISE = "vitech"  # Replace with your GitHub enterprise name
  
