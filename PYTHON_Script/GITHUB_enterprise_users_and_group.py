@@ -24,11 +24,11 @@ AWS_REGION = "us-east-1"  # Replace as needed
 
 SES_SENDER = "svallabhuni@vitechinc.com"  # Must be verified in SES
 
-SES_RECIPIENT = "svallabhuni@vitechinc.com"  # Must be verified if SES is in sandbox
+SES_RECIPIENT = "v3atlassianops@vitechinc.com"  # Must be verified if SES is in sandbox
  
-EMAIL_SUBJECT = "Filtered GitHub Enterprise Users Report"
+EMAIL_SUBJECT = "GitHub Enterprise Users Licence Report"
 
-EMAIL_BODY = "Attached is the filtered user list from GitHub Enterprise SCIM API."
+EMAIL_BODY = "Attached is the GitHub Enterprise Users Licence Report SCIM API."
  
 HEADERS = {
 
@@ -102,7 +102,7 @@ df_filtered.reset_index(drop=True, inplace=True)
 
 df_filtered["S.No"] = df_filtered.index + 1
  
-filtered_excel_filename = "GitHub_Enterprise_Users_Filtered.xlsx"
+filtered_excel_filename = "GitHub_Enterprise_Users_Licence_Report.xlsx"
 
 df_filtered.to_excel(filtered_excel_filename, index=False)
  
