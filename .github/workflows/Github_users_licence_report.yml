@@ -1,0 +1,31 @@
+name: Generate GitHub Enterprise User Report
+ 
+on:
+  workflow_dispatch:  # allows manual run
+ 
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+ 
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+     # SES_SENDER_EMAIL: ${{ secrets.SES_SENDER_EMAIL }}
+     # SES_RECIPIENT_EMAIL: ${{ secrets.SES_RECIPIENT_EMAIL }}
+ 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+ 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+ 
+      - name: Install dependencies
+        run: |
+          pip install requests pandas boto3 openpyxl
+ 
+      - name: Run report script
+        run: python your_script.py  # replace with actual filename
