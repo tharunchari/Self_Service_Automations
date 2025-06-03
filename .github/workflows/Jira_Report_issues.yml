@@ -1,0 +1,33 @@
+name: Jira Report issues Export & Email
+ 
+on:
+  workflow_dispatch:
+    inputs:
+      jira_project:
+        description: 'Enter Jira project key (e.g., VAT)'
+        required: true
+        default: 'VAT'
+ 
+jobs:
+  run-report:
+    runs-on: ubuntu-latest
+    env:
+      JIRA_PASSWORD: ${{ secrets.JIRA_PASSWORD }}
+      JIRA_PROJECT: ${{ github.event.inputs.jira_project }}
+      AWS_REGION: us-east-1  # or move to secret if sensitive
+ 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+ 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+ 
+      - name: Install dependencies
+        run: |
+          pip install jira boto3
+ 
+      - name: Run Jira Report Script
+        run: python your_script.py
