@@ -28,6 +28,13 @@ jobs:
       - name: Install dependencies
         run: |
           pip install jira boto3
+          
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
  
       - name: Run Jira Report Script
         run: python3 PYTHON_Script/JIRA_PROJECT_ISSUES.py
