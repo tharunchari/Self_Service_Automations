@@ -30,4 +30,4 @@ jobs:
           pip install jira boto3
  
       - name: Run Jira Report Script
-        run: python your_script.py
+        run: python3 PYTHON_Script/JIRA_PROJECT_ISSUES.py
