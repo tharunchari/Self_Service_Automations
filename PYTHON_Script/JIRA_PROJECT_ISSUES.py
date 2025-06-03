@@ -24,7 +24,7 @@ JIRA_PASSWORD = os.environ.get("JIRA_PASSWORD")  # from GitHub Secret
 
 JIRA_PROJECT = os.environ.get("JIRA_PROJECT")                             # Changeable (e.g., "VAT", "XYZ", etc.)
 
-#AWS_REGION = "us-east-1"
+AWS_REGION = "us-east-1"
 
 SES_SENDER = "svallabhuni@vitechinc.com"                  # Must be verified in SES
 
