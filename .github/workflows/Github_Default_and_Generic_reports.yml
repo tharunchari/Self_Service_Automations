@@ -1,0 +1,37 @@
+name: Generate Default and Generic secret scanning alerts
+ 
+on:
+  workflow_dispatch:  # allows manual run
+ 
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+ 
+    env:
+      CLASSIC_PAT: ${{ secrets.CLASSIC_PAT }}
+
+     # SES_SENDER_EMAIL: ${{ secrets.SES_SENDER_EMAIL }}
+     # SES_RECIPIENT_EMAIL: ${{ secrets.SES_RECIPIENT_EMAIL }}
+ 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+ 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+ 
+      - name: Install dependencies
+        run: |
+          pip install requests pandas boto3 openpyxl
+          
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+ 
+      - name: Run report script
+        run: python3 PYTHON_Script/Github_Default_and_Generic_secret_scanning.py
