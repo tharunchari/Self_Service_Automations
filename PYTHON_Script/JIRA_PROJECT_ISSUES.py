@@ -26,9 +26,9 @@ JIRA_PROJECT = os.environ.get("JIRA_PROJECT")                             # Chan
 
 AWS_REGION = "us-east-1"
 
-SES_SENDER = "svallabhuni@vitechinc.com"                  # Must be verified in SES
+SES_SENDER = "v3atlassianops@vitechinc.com"                  # Must be verified in SES
 
-SES_RECIPIENT = "svallabhuni@vitechinc.com"            # Must be verified in SES sandbox
+SES_RECIPIENT = "v3atlassianops@vitechinc.com"            # Must be verified in SES sandbox
 
 EMAIL_SUBJECT = f"Jira Issue Report - {JIRA_PROJECT} Project"
 
