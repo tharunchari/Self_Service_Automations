@@ -8,7 +8,7 @@ from email.mime.application import MIMEApplication
 from email.mime.text import MIMEText
 
 # ---------------------- CONFIGURATION ----------------------
-GITHUB_TOKEN = 
+GITHUB_TOKEN = os.environ["CLASSIC_PAT"]
 ORG_NAME = "vitechsystems"
 SENDER = "svallabhuni@vitechinc.com"  # Must be verified in AWS SES
 RECIPIENT = "svallabhuni@vitechinc.com"  # Must be verified if SES sandbox
