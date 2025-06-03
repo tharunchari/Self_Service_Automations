@@ -19,10 +19,10 @@ import os
 JIRA_URL = "https://jira.vitechinc.com/jira"       # Update if needed
 
 JIRA_USERNAME = "svallabhuni"
+   
+JIRA_PASSWORD = os.environ.get("JIRA_PASSWORD")  # from GitHub Secret
 
-JIRA_PASSWORD = "S@ikiR@n@2903"    # Use GitHub secret or environment variable
-
-JIRA_PROJECT = "VAT"                               # Changeable (e.g., "VAT", "XYZ", etc.)
+JIRA_PROJECT = os.environ.get("JIRA_PROJECT")                             # Changeable (e.g., "VAT", "XYZ", etc.)
 
 #AWS_REGION = "us-east-1"
 
