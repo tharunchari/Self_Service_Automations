@@ -10,8 +10,8 @@ from email.mime.text import MIMEText
 # ---------------------- CONFIGURATION ----------------------
 GITHUB_TOKEN = os.environ["CLASSIC_PAT"]
 ORG_NAME = "vitechsystems"
-SENDER = "svallabhuni@vitechinc.com"  # Must be verified in AWS SES
-RECIPIENT = "svallabhuni@vitechinc.com"  # Must be verified if SES sandbox
+SENDER = "v3atlassianops@vitechinc.com"  # Must be verified in AWS SES
+#RECIPIENT = "v3atlassianops@vitechinc.com"  # Must be verified if SES sandbox
 AWS_REGION = "us-east-1"
 
 INCLUDE_TYPES = {
@@ -105,14 +105,14 @@ def send_email_with_attachments(files, subject, body):
     msg = MIMEMultipart()
     msg["Subject"] = subject
     msg["From"] = SENDER
-    msg["To"] = RECIPIENT
+  #  msg["To"] = RECIPIENT
     msg.attach(MIMEText(body, "plain"))
     for file_path in files:
         with open(file_path, "rb") as f:
             part = MIMEApplication(f.read())
             part.add_header("Content-Disposition", "attachment", filename=os.path.basename(file_path))
             msg.attach(part)
-    response = client.send_raw_email(Source=SENDER, Destinations=[RECIPIENT], RawMessage={"Data": msg.as_string()})
+    response = client.send_raw_email(Source=SENDER,RawMessage={"Data": msg.as_string()})
     print(f"📧 Email sent! Message ID: {response['MessageId']}")
 
 # ---------------------- MAIN ----------------------
