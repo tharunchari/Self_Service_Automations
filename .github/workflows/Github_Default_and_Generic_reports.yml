@@ -34,4 +34,4 @@ jobs:
           aws-region: us-east-1
  
       - name: Run report script
-        run: python3 PYTHON_Script/Github_Default_and_Generic_secret_scanning.py
+        run: python3 PYTHON_Script/Github_Default_and_Generic_secret_scanning1.py
