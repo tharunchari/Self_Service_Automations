@@ -1,13 +1,13 @@
 import os
  
 def main():
-    secret_value = os.getenv("SECRET_CODE_GITHUB")
-    if secret_value:
-        # For demo purposes, just print masked confirmation
-        print("✅ Secret is available and has been read into Python.")
-        print(f"Secret length: {len(secret_value)} characters")
+    secret = os.getenv("SECRET_CODE_GITHUB")
+    if secret:
+        # Never print the raw secret! This is just for demonstration.
+        print("✅ SECRET_CODE_GITHUB is set.")
+        print(f"Secret value (masked preview): {secret[:2]}****{secret[-2:]}")
     else:
-        print("❌ Secret is missing or not set in environment.")
+        print("❌ SECRET_CODE_GITHUB is not set.")
  
 if __name__ == "__main__":
     main()
