@@ -20,9 +20,9 @@ GITHUB_TOKEN = os.environ["CLASSIC_PAT"]
 
 ORG_NAME = "vitechsystems"
 
-SENDER = "svallabhuni@vitechinc.com"  # Must be verified in AWS SES
+SENDER = "v3atlassianops@vitechinc.com"  # Must be verified in AWS SES
 
-RECIPIENT = "svallabhuni@vitechinc.com"  # Must be verified if SES sandbox
+RECIPIENT = "v3atlassianops@vitechinc.com"  # Must be verified if SES sandbox
 
 AWS_REGION = "us-east-1"
 
