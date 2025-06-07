@@ -16,23 +16,20 @@ jobs:
       run_type: last_saturday 
     secrets: inherit 
  
-  # Dummy job to satisfy the 'needs' dependency for workflow_dispatch 
-  dummy_for_dispatch: 
-    if: github.event_name == 'workflow_dispatch'  # Only runs for manual trigger 
-    runs-on: ubuntu-latest 
-    steps: 
-      - name: Dummy Step 
-        run: echo "This is a dummy job to satisfy the dependency for workflow_dispatch."
- 
-  start-runner: 
-    needs: [run_on_last_saturday, dummy_for_dispatch]
-    if: always() && ((needs.run_on_last_saturday.result == 'success' && needs.run_on_last_saturday.outputs.should_proceed == 'true') || needs.dummy_for_dispatch.result == 'success')
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main 
+  start-runner-scheduled:
+    if: github.event_name == 'schedule' && needs.run_on_last_saturday.result == 'success' && needs.run_on_last_saturday.outputs.should_proceed == 'true'
+    needs: run_on_last_saturday
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     secrets: inherit
  
-  execute-job:
+  start-runner-manual:
+    if: github.event_name == 'workflow_dispatch'
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    secrets: inherit
+ 
+  execute-job-scheduled:
     name: Execute Job on Self-Hosted Runner
-    needs: start-runner
+    needs: start-runner-scheduled
     runs-on: Internal_Tools_Automation_Server
     steps:
       - name: Checkout repository
@@ -124,8 +121,102 @@ jobs:
             --message "$(echo -e "**Attention: ERPPRD-PROD Patch Status: SUCCESS but App is Down**\n\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)")" \
             --subject "ERPPRD-PROD Patching Completed but App is Down"
 
+  execute-job-manual:
+    name: Execute Job on Self-Hosted Runner
+    needs: start-runner-manual
+    runs-on: Internal_Tools_Automation_Server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+ 
+      - name: Validate Authentication Key
+        id: validate_key
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [[ "${{ inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
+            echo "Invalid authentication key."
+            # Send notification for invalid key
+            aws sns publish \
+              --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+              --message "$(echo -e "**ERPPRD-PROD Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n$(date +%Y-%m-%d)")" \
+              --subject "ERPPRD-PROD Patching Aborted: Invalid Key"
+            exit 1
+          fi
+ 
+      - name: Write defaults/main.yml file
+        run: |
+          sudo tee erpprd_patching/vars/main.yml > /dev/null <<EOF
+          vcusername: "${{ vars.VC_USERNAME }}"
+          vcpassword: "${{ secrets.VC_PASSWORD }}"
+          EOF
+ 
+      - name: Write inventory file
+        run: |
+          sudo tee erpprd_patching/tests/inventory > /dev/null <<EOF
+          [APP01-ERPPRD]
+          #VITECH-APP01-ERPPRD-TOM9
+          172.26.52.188 ansible_user=root ansible_ssh_pass="${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}"
+ 
+          [APP02-ERPPRD]
+          #VITECH-APP02-ERPPRD-TOM9
+          172.26.52.189 ansible_user=root ansible_ssh_pass="${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}"
+          EOF
+ 
+      - name: Run Ansible Playbook
+        id: run_playbook
+        run: |
+          sudo ansible-playbook erpprd_patching/tests/test.yml -i erpprd_patching/tests/inventory
+        continue-on-error: true  # Capture playbook failure but don't stop workflow
+ 
+      - name: Check App Status with Curl
+        id: check_app_status
+        if: success()  # Only run if the playbook succeeded
+        run: |
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://v3.vitechinc.com/erpprd/app)
+          echo "Response Code: $RESPONSE_CODE"
+          if [ "$RESPONSE_CODE" -eq 200 ]; then
+            echo "APP_STATUS=up" >> $GITHUB_ENV
+          else
+            echo "APP_STATUS=down" >> $GITHUB_ENV
+          fi
+ 
+      - name: Send Notification on Playbook Failure
+        if: steps.run_playbook.outcome == 'failure'
+        run: |
+          ERROR_MSG=$(grep -iE "fatal:|error:" $GITHUB_WORKSPACE/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/logs/*.log | tail -n 20)
+          if [[ -z "$ERROR_MSG" ]]; then
+            ERROR_MSG="No specific error message found. Check GitHub Actions logs for details."
+          fi
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "ERPPRD-PROD Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\n\n Please check the GitHub Actions logs for more details.")" \
+            --subject "ERPPRD-PROD Patching Failed"
+ 
+      - name: Send Notification on Success
+        if: steps.run_playbook.outcome == 'success' && env.APP_STATUS == 'up'
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "**ERPPRD-PROD Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)")" \
+            --subject "ERPPRD-PROD Patching Completed"
+ 
+      - name: Send Notification on App Down
+        if: steps.run_playbook.outcome == 'success' && env.APP_STATUS == 'down'
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "**Attention: ERPPRD-PROD Patch Status: SUCCESS but App is Down**\n\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)")" \
+            --subject "ERPPRD-PROD Patching Completed but App is Down"
+
   stop-runner:
-    needs: execute-job
-    if: always()  # Ensures this job runs even if execute-job fails
+    needs: [execute-job-scheduled, execute-job-manual]
+    if: always()
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     secrets: inherit
