@@ -20,9 +20,9 @@ GITHUB_TOKEN = os.environ["CLASSIC_PAT"]
 
 ORG_NAME = "vitechsystems"
 
-SENDER = os.environ.get("SENDER")
+SENDER = "svallabhuni@vitechinc.com"
 
-RECIPIENT = os.environ.get("RECIPIENT")
+RECIPIENT = "svallabhuni@vitechinc.com"
 
 MODE = os.environ.get("MODE", "all")  # 'all' or 'specific'
 
