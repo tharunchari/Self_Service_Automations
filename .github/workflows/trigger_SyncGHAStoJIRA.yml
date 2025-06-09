@@ -29,22 +29,22 @@ jobs:
         run: |
           page=1
           per_page=100
-          all_repos=()
- 
           echo "[]" > repos.json
  
           while :; do
+            echo "Fetching page $page..."
             resp=$(curl -s -H "Authorization: token $GH_TOKEN" \
               "https://api.github.com/orgs/vitechsystems/repos?per_page=$per_page&page=$page")
+ 
             count=$(echo "$resp" | jq 'length')
             [[ "$count" -eq 0 ]] && break
  
-            echo "$resp" | jq '.[] | {name: .name}' >> repos.json
+            # Merge new page results into repos.json
+            jq -s '.[0] + .[1]' repos.json <(echo "$resp") > tmp.json && mv tmp.json repos.json
             ((page++))
           done
  
-          repos=$(jq -r '.name' repos.json | sort -u)
-          echo "$repos" > all_repos.txt
+          jq -r '.[].name' repos.json | sort -u > all_repos.txt
  
       - name: Filter and classify repositories
         id: classify
@@ -72,15 +72,21 @@ jobs:
               "https://api.github.com/repos/vitechsystems/$repo/contents/$WORKFLOW_FILE")
  
             if [[ "$status_code" == "200" ]]; then
+              echo "✅ Found: $repo"
               with_workflow+=("$repo")
             else
+              echo "❌ Not Found: $repo"
               without_workflow+=("$repo")
             fi
           done < all_repos.txt
  
-          echo "${with_workflow[@]}" > with_workflow.txt
-          echo "${without_workflow[@]}" > without_workflow.txt
+          # Print arrays
+          echo "=== Included Repos With Workflow ==="
+          printf '%s\n' "${with_workflow[@]}"
+          echo "=== Included Repos Without Workflow ==="
+          printf '%s\n' "${without_workflow[@]}"
  
-          echo "with_workflow=$(cat with_workflow.txt | tr '\n' ' ')" >> "$GITHUB_ENV"
-          echo "without_workflow=$(cat without_workflow.txt | tr '\n' '\n')" >> "$GITHUB_ENV"
+          # Save to env for next steps
+          echo "with_workflow=${with_workflow[*]}" >> "$GITHUB_ENV"
+          echo "without_workflow=${without_workflow[*]}" >> "$GITHUB_ENV"
  
