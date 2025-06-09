@@ -1,0 +1,50 @@
+name: Secret and Generate Secret Scanning Alerts
+ 
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Select mode: all or specific"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - specific
+      repository:
+        description: "If mode is 'specific', enter full repository name (e.g., vitechsystems/my-repo)"
+        required: false
+ 
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+ 
+    env:
+      CLASSIC_PAT: ${{ secrets.CLASSIC_PAT }}
+      SENDER: ${{ secrets.SES_SENDER_EMAIL }}
+      RECIPIENT: ${{ secrets.SES_RECIPIENT_EMAIL }}
+      MODE: ${{ inputs.mode }}
+      REPO: ${{ inputs.repository }}
+ 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+ 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+ 
+      - name: Install dependencies
+        run: |
+          pip install requests pandas boto3 openpyxl
+ 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+ 
+      - name: Run report script
+        run: python3 PYTHON_Script/default_and_generic_all_and_specific_project.py
