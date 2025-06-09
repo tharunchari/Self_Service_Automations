@@ -89,4 +89,13 @@ jobs:
           # Save to env for next steps
           echo "with_workflow=${with_workflow[*]}" >> "$GITHUB_ENV"
           echo "without_workflow=${without_workflow[*]}" >> "$GITHUB_ENV"
- 
+
+      - name: Send SNS notification for repos without workflow
+        if: env.without_workflow != ''
+        run: |
+          message="**The following repositories are missing $WORKFLOW_FILE:**\n\n$without_workflow\n\nPlease take action to add the required workflow."
+          aws sns publish \
+            --topic-arn "$SNS_TOPIC_ARN" \
+            --message "$(echo -e "$message")" \
+            --subject "Missing Sync GHAS to JIRA Workflow in VitechSystems Repositories" \
+            --region "$AWS_REGION"
