@@ -6,7 +6,7 @@ on:
 #    - cron: '0 3 * * *'  # every day at 3 AM UTC
  
 jobs:
-  trigger-ghas:
+  Trigger-Sync_GHAS_to_JIRA:
     runs-on: ubuntu-latest
  
     env:
