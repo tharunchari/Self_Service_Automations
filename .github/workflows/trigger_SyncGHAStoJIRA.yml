@@ -7,7 +7,7 @@ on:
  
 jobs:
   Trigger-Sync_GHAS_to_JIRA:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24-04
  
     env:
       GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}  # GitHub PAT with repo + workflow scope
@@ -93,7 +93,8 @@ jobs:
       - name: Send SNS notification for repos without workflow
         if: env.without_workflow != ''
         run: |
-          message="**The following repositories are missing $WORKFLOW_FILE:**\n\n$without_workflow\n\nPlease take action to add the required workflow."
+          repo_list=$(echo "$without_workflow" | tr ' ' '\n')
+          message="**The following repositories are missing $WORKFLOW_FILE:**\n\n$repo_list\n\nPlease take action to add the required workflow."
           aws sns publish \
             --topic-arn "$SNS_TOPIC_ARN" \
             --message "$(echo -e "$message")" \
