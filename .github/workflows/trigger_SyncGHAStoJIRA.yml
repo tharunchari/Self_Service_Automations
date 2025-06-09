@@ -1,0 +1,86 @@
+name: Trigger Sync GHAS to JIRA
+ 
+on:
+  workflow_dispatch:
+#  schedule:
+#    - cron: '0 3 * * *'  # every day at 3 AM UTC
+ 
+jobs:
+  trigger-ghas:
+    runs-on: ubuntu-latest
+ 
+    env:
+      GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}  # GitHub PAT with repo + workflow scope
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EXCLUDED_REPOS: "Internal-Tools,central-workflows,Internal-Tools_sub_workflows"
+      WORKFLOW_FILE: ".github/workflows/SyncGHAStoJIRA.yml"
+      SNS_TOPIC_ARN: "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
+ 
+    steps:
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+ 
+      - name: Get all repositories
+        id: fetch_repos
+        run: |
+          page=1
+          per_page=100
+          all_repos=()
+ 
+          echo "[]" > repos.json
+ 
+          while :; do
+            resp=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/orgs/vitechsystems/repos?per_page=$per_page&page=$page")
+            count=$(echo "$resp" | jq 'length')
+            [[ "$count" -eq 0 ]] && break
+ 
+            echo "$resp" | jq '.[] | {name: .name}' >> repos.json
+            ((page++))
+          done
+ 
+          repos=$(jq -r '.name' repos.json | sort -u)
+          echo "$repos" > all_repos.txt
+ 
+      - name: Filter and classify repositories
+        id: classify
+        run: |
+          included=()
+          excluded=()
+          with_workflow=()
+          without_workflow=()
+ 
+          IFS=',' read -ra exclude <<< "$EXCLUDED_REPOS"
+ 
+          while read -r repo; do
+            skip=false
+            for ex in "${exclude[@]}"; do
+              if [[ "$repo" == "$ex" ]]; then
+                skip=true
+                break
+              fi
+            done
+            $skip && continue
+ 
+            # Check if workflow file exists
+            status_code=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/vitechsystems/$repo/contents/$WORKFLOW_FILE")
+ 
+            if [[ "$status_code" == "200" ]]; then
+              with_workflow+=("$repo")
+            else
+              without_workflow+=("$repo")
+            fi
+          done < all_repos.txt
+ 
+          echo "${with_workflow[@]}" > with_workflow.txt
+          echo "${without_workflow[@]}" > without_workflow.txt
+ 
+          echo "with_workflow=$(cat with_workflow.txt | tr '\n' ' ')" >> "$GITHUB_ENV"
+          echo "without_workflow=$(cat without_workflow.txt | tr '\n' '\n')" >> "$GITHUB_ENV"
+ 
