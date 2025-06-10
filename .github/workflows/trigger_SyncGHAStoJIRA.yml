@@ -12,7 +12,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}  # GitHub PAT with repo + workflow scope
       AWS_REGION: ${{ vars.AWS_REGION }}
-      EXCLUDED_REPOS: "Internal-Tools,central-workflows,Internal-Tools_sub_workflows,ImagingViewer,InterfaceBulkupload,MarketplaceProviders,MarketplaceStore, Nextgen_GHAS_Testing,ConfigurationStore,CoreAdminReact,CoreAdmin_GHAS_Testing,CoreAdmin_Testing,CoreAdmin_Testing_2,DLockService,Backport,BackportHack,acttesting,changed-files_backup,codacy-analysis-cli-action,config-transformer,configure-aws-credentials,connector-x,digital-automation,ghas-jira-integration,github-runner-testing,github-securityreport-action,hello-world,md2jira,multitenanttool,pmd-github-action,productutilities,pull-request-analytics,quality-tools,scripts_queue,v3-graphql,v3-graphql-js,v3-lambda-core,v3-lambda-host"
+      EXCLUDED_REPOS: "Internal-Tools,central-workflows,Internal-Tools_sub_workflows,ImagingViewer,InterfaceBulkupload,MarketplaceProviders,MarketplaceStore,Nextgen_GHAS_Testing,ConfigurationStore,CoreAdminReact,CoreAdmin_GHAS_Testing,CoreAdmin_Testing,CoreAdmin_Testing_2,DLockService,Backport,BackportHack,acttesting,changed-files_backup,codacy-analysis-cli-action,config-transformer,configure-aws-credentials,connector-x,digital-automation,ghas-jira-integration,github-runner-testing,github-securityreport-action,hello-world,md2jira,multitenanttool,pmd-github-action,productutilities,pull-request-analytics,quality-tools,scripts_queue,v3-graphql,v3-graphql-js,v3-lambda-core,v3-lambda-host"
       WORKFLOW_FILE: ".github/workflows/SyncGHAStoJIRA.yml"
       SNS_TOPIC_ARN: "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
  
@@ -89,6 +89,17 @@ jobs:
           # Save to env for next steps
           echo "with_workflow=${with_workflow[*]}" >> "$GITHUB_ENV"
           echo "without_workflow=${without_workflow[*]}" >> "$GITHUB_ENV"
+
+      - name: Trigger workflows using curl
+        run: |
+          for repo in $with_workflow; do
+            echo "Triggering $WORKFLOW_FILE in $repo"
+            curl -s -X POST \
+              -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/vitechsystems/$repo/actions/workflows/$(basename $WORKFLOW_FILE)/dispatches" \
+              -d "{\"ref\":\"main\"}"
+          done
 
       - name: Send SNS notification for repos without workflow
         if: env.without_workflow != ''
