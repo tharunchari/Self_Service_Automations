@@ -274,7 +274,7 @@ if __name__ == "__main__":
 
     all_alerts = fetch_alerts(all_repos, filter_types=False)
 
-    all_alerts_file = "All_scanning_alerts.xlsx"
+    all_alerts_file = "Default_scanning_alerts.xlsx"
 
     save_alerts_to_excel(all_alerts, all_alerts_file)
  
