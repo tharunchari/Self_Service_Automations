@@ -5,15 +5,16 @@ on:
       KEY:
         required: true
         description: Authentication Key for OPS Internal Tools
-#  schedule:
-#    - cron: '0 3 * * 6'  # 1st Wednesday of every month at 10 PM EST (22:00 UTC)
+  schedule:
+    # Every Monday at 11:00 AM EST (16:00 UTC)
+    - cron: '0 16 * * 1'
  
 jobs:
   run_on_last_saturday:
     if: github.event_name == 'schedule'
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/time_last_saturday.yml@main
     with:
-      run_type: 2nd_last_saturday
+      run_type: monday_before_last_saturday
     secrets: inherit
 
   start-runner-scheduled:
@@ -28,7 +29,6 @@ jobs:
     secrets: inherit
  
   execute-job-scheduled:
-    name: Execute Job on Self-Hosted Runner
     needs: start-runner-scheduled
     runs-on: Internal_Tools_Automation_Server
     steps:
@@ -118,7 +118,6 @@ jobs:
             --subject "ERPPRD-DR Patching Completed but App is Down"
 
   execute-job-manual:
-    name: Execute Job on Self-Hosted Runner
     needs: start-runner-manual
     runs-on: Internal_Tools_Automation_Server
     steps:
