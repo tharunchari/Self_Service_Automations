@@ -5,8 +5,9 @@ on:
       KEY:
         required: true
         description: Authentication Key for OPS Internal Tools
-#  schedule:
-#    - cron: '0 3 * * 6'  # 1st Wednesday of every month at 10 PM EST (22:00 UTC)
+  schedule:
+    # Every Saturday at 11:00 AM EST (16:00 UTC)
+    - cron: '0 16 * * 6'
  
 jobs:
   run_on_last_saturday: 
