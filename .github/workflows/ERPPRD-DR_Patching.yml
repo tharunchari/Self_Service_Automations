@@ -117,6 +117,14 @@ jobs:
             --message "$(echo -e "**Attention: ERPPRD-DR Patch Status: SUCCESS but App is Down**\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.\nPlease take action.")" \
             --subject "ERPPRD-DR Patching Completed but App is Down"
 
+      - name: Send Patch Notification Notification
+        if: always()
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "**Attention: ERPPRD_PROD will be going to patch at the same time this coming Saturday.**\n\nPlease take action." \
+            --subject "ERPPRD-PROD Upcomming Patching Notification"
+
   execute-job-manual:
     needs: start-runner-manual
     runs-on: Internal_Tools_Automation_Server
