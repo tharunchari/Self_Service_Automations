@@ -1,4 +1,4 @@
-name: Jira Report issues Export & Email
+name: Jira Report Issues Export & Email
  
 on:
   workflow_dispatch:
@@ -7,14 +7,20 @@ on:
         description: 'Enter Jira project key (e.g., VAT)'
         required: true
         default: 'VAT'
+      duration_months:
+        description: 'Number of months to look back (e.g., 3, 6, 12)'
+        required: true
+        default: '3'
  
 jobs:
   run-report:
     runs-on: ubuntu-latest
+ 
     env:
       JIRA_PASSWORD: ${{ secrets.JIRA_PASSWORD }}
       JIRA_PROJECT: ${{ github.event.inputs.jira_project }}
-      AWS_REGION: us-east-1  # or move to secret if sensitive
+      DURATION_MONTHS: ${{ github.event.inputs.duration_months }}
+      AWS_REGION: us-east-1
  
     steps:
       - name: Checkout code
@@ -25,11 +31,11 @@ jobs:
         with:
           python-version: '3.11'
  
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install jira boto3
-          
-      - name: Set up AWS CLI
+ 
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
