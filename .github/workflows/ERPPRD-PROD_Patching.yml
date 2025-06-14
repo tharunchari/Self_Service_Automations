@@ -29,7 +29,6 @@ jobs:
     secrets: inherit
  
   execute-job-scheduled:
-    name: Execute Job on Self-Hosted Runner
     needs: start-runner-scheduled
     runs-on: Internal_Tools_Automation_Server
     steps:
@@ -123,7 +122,6 @@ jobs:
             --subject "ERPPRD-PROD Patching Completed but App is Down"
 
   execute-job-manual:
-    name: Execute Job on Self-Hosted Runner
     needs: start-runner-manual
     runs-on: Internal_Tools_Automation_Server
     steps:
@@ -218,6 +216,8 @@ jobs:
 
   stop-runner:
     needs: [execute-job-scheduled, execute-job-manual]
-    if: always()
+    if: |
+      needs.execute-job-scheduled.result != 'skipped' ||
+      needs.execute-job-manual.result != 'skipped'
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     secrets: inherit
