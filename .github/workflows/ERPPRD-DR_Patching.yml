@@ -216,6 +216,8 @@ jobs:
 
   stop-runner:
     needs: [execute-job-scheduled, execute-job-manual]
-    if: always()
+    if: |
+      needs.execute-job-scheduled.result != 'skipped' ||
+      needs.execute-job-manual.result != 'skipped'
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     secrets: inherit
