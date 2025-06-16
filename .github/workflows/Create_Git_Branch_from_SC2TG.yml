@@ -26,10 +26,10 @@ on:
         required: true
         description: Client Pom file version of target
       SOURCE_PROD_VERSION:
-        required: true
+        required: false
         description: Prod Pom file version of source
       TARGET_PROD_VERSION:
-        required: true
+        required: false
         description: Prod Pom file version of target
       Commit_Number:
         default: "HEAD"
@@ -68,28 +68,12 @@ jobs:
             exit 1
           fi
 
-      - name: Check if Repository Exists or Create
-        run: |
-          response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
-            -H "Authorization: token ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
-            "https://api.github.com/repos/vitechsystems/${{ inputs.TARGET_REPO_NAME }}")
-
-          if [ "$response" -eq "200" ]; then
-            echo "Repository already exists, proceeding with branch creation task..."
-            echo "TARGET_REPO_NAME1=${{ inputs.TARGET_REPO_NAME }}" >> $GITHUB_ENV
-          else
-            echo "Repository does not exist. Creating repository and proceeding with branch creation task..."
-            cd shell_scripts
-            chmod +x git_repo_creation.sh
-            echo "TARGET_REPO_NAME1=${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5" >> $GITHUB_ENV
-            ./git_repo_creation.sh ${{ secrets.PROD_FINE_GRAINED_PAT }} "${{ inputs.TARGET_REPO_NAME }}_PRODUCT_L5" ${{ inputs.OWNER }} ${{ inputs.PROJECT_KEY }} ${{ secrets.SECRET_CODE_GITHUB }}
-          fi
 
       - name: Create and Push Branch
         run: |
           SOURCE_REPO_NAME="${{ inputs.SOURCE_REPO_NAME }}"
           TARGET_REPO_NAME="${{ inputs.TARGET_REPO_NAME }}"
-          TARGET_REPO_NAME1="${{ github.event.inputs.TARGET_REPO_NAME }}"
+          TARGET_REPO_NAME="${{ github.event.inputs.TARGET_REPO_NAME }}"
           SOURCE_BRANCH="${{ inputs.SOURCE_BRANCH }}"
           TARGET_BRANCH="${{ inputs.TARGET_BRANCH }}"
           SOURCE_CLIENT_VERSION="${{ inputs.SOURCE_CLIENT_VERSION }}"
@@ -124,11 +108,11 @@ jobs:
           # Pushing the newly created branch to the remote repository
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
-          git remote set-url origin "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git"
+          git remote set-url origin "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git"
           git push -u origin $TARGET_BRANCH
 
           # Checking if the branch was created successfully
-          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME1}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Branch $TARGET_BRANCH was created successfully."
             echo "Updating pom files and committing code..."
 
@@ -144,10 +128,6 @@ jobs:
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
             exit 3
           fi
-
-      - name: Add Branch Protection Rule
-        run: |
-          find /home/runner/work/ -type d -name "shell_scripts" -exec bash -c ' cd "$0" && chmod +x git_branch_protection.sh && ./git_branch_protection.sh "${{ secrets.PROD_FINE_GRAINED_PAT }}" "${{ github.event.inputs.TARGET_REPO_NAME }}" "${{ inputs.TARGET_BRANCH }}" "${{ inputs.OWNER }}" ' {} \;
 
       - name: Clean up workspace
         run: |
