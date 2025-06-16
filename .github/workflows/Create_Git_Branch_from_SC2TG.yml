@@ -35,13 +35,7 @@ on:
         default: "HEAD"
         required: true
         description: SHA Value or default HEAD
-      OWNER:
-        required: true
-        description: Branch Protection Rule ('product' or 'client')
-        default: 'client'
-      PROJECT_KEY:
-        required: true
-        description: Jira Project Key value
+
 
 jobs:
   create-branch-and-update-pom:
