@@ -212,8 +212,6 @@ jobs:
 
             sleep 600
 
-          - name: Check node status using the API
-            run: |
               echo "Fetching node status using API..."
           
               RESPONSE=$(curl -s -X GET \
