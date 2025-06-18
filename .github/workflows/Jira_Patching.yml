@@ -212,25 +212,13 @@ jobs:
 
             sleep 600
 
-              echo "Fetching node status using API..."
-          
-              RESPONSE=$(curl -s -X GET \
-                -H "Authorization: Bearer ${{ env.TOKEN }}" \
-                -H "Content-Type: application/json" \
-                "${{ env.URL }}/rest/api/2/cluster/nodes")
-          
-              echo "Raw API response: $RESPONSE"
-          
-              # Validate that the response is JSON
-              if echo "$RESPONSE" | jq . > /dev/null 2>&1; then
-                NODE_STATUS=$(echo "$RESPONSE" | jq '.')
-                echo "Formatted node status:"
+            echo "Check node status using the API"
+            NODE_STATUS=$(curl -X GET \
+              -H "Authorization: Bearer ${{ env.TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
+
                 echo "$NODE_STATUS"
-              else
-                echo "Error: Response is not valid JSON:"
-                echo "$RESPONSE"
-                exit 1
-              fi
             
             INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances \
               --instance-ids "$INSTANCE_ID" \
