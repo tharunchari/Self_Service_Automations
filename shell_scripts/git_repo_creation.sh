@@ -7,7 +7,6 @@ ticket_type=$4
 secret_code=$5
 organization=vitechsystems
 
-
 ########################## PLEASE DO NOT CHANGE ANYTHING BELOW #####################
 
 team_id_1="vitech-devops-svc-account"
@@ -91,7 +90,7 @@ curl -L \
     -H "Authorization: Bearer $token" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
     https://api.github.com/repos/$organization/$repo_name \
-    -d '{"allow_merge_commit":false,"use_squash_pr_title_as_default": true,"squash_merge_commit_title": "PR_TITLE","has_issues": false}'
+    -d '{"allow_merge_commit":false,"use_squash_pr_title_as_default": true,"squash_merge_commit_title": "PR_TITLE","allow_auto_merge": true,"has_issues": false}'
 
 #Set team permissions for repositories 
 curl -L \
