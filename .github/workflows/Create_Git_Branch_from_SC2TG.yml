@@ -45,11 +45,6 @@ jobs:
         
       - name: Validate Inputs and Repository Type
         run: |
-          if [ "${{ inputs.OWNER }}" != "client" ] && [ "${{ inputs.OWNER }}" != "product" ]; then
-            echo "Invalid Repository type value '${{ inputs.OWNER }}'. Stopping the workflow."
-            exit 1
-          fi
-
           target_repo="${{ inputs.TARGET_REPO_NAME }}"
           confirm="${{ inputs.confirm }}"
           if [[ "$target_repo" == "Coreadmin" || "$target_repo" == "nextgen" ]]; then
