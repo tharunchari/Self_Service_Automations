@@ -1,4 +1,4 @@
-name: Create branches 
+name: Branch Creation in Same or Cross-Repository 
 on:
   workflow_dispatch:
     inputs:
@@ -119,9 +119,14 @@ jobs:
           find . -name pom.xml -exec sed -i 's/'"${SOURCE_CLIENT_VERSION}"'/'"${TARGET_CLIENT_VERSION}"'/g' {} +
           sleep 10
           find . -name pom.xml -exec sed -i 's/'"${SOURCE_PROD_VERSION}"'/'"${TARGET_PROD_VERSION}"'/g' {} +
+            if git diff --quiet; then
+            echo "No changes detected. Skipping commit."
+          else
+            echo "changes detected. commiting updated files."
             git add -u
-            git commit -m "Updated pom files to version ${TARGET_CLIENT_VERSION}"
+            git commit -m "Updated pom files to version $TARGET_VERSION"
             git push -u origin $TARGET_BRANCH
+            fi
           else
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
             exit 3
