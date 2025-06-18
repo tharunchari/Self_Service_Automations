@@ -1,5 +1,4 @@
-name: Create Repo Branch and Update Pom-files
-
+name: Create branches 
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +11,7 @@ on:
       confirm:
         default: "NO"
         required: true
-        description: Specify 'YES' if client code should be in product code (COREADMIN/NEXTGEN), otherwise 'NO'.
+        description: "Specify 'YES' if the client branch should be included in the product branch (COREADMIN/NEXTGEN); otherwise, specify 'NO'."
       SOURCE_BRANCH:
         required: true
         description: Source branch name
@@ -20,17 +19,17 @@ on:
         required: true
         description: Target branch name
       SOURCE_CLIENT_VERSION:
-        required: true
-        description: Client Pom file version of source
+        required: false
+        description: Enter the source client-value to update in the pom file.
       TARGET_CLIENT_VERSION:
-        required: true
-        description: Client Pom file version of target
+        required: false
+        description: Enter the target client-value to update in the pom file.
       SOURCE_PROD_VERSION:
         required: false
-        description: Prod Pom file version of source
+        description: Enter the source prod-value to update in the pom file.
       TARGET_PROD_VERSION:
         required: false
-        description: Prod Pom file version of target
+        description: Enter the target prod-value to update in the pom file.
       Commit_Number:
         default: "HEAD"
         required: true
