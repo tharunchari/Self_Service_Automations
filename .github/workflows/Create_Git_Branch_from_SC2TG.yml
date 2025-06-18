@@ -47,18 +47,16 @@ jobs:
         run: |
           target_repo="${{ inputs.TARGET_REPO_NAME }}"
           confirm="${{ inputs.confirm }}"
+          
           if [[ "$target_repo" == "Coreadmin" || "$target_repo" == "nextgen" ]]; then
             if [[ "$confirm" == "YES" ]]; then
-              echo "Proceeding with target branch in product REPO COREADMIN/NEXTGEN"
-            elif [[ "$confirm" == "NO" ]]; then
-              echo "Not proceeding with target branch in product REPO COREADMIN/NEXTGEN"
+              echo "Proceeding with target branch in product REPO $target_repo"
             else
-              echo "Invalid input for confirmation ('$confirm'). Please enter 'YES' or 'NO'."
-              exit 2
+              echo "Confirmation is required to proceed for repository '$target_repo'. Received '$confirm'. Expected 'YES'."
+              exit 1
             fi
           else
-            echo "Invalid target repository type ('$target_repo'). Valid types are 'Coreadmin' and 'nextgen'."
-            exit 1
+            echo "Non-product repository ('$target_repo'). Skipping validation and proceeding."
           fi
 
 
