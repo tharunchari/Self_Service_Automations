@@ -88,9 +88,14 @@ jobs:
             find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
             git status
             
-            # Commit and push changes
-            git add -u ; git commit -m "Updated pom files to version $TARGET_VERSION"
+            if git diff --quiet; then
+            echo "No changes detected. Skipping commit."
+          else
+            echo "changes detected. commiting updated files."
+            git add -u
+            git commit -m "Updated pom files to version $TARGET_VERSION"
             git push -u origin $TARGET_BRANCH
+          fi
           else
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
             exit 3
