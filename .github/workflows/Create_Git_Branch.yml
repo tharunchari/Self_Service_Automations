@@ -14,10 +14,10 @@ on:
         description: Target branch name
       SOURCE_VERSION:
         required: true
-        description: Pom file version of source
+        description: source value to update in pom file
       TARGET_VERSION:
         required: true
-        description: Pom file version of target
+        description: target value to update in pom file
       Commit_Number:
         default: "HEAD"
         required: true
