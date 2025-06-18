@@ -1,20 +1,208 @@
 name: "CodeQL_for_sql"
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  security-events: write
 
 on:
-  pull_request:
   workflow_dispatch:
+ # pull_request:
 
 jobs:
-  CodeQL_for_sql:
+  LaunchingSelfHostedRunner_1:
     runs-on: ubuntu-latest
-      
-    steps:  
+    outputs:
+      genrun_1: ${{ steps.gen_step.outputs.INSTANCE_VALUE }}      # <== Note the output variable
+    steps:      
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Try launching Spot Instance
+        id: start-spot-ec2
+        continue-on-error: true
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ vars.SELF_HOSTED_RUNNER_AMI }} \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE }} \
+            --key-name InternalTools \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id ${{ vars.SUBNET_ID }} \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github}]' \
+            --iam-instance-profile Name=VitechTools \
+            --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType="one-time"}' > /tmp/ec2_output.json || echo "SPOT_FAILED=true" >> $GITHUB_ENV
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+ 
+      - name: Fallback to On-Demand Instance if Spot fails
+        if: env.SPOT_FAILED == 'true'
+        id: start-ondemand-ec2
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ vars.SELF_HOSTED_RUNNER_AMI }} \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE }} \
+            --key-name InternalTools \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id ${{ vars.SUBNET_ID }} \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github}]' \
+            --iam-instance-profile Name=VitechTools > /tmp/ec2_output.json
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+
+      - name: Set INSTANCE_ID based on event type
+        id: set-instance-id
+        run: |
+          repo_name=$(echo "${{ github.event.repository.name }}" | sed 's/Marketplace/MP/g' | sed 's/MARKETPLACE/MP/g' | sed 's/EDGE/E/g' | sed 's/Edge/E/g')  # Replace 'Marketplace' with 'MP' and 'Edge' with 'E'
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "INSTANCE_VALUE=${INSTANCE_ID}-${repo_name}-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          else
+            echo "INSTANCE_VALUE=${INSTANCE_ID}-${repo_name}-scheduled-or-dispatch" >> $GITHUB_ENV
+          fi
+
+      - name: Set environment variable for second job
+        id: gen_step                                # <====== Note the step id here
+        shell: bash
+        run: |
+          echo "INSTANCE_VALUE=$INSTANCE_VALUE" >> $GITHUB_OUTPUT
+
+      - name: Run Command on EC2 Instance to register the runner with instance ID
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets Key=instanceids,Values=$INSTANCE_ID \
+            --parameters "commands=['runuser -l ec2-user -c \"/actions-runner/config.sh --url https://github.com/vitechsystems --pat ${{ secrets.PROD_FINE_GRAINED_PAT }} --name $INSTANCE_VALUE --runnergroup ops --labels $INSTANCE_VALUE --work _work && /actions-runner/run.sh\"']" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+      - name: Run Command on EC2 Instance to set JAVA_HOME to ${{ vars.JAVA_HOME_11 }}
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets Key=instanceids,Values=$INSTANCE_ID \
+            --parameters commands="sudo update-alternatives --install /usr/bin/java java ${{ vars.JAVA_HOME_11 }}/bin/java 1 && sudo update-alternatives --set java ${{ vars.JAVA_HOME_11 }}/bin/java" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+  CodeQLScanSQL:
+    needs: LaunchingSelfHostedRunner_1
+    runs-on: "${{ needs.LaunchingSelfHostedRunner_1.outputs.genrun_1 }}"
+    outputs:
+      genrun_3: ${{ steps.gen_step.outputs.INSTANCE_VALUE }}
+    continue-on-error: true
+ 
+    name: CodeQL scan for SQL
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+ 
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+ 
+      - name: Set environment variable for third job
+        id: gen_step
+        shell: bash
+        run: |
+          echo "INSTANCE_VALUE=${{ needs.LaunchingSelfHostedRunner_1.outputs.genrun_1 }}" >> $GITHUB_OUTPUT
+ 
+      - name: Install Python & sqlfluff
+        run: |
+          sudo yum install -y python3
+          python3 -m ensurepip --upgrade
+          pip3 install --upgrade pip
+          pip3 install sqlfluff
+ 
+      - name: Get all changed files
+        id: changed_files
+        run: |
+          # Fetch changed files using curl
+          response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository_owner }}/${{ github.event.repository.name }}/pulls/${{ github.event.pull_request.number }}/files")
+ 
+          # Extract all filenames
+          all_files=$(echo "$response" | jq -r '.[].filename')
+ 
+          # Print all changed files
+          echo "All changed files:"
+          echo "$all_files"
+ 
+          # Extract filenames and filter for .sql files
+          sql_files=$(echo "$response" | jq -r '.[] | select(.filename | endswith(".sql")) | .filename')
+ 
+          # Print the list of .sql files
+          echo "Changed SQL files:"
+          echo "$sql_files"
+ 
+          # Set the outputs for the workflow
+          echo "::set-output name=all_files::$all_files"
+          echo "::set-output name=sql_files::$sql_files"
+ 
+      - name: Print all changed files
+        run: |
+          echo "All changed files: ${{ steps.changed_files.outputs.all_files }}"
+ 
+      - name: Print changed SQL files
+        run: |
+          echo "Changed SQL files: ${{ steps.changed_files.outputs.sql_files }}"
+ 
+      - name: Run SQLFluff Linting
+        run: |
+          sqlfluff lint ${{ steps.changed_files.outputs.sql_files }} --dialect postgres --format github-annotation
 
-      - name: Run DevSkim Action
-        uses: vitechsystems/DevSkim-Action@v1.0
+  TerminatingSelfHostedRunner_1:
+    runs-on: ubuntu-latest
+    needs: CodeQLScanSQL
+    continue-on-error: true
+
+    steps:       
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
         with:
-          directory-to-scan: path/to/scan
-
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
           
+          
+      - name: Debug Instance ID
+        id: extract_instance_id
+        run: |
+          INSTANCE_ID=$(echo "${{ needs.CodeQLScanSQL.outputs.genrun_3 }}" | grep -o 'i-[a-zA-Z0-9]\+')
+          echo "Extracted INSTANCE_ID: $INSTANCE_ID"
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+
+      - name: Run Command on EC2 Instance to remove runner from GitHub
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets "Key=instanceids,Values=${{ env.INSTANCE_ID }}" \
+            --parameters commands="sudo -u ec2-user /actions-runner/config.sh remove --pat ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+      - name: Get the associations IDS
+        id: get_associations
+        run: |
+          ASSOC_IDS_1=$(aws ssm describe-effective-instance-associations --instance-id "${{ env.INSTANCE_ID }}" | jq -r '.Associations[].AssociationId')
+          EOF_1=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "ASSOC_IDS_1<<$EOF_1" >> $GITHUB_ENV
+          echo "$ASSOC_IDS_1" >> $GITHUB_ENV
+          echo "$EOF_1" >> $GITHUB_ENV
+ 
+      - name: Delete associations
+        run: |
+          for ASSOC_ID_1 in $ASSOC_IDS_1
+          do
+            aws ssm delete-association --association-id $ASSOC_ID_1
+          done
+
+      - name: Workflow will be in sleep mode until GITHUB runner gets removed from GitHub
+        run: |
+          sleep 10
+          
+      - name: Terminate Self Hosted Runner instance
+        run: |
+          aws ec2 terminate-instances --instance-ids "${{ env.INSTANCE_ID }}" --region ${{ vars.AWS_REGION }}
