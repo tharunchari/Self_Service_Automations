@@ -1,0 +1,130 @@
+name: Monthly JIRA Patch Schedule
+
+on:
+ # schedule:
+ #   - cron: '0 10 25-31 * 0'   # Last Sunday (10 AM UTC)
+ #   - cron: '0 2 * * 2'        # Tuesday 2 AM UTC (Monday 9 PM EST)
+ #   - cron: '0 10 25-31 * 5'   # Friday (10 AM UTC)
+ #   - cron: '0 14 25-31 * 6'   # Saturday (2 PM UTC / 9 AM EST)
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  notify_nonprod:
+    if: github.event.schedule == '0 10 25-31 * 0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Notify via SNS for NON-PROD
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:jira-nonprod-patch-topic \
+            --subject "NON-PROD Patching Scheduled" \
+            --message "NON-PROD JIRA patching will start Monday night (EST) as part of the monthly schedule."
+
+  trigger_nonprod_jiraqa:
+    if: github.event.schedule == '0 2 * * 2'
+    uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
+    secrets: inherit
+    with:
+      environment: "jiraqa"
+
+  notify_failure_jiraqa:
+    if: failure() && needs.trigger_nonprod_jiraqa.result == 'failure'
+    needs: trigger_nonprod_jiraqa
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Notify failure via SNS for JIRAQA
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:jira-nonprod-patch-topic \
+            --subject "JIRAQA Patching Failed" \
+            --message "Patching on the JIRAQA instance failed. Manual intervention may be required."
+
+  trigger_nonprod_jiraupg:
+    if: success()
+    needs: trigger_nonprod_jiraqa
+    uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
+    secrets: inherit
+    with:
+      environment: "jiraupg"
+
+  notify_failure_jiraupg:
+    if: failure() && needs.trigger_nonprod_jiraupg.result == 'failure'
+    needs: trigger_nonprod_jiraupg
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Notify failure via SNS for JIRAUPG
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:jira-nonprod-patch-topic \
+            --subject "JIRAUPG Patching Failed" \
+            --message "Patching on the JIRAUPG instance failed. Manual intervention may be required."
+
+  notify_prod:
+    if: github.event.schedule == '0 10 25-31 * 5'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Notify via SNS for PROD
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+            --subject "PROD Patching Notification" \
+            --message "PROD JIRA patching is scheduled for Saturday morning (EST). Please prepare accordingly."
+
+  trigger_prod:
+    if: github.event.schedule == '0 14 25-31 * 6'
+    uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
+    secrets: inherit
+    with:
+      environment: "jiraprod"
+      prod_patch_password: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+
+  notify_failure_jiraprod:
+    if: failure() && needs.trigger_prod.result == 'failure'
+    needs: trigger_prod
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Notify failure via SNS for JIRAPROD
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+            --subject "JIRAPROD Patching Failed" \
+            --message "Patching on the JIRAPROD instance failed. Please investigate the issue."
