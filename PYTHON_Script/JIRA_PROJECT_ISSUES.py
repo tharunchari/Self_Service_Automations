@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 # -------------------- Configuration --------------------
  
 JIRA_URL = "https://jira.vitechinc.com/jira"
-JIRA_USERNAME = "svallabhuni"
+JIRA_USERNAME = "bamboo5restuser"
 JIRA_PASSWORD = os.environ.get("JIRA_PASSWORD")
 JIRA_PROJECT = os.environ.get("JIRA_PROJECT")
 DURATION_MONTHS = int(os.environ.get("DURATION_MONTHS", "3"))  # default to 3 months if not provided
