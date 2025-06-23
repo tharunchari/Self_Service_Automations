@@ -26,12 +26,14 @@ on:
         description: Authentication Key for OPS Internal Tools
 
 env:
-  RUNNER_NAME: Internal_Tools_Automation_Server
-  INSTANCE_ID: i-020530b54ac86537b
+  RUNNER_NAME: "Internal_Tools_Automation_Server"
+  INSTANCE_ID: "i-020530b54ac86537b"
+ 
 jobs:
   start-runner:
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     secrets: inherit
+  
   execute-job:
     name: Execute Job on Self-Hosted Runner
     needs: start-runner
@@ -39,6 +41,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+ 
       - name: Set up AWS CLI
         uses: vitechsystems/configure-aws-credentials@v1.0
         with:
