@@ -9,40 +9,46 @@ import os
 from datetime import datetime, timedelta
  
 # -------------------- Configuration --------------------
- 
 JIRA_URL = "https://jira.vitechinc.com/jira"
 JIRA_USERNAME = "svallabhuni"
 JIRA_PASSWORD = os.environ.get("JIRA_PASSWORD")
-JIRA_PROJECT = os.environ.get("JIRA_PROJECT")
-DURATION_MONTHS = int(os.environ.get("DURATION_MONTHS", "3"))  # default to 3 months if not provided
- 
+JIRA_PROJECT = os.environ.get("JIRA_PROJECT", "").strip()
+DURATION_MONTHS = os.environ.get("DURATION_MONTHS", "").strip()
+JIRA_JQL = os.environ.get("JIRA_JQL", "").strip()
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
-SES_SENDER = "svallabhuni@vitechinc.com"
-SES_RECIPIENT = "svallabhuni@vitechinc.com"
- 
-EMAIL_SUBJECT = f"Jira Issue Report - {JIRA_PROJECT} Project"
-EMAIL_BODY = f"Attached is the Jira issue report for the '{JIRA_PROJECT}' project for the last {DURATION_MONTHS} months."
-CSV_FILENAME = f"jira_issues_{JIRA_PROJECT.lower()}_{DURATION_MONTHS}m.csv"
+SES_SENDER = "v3atlassianops@vitechinc.com"
+SES_RECIPIENT = "v3atlassianops@vitechinc.com"
  
 # -------------------- Jira Authentication --------------------
- 
 jira = JIRA(server=JIRA_URL, basic_auth=(JIRA_USERNAME, JIRA_PASSWORD))
  
-# -------------------- Calculate Date Filter --------------------
+# -------------------- Build the JQL Query --------------------
+if JIRA_JQL:
+    jql_query = JIRA_JQL
+    mode_label = "custom"
+    filename_suffix = "custom_jql"
+    print(f"📥 Using custom JQL:\n{jql_query}")
+elif JIRA_PROJECT:
+    try:
+        months = int(DURATION_MONTHS or "3")
+    except ValueError:
+        months = 3
+    today = datetime.utcnow()
+    past_date = today - timedelta(days=months * 30)
+    created_after = past_date.strftime("%Y-%m-%d")
+    jql_query = f"project = {JIRA_PROJECT} AND created >= '{created_after}' ORDER BY created DESC"
+    mode_label = f"{months}m"
+    filename_suffix = f"{JIRA_PROJECT.lower()}_{months}m"
+    print(f"📥 Using default query:\n{jql_query}")
+else:
+    raise ValueError("❌ ERROR: Either 'jira_jql' or 'jira_project' must be provided.")
  
-today = datetime.utcnow()
-past_date = today - timedelta(days=DURATION_MONTHS * 30)
-created_after = past_date.strftime("%Y-%m-%d")
- 
-# -------------------- JQL & Issue Fetching --------------------
- 
-jql_query = f"project = {JIRA_PROJECT} AND created >= '{created_after}' ORDER BY created DESC"
+# -------------------- Fetch Issues from Jira --------------------
 start_at = 0
 max_results = 100
 all_issues = []
  
-print(f"📡 Fetching '{JIRA_PROJECT}' issues created after {created_after}...\n")
- 
+print(f"\n📡 Fetching issues from Jira...\n")
 while True:
     issues = jira.search_issues(jql_query, startAt=start_at, maxResults=max_results)
     if not issues:
@@ -54,8 +60,9 @@ while True:
 print(f"\n✅ Done. Total issues fetched: {len(all_issues)}")
  
 # -------------------- Export to CSV --------------------
- 
+CSV_FILENAME = f"jira_issues_{filename_suffix}.csv"
 print(f"💾 Exporting to {CSV_FILENAME}...\n")
+ 
 with open(CSV_FILENAME, mode="w", newline="", encoding="utf-8") as file:
     writer = csv.writer(file)
     writer.writerow(["Key", "Summary", "Status", "Assignee", "Created"])
@@ -71,14 +78,15 @@ with open(CSV_FILENAME, mode="w", newline="", encoding="utf-8") as file:
 print(f"📄 Export completed: {CSV_FILENAME}")
  
 # -------------------- Send Email via AWS SES --------------------
- 
 try:
     ses = boto3.client("ses", region_name=AWS_REGION)
     msg = MIMEMultipart()
-    msg["Subject"] = EMAIL_SUBJECT
+    msg["Subject"] = f"Jira Issue Report - {mode_label}"
     msg["From"] = SES_SENDER
     msg["To"] = SES_RECIPIENT
-    msg.attach(MIMEText(EMAIL_BODY, "plain"))
+ 
+    email_body = f"Attached is the Jira issue report using the following query:\n\n{jql_query}"
+    msg.attach(MIMEText(email_body, "plain"))
  
     with open(CSV_FILENAME, "rb") as file:
         part = MIMEApplication(file.read())
@@ -90,7 +98,7 @@ try:
         Destinations=[SES_RECIPIENT],
         RawMessage={"Data": msg.as_string()}
     )
- 
     print("📧 Email sent successfully via AWS SES.")
+ 
 except ClientError as e:
     print(f"❌ Failed to send email: {e}")
