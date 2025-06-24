@@ -1,31 +1,27 @@
-name: Jira Report Issues Export & Email111
+name: Jira Report Issues Export & Email11
  
 on:
   workflow_dispatch:
     inputs:
       jira_project:
-        description: 'Enter Jira project key (e.g., VAT)'
-        required: true
-        default: 'VAT'
+        description: 'Optional: Jira project key (used only if no JQL is provided)'
+        required: false
       duration_months:
-        description: 'Number of months to look back (ignored if JQL is given)'
-        required: true
-        default: '3'
+        description: 'Optional: Number of months to look back (used only if no JQL is provided)'
+        required: false
       jira_jql:
-        description: 'Optional: Provide full JQL query (overrides project+date filter)'
+        description: 'Optional: Full JQL query (overrides project + duration)'
         required: false
  
 jobs:
   run-report:
     runs-on: ubuntu-latest
- 
     env:
       JIRA_PASSWORD: ${{ secrets.JIRA_PASSWORD }}
       JIRA_PROJECT: ${{ github.event.inputs.jira_project }}
       DURATION_MONTHS: ${{ github.event.inputs.duration_months }}
       JIRA_JQL: ${{ github.event.inputs.jira_jql }}
       AWS_REGION: us-east-1
- 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -35,7 +31,7 @@ jobs:
         with:
           python-version: '3.11'
  
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install jira boto3
  
