@@ -204,3 +204,10 @@ jobs:
         run: |
           sudo ansible-playbook Jenkins_Patching/failure_notify.yaml -i $INVENTORY_PATH \
           --extra-vars "app_component=${{ github.event.inputs.APP_COMPONENT }}"
+          
+  stop-runner:
+    needs: execute-job
+    if: always()  # Ensures this job runs even if execute-job fails
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    secrets: inherit
+
