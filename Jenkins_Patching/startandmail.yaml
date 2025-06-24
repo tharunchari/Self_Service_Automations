@@ -75,18 +75,19 @@
       when: url == 'crucibleqa'
       register: crucible_qa_http_status
       ignore_errors: yes
-    - name: Check HTTP status of Crucible (Prod)
+    - name: Check HTTP status of Jenkins (Prod)
       shell: curl -Ik https://v3.vitechinc.com/jenkins/ | head -1 | cut -d' ' -f2 ||
         echo "ERROR"
       when: url == 'jenkins'
       register: jenkins_prod_http_status
       ignore_errors: yes
-    - name: Check HTTP status of Crucible (QA)
-      shell: curl -Ik https://v3qa.vitechinc.com/jenkinsqa/ | head -1 | cut -d' ' -f2
-        || echo "ERROR"
+    - name: Check HTTP status of Jenkins(QA)
+      shell: curl -Ik https://v3qa.vitechinc.com/jenkinsqa/ | head -1 | cut -d' ' -f2 || echo "ERROR"
       when: url == 'jenkinsqa'
       register: jenkins_qa_http_status
       ignore_errors: yes
+    - debug:
+        var: jenkins_qa_http_status
     - name: Prepare application status message
       set_fact:
         application_status: >-
