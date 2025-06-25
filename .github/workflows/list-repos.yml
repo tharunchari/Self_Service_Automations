@@ -1,22 +1,20 @@
-name: List Org Repo Access
+name: List Org Team Access to Repos
 
 on:
   workflow_dispatch:
 
 jobs:
-  list-access:
+  team-access:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup
+      - name: Generate Team Access Report
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
           ORG: vitechsystems
         run: |
-          echo "🔍 Starting repo access audit for organization: $ORG"
+          echo " Starting team access audit for organization: $ORG"
           > repo-access.txt
 
-          # Get list of all repos
-          echo "📦 Fetching all repositories..."
           page=1
           per_page=100
           has_more=true
@@ -31,17 +29,26 @@ jobs:
             else
               echo "$REPOS" | jq -r '.[].name' | while read repo; do
                 echo "🔹 Repo: $ORG/$repo" >> repo-access.txt
-                echo "  Teams:" >> repo-access.txt
                 TEAMS=$(curl -s -H "Authorization: token $GH_TOKEN" \
                   "https://api.github.com/repos/$ORG/$repo/teams")
 
-                echo "$TEAMS" | jq -r '.[] | "    - \(.name): \(.permission)"' >> repo-access.txt || echo "    (no team access)" >> repo-access.txt
-
-                echo "  Collaborators:" >> repo-access.txt
-                COLLABS=$(curl -s -H "Authorization: token $GH_TOKEN" \
-                  "https://api.github.com/repos/$ORG/$repo/collaborators?affiliation=all")
-
-                echo "$COLLABS" | jq -r '.[] | "    - \(.login): \(.permissions | to_entries[] | select(.value == true) | .key)"' >> repo-access.txt || echo "    (no collaborators)" >> repo-access.txt
+                if echo "$TEAMS" | jq -e 'type=="array"' >/dev/null; then
+                  if [ "$(echo "$TEAMS" | jq length)" -eq 0 ]; then
+                    echo "  (no team access)" >> repo-access.txt
+                  else
+                    echo "$TEAMS" | jq -r '
+                      .[] |
+                      "  - \(.name): \(
+                        if .permission == "pull" then "read"
+                        elif .permission == "push" then "write"
+                        else .permission
+                      end
+                      )"
+                    ' >> repo-access.txt
+                  fi
+                else
+                  echo "  (error fetching teams)" >> repo-access.txt
+                fi
 
                 echo "" >> repo-access.txt
               done
@@ -49,11 +56,11 @@ jobs:
             fi
           done
 
-          echo "✅ Completed. Output written to repo-access.txt"
+          echo " Team access written to repo-access.txt"
           cat repo-access.txt
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: repo-access
+          name: team-repo-access
           path: repo-access.txt
