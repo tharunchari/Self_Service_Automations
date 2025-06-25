@@ -9,7 +9,7 @@ jobs:
     steps:
       - name: Create repos.txt
         env:
-          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PA }}
+          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
           ORG_NAME: vitechsystems
         run: |
           echo "Fetching repositories for organization: $ORG_NAME"
