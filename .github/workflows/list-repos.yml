@@ -1,21 +1,50 @@
-name: List GitHub Repos and Access
+name: List Org Repos and Permissions
 
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # Trigger manually
 
 jobs:
-  list-repos:
+  list-org-repos:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (optional)
-        uses: actions/checkout@v4
-
-      - name: List Repositories and Permissions
+      - name: Create repos.txt
         env:
-          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PA }}  # Set this secret in repo settings
+          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PA }}
+          ORG_NAME: vitechsystems
         run: |
-          echo "Fetching list of repositories..."
+          echo "Fetching repositories for organization: $ORG_NAME"
+          page=1
+          per_page=100
+          has_more=true
+          > repos.txt
 
-          curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/user/repos?per_page=100" | \
-          jq -r '.[] | "\(.full_name) - Admin: \(.permissions.admin) | Push: \(.permissions.push) | Pull: \(.permissions.pull)"'
+          while $has_more; do
+            echo "Fetching page $page..."
+            RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/orgs/$ORG_NAME/repos?per_page=$per_page&page=$page")
+
+            if echo "$RESPONSE" | jq -e 'type == "array"' > /dev/null; then
+              COUNT=$(echo "$RESPONSE" | jq 'length')
+              if [ "$COUNT" -eq 0 ]; then
+                has_more=false
+              else
+                echo "$RESPONSE" | jq -r \
+                  '.[] | "\(.full_name) - Admin: \(.permissions.admin) | Push: \(.permissions.push) | Pull: \(.permissions.pull)"' \
+                  >> repos.txt
+                page=$((page + 1))
+              fi
+            else
+              echo "Unexpected response:"
+              echo "$RESPONSE"
+              exit 1
+            fi
+          done
+
+          echo "✅ Saved to repos.txt"
+          cat repos.txt
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: org-repo-list
+          path: repos.txt
