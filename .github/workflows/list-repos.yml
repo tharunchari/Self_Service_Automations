@@ -1,50 +1,59 @@
-name: List Org Repos and Permissions
+name: List Org Repo Access
 
 on:
-  workflow_dispatch:  # Trigger manually
+  workflow_dispatch:
 
 jobs:
-  list-org-repos:
+  list-access:
     runs-on: ubuntu-latest
     steps:
-      - name: Create repos.txt
+      - name: Setup
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-          ORG_NAME: vitechsystems
+          ORG: vitechsystems
         run: |
-          echo "Fetching repositories for organization: $ORG_NAME"
+          echo "🔍 Starting repo access audit for organization: $ORG"
+          > repo-access.txt
+
+          # Get list of all repos
+          echo "📦 Fetching all repositories..."
           page=1
           per_page=100
           has_more=true
-          > repos.txt
 
           while $has_more; do
-            echo "Fetching page $page..."
-            RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
-              "https://api.github.com/orgs/$ORG_NAME/repos?per_page=$per_page&page=$page")
+            REPOS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/orgs/$ORG/repos?per_page=$per_page&page=$page")
 
-            if echo "$RESPONSE" | jq -e 'type == "array"' > /dev/null; then
-              COUNT=$(echo "$RESPONSE" | jq 'length')
-              if [ "$COUNT" -eq 0 ]; then
-                has_more=false
-              else
-                echo "$RESPONSE" | jq -r \
-                  '.[] | "\(.full_name) - Admin: \(.permissions.admin) | Push: \(.permissions.push) | Pull: \(.permissions.pull)"' \
-                  >> repos.txt
-                page=$((page + 1))
-              fi
+            COUNT=$(echo "$REPOS" | jq 'length')
+            if [ "$COUNT" -eq 0 ]; then
+              has_more=false
             else
-              echo "Unexpected response:"
-              echo "$RESPONSE"
-              exit 1
+              echo "$REPOS" | jq -r '.[].name' | while read repo; do
+                echo "🔹 Repo: $ORG/$repo" >> repo-access.txt
+                echo "  Teams:" >> repo-access.txt
+                TEAMS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+                  "https://api.github.com/repos/$ORG/$repo/teams")
+
+                echo "$TEAMS" | jq -r '.[] | "    - \(.name): \(.permission)"' >> repo-access.txt || echo "    (no team access)" >> repo-access.txt
+
+                echo "  Collaborators:" >> repo-access.txt
+                COLLABS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+                  "https://api.github.com/repos/$ORG/$repo/collaborators?affiliation=all")
+
+                echo "$COLLABS" | jq -r '.[] | "    - \(.login): \(.permissions | to_entries[] | select(.value == true) | .key)"' >> repo-access.txt || echo "    (no collaborators)" >> repo-access.txt
+
+                echo "" >> repo-access.txt
+              done
+              page=$((page + 1))
             fi
           done
 
-          echo "✅ Saved to repos.txt"
-          cat repos.txt
+          echo "✅ Completed. Output written to repo-access.txt"
+          cat repo-access.txt
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: org-repo-list
-          path: repos.txt
+          name: repo-access
+          path: repo-access.txt
