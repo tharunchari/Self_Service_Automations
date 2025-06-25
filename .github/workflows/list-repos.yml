@@ -1,0 +1,21 @@
+name: List GitHub Repos and Access
+
+on:
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  list-repos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (optional)
+        uses: actions/checkout@v4
+
+      - name: List Repositories and Permissions
+        env:
+          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PA }}  # Set this secret in repo settings
+        run: |
+          echo "Fetching list of repositories..."
+
+          curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/user/repos?per_page=100" | \
+          jq -r '.[] | "\(.full_name) - Admin: \(.permissions.admin) | Push: \(.permissions.push) | Pull: \(.permissions.pull)"'
