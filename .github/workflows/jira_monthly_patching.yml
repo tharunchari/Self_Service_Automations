@@ -1,11 +1,11 @@
 name: Monthly JIRA Patch Schedule
 
 on:
- # schedule:
- #   - cron: '0 10 25-31 * 0'   # Last Sunday (10 AM UTC)
- #   - cron: '0 2 * * 2'        # Tuesday 2 AM UTC (Monday 9 PM EST)
- #   - cron: '0 10 25-31 * 5'   # Friday (10 AM UTC)
- #   - cron: '0 14 25-31 * 6'   # Saturday (2 PM UTC / 9 AM EST)
+  schedule:
+   # - cron: '0 10 25-31 * 0'   # Sundays between 25-31 UTC (check for last Sunday)
+   # - cron: '0 2 * * 2'        # Every Tuesday 2 AM UTC (check for first Tuesday)
+   # - cron: '0 10 25-31 * 5'   # Fridays between 25-31 UTC (check for last Friday)
+   # - cron: '0 14 25-31 * 6'   # Saturday 2 PM UTC (JIRAPROD patching)
 
 permissions:
   id-token: write
@@ -14,10 +14,26 @@ permissions:
 jobs:
 
   notify_nonprod:
-    if: github.event.schedule == '0 10 25-31 * 0'
+    name: Notify Non-Prod Patching (Last Sunday)
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
+      - name: Check if today is the last Sunday of the month
+        id: check
+        run: |
+          today=$(date -u +'%Y-%m-%d')
+          last_sunday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
+          while [ "$(date -u -d "$last_sunday" +%u)" -ne 7 ]; do
+            last_sunday=$(date -u -d "$last_sunday -1 day" +'%Y-%m-%d')
+          done
+          if [ "$today" = "$last_sunday" ]; then
+            echo "continue=true" >> $GITHUB_OUTPUT
+          else
+            echo "continue=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Configure AWS
+        if: steps.check.outputs.continue == 'true'
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
@@ -25,22 +41,50 @@ jobs:
           aws-region: us-east-1
 
       - name: Notify via SNS for NON-PROD
+        if: steps.check.outputs.continue == 'true'
         run: |
           aws sns publish \
-            --topic-arn arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:jira-nonprod-patch-topic \
+            --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
             --subject "NON-PROD Patching Scheduled" \
-            --message "NON-PROD JIRA patching will start Monday night (EST) as part of the monthly schedule."
+            --message "NON-PROD JIRA patching will start Tuesday night (EST) as part of the monthly schedule."
+
 
   trigger_nonprod_jiraqa:
-    if: github.event.schedule == '0 2 * * 2'
+    name: Trigger JIRAQA Patching (First Tuesday)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if today is the first Tuesday
+        id: check
+        run: |
+          day=$(date -u +'%d')
+          weekday=$(date -u +'%u')
+          if [ "$weekday" -eq 2 ] && [ "$day" -le 7 ]; then
+            echo "continue=true" >> $GITHUB_OUTPUT
+          else
+            echo "continue=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Trigger JiraQA Patching
+        if: steps.check.outputs.continue == 'true'
+        uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
+        secrets: inherit
+        with:
+          environment: "jiraqa"
+
+
+  trigger_nonprod_jiraupg:
+    name: Trigger JIRAUPG Patching
+    needs: trigger_nonprod_jiraqa
+    if: success()
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     secrets: inherit
     with:
-      environment: "jiraqa"
+      environment: "jiraupg"
 
   notify_failure_jiraqa:
-    if: failure() && needs.trigger_nonprod_jiraqa.result == 'failure'
     needs: trigger_nonprod_jiraqa
+    if: failure()
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS
@@ -53,21 +97,13 @@ jobs:
       - name: Notify failure via SNS for JIRAQA
         run: |
           aws sns publish \
-            --topic-arn arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:jira-nonprod-patch-topic \
+            --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
             --subject "JIRAQA Patching Failed" \
             --message "Patching on the JIRAQA instance failed. Manual intervention may be required."
 
-  trigger_nonprod_jiraupg:
-    if: success()
-    needs: trigger_nonprod_jiraqa
-    uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
-    secrets: inherit
-    with:
-      environment: "jiraupg"
-
   notify_failure_jiraupg:
-    if: failure() && needs.trigger_nonprod_jiraupg.result == 'failure'
     needs: trigger_nonprod_jiraupg
+    if: failure()
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS
@@ -80,15 +116,32 @@ jobs:
       - name: Notify failure via SNS for JIRAUPG
         run: |
           aws sns publish \
-            --topic-arn arn:aws:sns:us-east-1:YOUR_ACCOUNT_ID:jira-nonprod-patch-topic \
+            --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
             --subject "JIRAUPG Patching Failed" \
             --message "Patching on the JIRAUPG instance failed. Manual intervention may be required."
 
+
   notify_prod:
-    if: github.event.schedule == '0 10 25-31 * 5'
+    name: Notify PROD Patching (Last Friday)
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
+      - name: Check if today is the last Friday of the month
+        id: check
+        run: |
+          today=$(date -u +'%Y-%m-%d')
+          last_friday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
+          while [ "$(date -u -d "$last_friday" +%u)" -ne 5 ]; do
+            last_friday=$(date -u -d "$last_friday -1 day" +'%Y-%m-%d')
+          done
+          if [ "$today" = "$last_friday" ]; then
+            echo "continue=true" >> $GITHUB_OUTPUT
+          else
+            echo "continue=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Configure AWS
+        if: steps.check.outputs.continue == 'true'
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
@@ -96,14 +149,17 @@ jobs:
           aws-region: us-east-1
 
       - name: Notify via SNS for PROD
+        if: steps.check.outputs.continue == 'true'
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
             --subject "PROD Patching Notification" \
             --message "PROD JIRA patching is scheduled for Saturday morning (EST). Please prepare accordingly."
 
+
   trigger_prod:
-    if: github.event.schedule == '0 14 25-31 * 6'
+    name: Trigger PROD Patching
+    if: github.event_name == 'schedule'
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     secrets: inherit
     with:
@@ -111,8 +167,9 @@ jobs:
       prod_patch_password: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
 
   notify_failure_jiraprod:
-    if: failure() && needs.trigger_prod.result == 'failure'
+    name: Notify Failure - JIRAPROD
     needs: trigger_prod
+    if: failure()
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS
