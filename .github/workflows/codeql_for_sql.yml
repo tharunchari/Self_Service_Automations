@@ -32,7 +32,7 @@ jobs:
             --key-name InternalTools \
             --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
             --subnet-id ${{ vars.SUBNET_ID }} \
-            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github}]' \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github},{Key=provision-method,Value=cli}]' \
             --iam-instance-profile Name=VitechTools \
             --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType="one-time"}' > /tmp/ec2_output.json || echo "SPOT_FAILED=true" >> $GITHUB_ENV
           echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
@@ -48,7 +48,7 @@ jobs:
             --key-name InternalTools \
             --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
             --subnet-id ${{ vars.SUBNET_ID }} \
-            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github}]' \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github},{Key=provision-method,Value=cli}]' \
             --iam-instance-profile Name=VitechTools > /tmp/ec2_output.json
           echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
           echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
