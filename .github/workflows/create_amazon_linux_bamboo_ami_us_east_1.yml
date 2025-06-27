@@ -1,4 +1,4 @@
-name: "Create Amazon Linux Bamboo AMI AMI US-EAST-1"
+name: "Create Amazon Linux Bamboo AMI US-EAST-1"
 on:
   workflow_dispatch:
   schedule:
