@@ -12,7 +12,7 @@ jobs:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
           ORG: vitechsystems
         run: |
-          set -e  # Stop on error
+          set -e
           echo "Starting team access audit for organization: $ORG"
           > repo-access.txt
           > codev-matched.txt
@@ -36,7 +36,8 @@ jobs:
             if [ "$COUNT" -eq 0 ]; then
               has_more=false
             else
-              echo "$REPOS" | jq -r '.[].name' | while read repo; do
+              REPO_NAMES=$(echo "$REPOS" | jq -r '.[].name')
+              for repo in $REPO_NAMES; do
                 echo "🔹 Repo: $ORG/$repo" >> repo-access.txt
                 TEAMS=$(curl -s -H "Authorization: token $GH_TOKEN" \
                   "https://api.github.com/repos/$ORG/$repo/teams")
@@ -57,7 +58,6 @@ jobs:
                   ')
                   echo "$TEAM_LINES" >> repo-access.txt
 
-                  # Check for CoDev team in specific repos
                   if [[ "$repo" == *_L5 || "$repo" == "Nextgen" || "$repo" == "CoreAdmin" ]]; then
                     CODEV_LINE=$(echo "$TEAM_LINES" | grep '^  - CoDev: ')
                     if [[ -n "$CODEV_LINE" ]]; then
@@ -66,9 +66,9 @@ jobs:
                     fi
                   fi
                 fi
-
                 echo "" >> repo-access.txt
               done
+
               page=$((page + 1))
             fi
           done
@@ -82,9 +82,3 @@ jobs:
 
           echo "✅ Team access written to repo-access.txt"
           cat repo-access.txt
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: team-repo-access
-          path: repo-access.txt
