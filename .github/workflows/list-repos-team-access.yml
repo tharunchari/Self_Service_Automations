@@ -50,10 +50,11 @@ jobs:
 
                     # Check only repos matching *_L5 or named Nextgen/CoreAdmin for CoDev access
                     if [[ "$repo" == *_L5 || "$repo" == "Nextgen" || "$repo" == "CoreAdmin" ]]; then
+                      echo "✅ Checking CoDev access in matched repo: $repo"
                       CODEV_LINE=$(echo "$TEAM_LINES" | grep '^  - CoDev:' || true)
                       if [ -n "$CODEV_LINE" ]; then
                         CODEV_PERMISSION=$(echo "$CODEV_LINE" | awk -F': ' '{print $2}')
-                        echo "$repo: CoDev permission = $CODEV_PERMISSION" >> codev-matched.txt
+                        echo "$repo: $CODEV_PERMISSION" >> codev-matched.txt
                       fi
                     fi
                   fi
@@ -67,13 +68,17 @@ jobs:
             fi
           done
 
-          # Summary for repos with CoDev access in matched repos
+          # Summary table for repos with CoDev access
           if [ -s codev-matched.txt ]; then
             echo "" >> repo-access.txt
             echo "Repos with CoDev team access and their permissions:" >> repo-access.txt
             echo "" >> repo-access.txt
+            echo "| Repository     | CoDev Permission |" >> repo-access.txt
+            echo "|----------------|------------------|" >> repo-access.txt
             while read matched_line; do
-              echo "- $matched_line" >> repo-access.txt
+              repo=$(echo "$matched_line" | cut -d':' -f1)
+              perm=$(echo "$matched_line" | awk -F'= ' '{print $2}')
+              printf "| %-14s | %-16s |\n" "$repo" "$perm" >> repo-access.txt
             done < codev-matched.txt
           fi
 
