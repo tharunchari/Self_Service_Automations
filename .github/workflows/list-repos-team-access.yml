@@ -2,6 +2,8 @@ name: List Org Team Access to Repos
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 6 1 * *'  # At 06:00 UTC on day 1 of every month (1 AM EST approx)
 
 env:
   SNS_TOPIC: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching
