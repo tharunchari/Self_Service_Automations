@@ -49,10 +49,11 @@ jobs:
             --message "NON-PROD JIRA patching will start Tuesday night (EST) as part of the monthly schedule."
 
 
-  trigger_nonprod_jiraqa:
-    name: Trigger JIRAQA Patching (First Tuesday)
-    if: github.event_name == 'schedule'
+  check_first_tuesday:
+    name: Check if today is the first Tuesday
     runs-on: ubuntu-latest
+    outputs:
+      continue: ${{ steps.check.outputs.continue }}
     steps:
       - name: Check if today is the first Tuesday
         id: check
@@ -65,13 +66,14 @@ jobs:
             echo "continue=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Trigger JiraQA Patching
-        if: steps.check.outputs.continue == 'true'
-        uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
-        secrets: inherit
-        with:
-          environment: "jiraqa"
-
+  trigger_nonprod_jiraqa:
+    name: Trigger JIRAQA Patching (First Tuesday)
+    needs: check_first_tuesday
+    if: needs.check_first_tuesday.outputs.continue == 'true' && github.event_name == 'schedule'
+    uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
+    secrets: inherit
+    with:
+      environment: "jiraqa"
 
   trigger_nonprod_jiraupg:
     name: Trigger JIRAUPG Patching
@@ -155,7 +157,6 @@ jobs:
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
             --subject "PROD Patching Notification" \
             --message "PROD JIRA patching is scheduled for Saturday morning (EST). Please prepare accordingly."
-
 
   trigger_prod:
     name: Trigger PROD Patching
