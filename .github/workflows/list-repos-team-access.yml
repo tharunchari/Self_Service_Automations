@@ -24,8 +24,8 @@ jobs:
         run: |
           echo " Starting team access audit for organization: $ORG"
           > repo-access.txt
-          > codev-matched.txt  # For final summary
-          > codev-summary.txt  # SNS message body file
+          > codev-matched.txt
+          > codev-summary.txt
 
           page=1
           per_page=100
@@ -59,7 +59,7 @@ jobs:
                     ')
                     echo "$TEAM_LINES" >> repo-access.txt
 
-                    # Check CoDev access for selected repos
+                    # Check CoDev access
                     if [[ "$repo" == *_L5 || "$repo" == "Nextgen" || "$repo" == "CoreAdmin" ]]; then
                       echo "✅ Checking CoDev access in matched repo: $repo"
                       CODEV_LINE=$(echo "$TEAM_LINES" | grep '^  - CoDev:' || true)
@@ -79,7 +79,9 @@ jobs:
             fi
           done
 
-          # Summary for SNS (only CoDev-related info)
+          # Build SNS summary message
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
           if [ -s codev-matched.txt ]; then
             echo "Repos with CoDev team access and their permissions:" >> codev-summary.txt
             echo "" >> codev-summary.txt
@@ -94,7 +96,11 @@ jobs:
             echo "No CoDev read or write access is granted for any L5, CoreAdmin, or Nextgen repositories." >> codev-summary.txt
           fi
 
-          # Write full access report
+          echo "" >> codev-summary.txt
+          echo "🔗 View full report and logs: $RUN_URL" >> codev-summary.txt
+          echo "📎 Download artifact: From the 'Artifacts' section in the link above" >> codev-summary.txt
+
+          # Append summary to main report
           if [ -s codev-matched.txt ]; then
             echo "" >> repo-access.txt
             cat codev-summary.txt >> repo-access.txt
@@ -113,5 +119,5 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn "$SNS_TOPIC" \
-            --subject "GitHub Org Repo Access Summary (CoDev)" \
+            --subject "[GitHub Audit] vitechsystems – CoDev Repo Access Summary" \
             --message file://codev-summary.txt
