@@ -1,4 +1,9 @@
 name: Jira Server Patching
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  security-events: write
 
 on:
   workflow_dispatch:
@@ -13,6 +18,26 @@ on:
       KEY:
         required: true
         description: Authentication Key for Jiraprod
+
+  workflow_call:
+    inputs:
+      pluginKeys:
+        required: false
+        type: string
+        default: 'com.vitechinc.jira.hoursTracking,com.vitechinc.jira.defaultCommentSecurity,com.vitechinc.art.ArtJiraService'
+      environment:
+        required: true
+        type: string
+      KEY:
+        required: false
+        type: string
+    secrets:
+      CORP_CLD_AWS_ACCESS_KEY_ID:
+        required: true
+      CORP_CLD_AWS_SECRET_ACCESS_KEY:
+        required: true
+      VITECH_LINUX_ZOIO_PASSWORD:
+        required: false
         
 
 jobs:
