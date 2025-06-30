@@ -24,6 +24,16 @@ jobs:
             REPOS=$(curl -s -H "Authorization: token $GH_TOKEN" \
               "https://api.github.com/orgs/$ORG/repos?per_page=$per_page&page=$page")
 
+            echo "DEBUG: REPOS response (first 20 lines):"
+            echo "$REPOS" | head -20
+
+            # Validate JSON response
+            if ! echo "$REPOS" | jq empty >/dev/null 2>&1; then
+              echo "ERROR: Failed to parse repos JSON. Response was:"
+              echo "$REPOS"
+              exit 1
+            fi
+
             COUNT=$(echo "$REPOS" | jq 'length')
             if [ "$COUNT" -eq 0 ]; then
               has_more=false
@@ -32,6 +42,12 @@ jobs:
                 echo "🔹 Repo: $ORG/$repo" >> repo-access.txt
                 TEAMS=$(curl -s -H "Authorization: token $GH_TOKEN" \
                   "https://api.github.com/repos/$ORG/$repo/teams")
+
+                # Validate TEAMS JSON
+                if ! echo "$TEAMS" | jq empty >/dev/null 2>&1; then
+                  echo "  (error fetching teams - invalid JSON)" >> repo-access.txt
+                  continue
+                fi
 
                 if echo "$TEAMS" | jq -e 'type=="array"' >/dev/null; then
                   if [ "$(echo "$TEAMS" | jq length)" -eq 0 ]; then
@@ -66,7 +82,6 @@ jobs:
             fi
           done
 
-          # Append summary if any matching repos were found
           if [ -s codev-matched.txt ]; then
             echo "" >> repo-access.txt
             echo "Below repos have access to CoDev team:" >> repo-access.txt
