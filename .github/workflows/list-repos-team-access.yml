@@ -50,16 +50,19 @@ jobs:
                   echo "  (error fetching teams)" >> repo-access.txt
                 fi
 
-                # Add CoDev: write for specific repos
-                if [[ "$repo" == "_L5" || "$repo" == "Nextgen" || "$repo" == "CoreAdmin" ]]; then
-                  echo "  - CoDev: write" >> repo-access.txt
-                fi
-
                 echo "" >> repo-access.txt
               done
               page=$((page + 1))
             fi
           done
+
+          # Check if 'CoDev: write' exists in the file
+          if grep -q '\- CoDev: write' repo-access.txt; then
+            echo "" >> repo-access.txt
+            echo "Below repos have access to CoDev team:" >> repo-access.txt
+            echo "" >> repo-access.txt
+            echo "- CoDev: write" >> repo-access.txt
+          fi
 
           echo " Team access written to repo-access.txt"
           cat repo-access.txt
