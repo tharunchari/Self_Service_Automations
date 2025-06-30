@@ -12,17 +12,25 @@ jobs:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
           ORG: vitechsystems
         run: |
-          echo " Starting team access audit for organization: $ORG"
+          set -e  # Stop on error
+          echo "Starting team access audit for organization: $ORG"
           > repo-access.txt
-          > codev-matched.txt  # Temporary file to store CoDev access entries
+          > codev-matched.txt
 
           page=1
           per_page=100
           has_more=true
 
           while $has_more; do
+            echo "Fetching repos (page $page)..."
             REPOS=$(curl -s -H "Authorization: token $GH_TOKEN" \
               "https://api.github.com/orgs/$ORG/repos?per_page=$per_page&page=$page")
+
+            if [ -z "$REPOS" ] || ! echo "$REPOS" | jq empty >/dev/null 2>&1; then
+              echo "❌ Failed to fetch or parse repos from GitHub API"
+              echo "Response: $REPOS"
+              exit 1
+            fi
 
             COUNT=$(echo "$REPOS" | jq 'length')
             if [ "$COUNT" -eq 0 ]; then
@@ -33,34 +41,30 @@ jobs:
                 TEAMS=$(curl -s -H "Authorization: token $GH_TOKEN" \
                   "https://api.github.com/repos/$ORG/$repo/teams")
 
-                if echo "$TEAMS" | jq -e 'type=="array"' >/dev/null; then
-                  if [ "$(echo "$TEAMS" | jq length)" -eq 0 ]; then
-                    echo "  (no team access)" >> repo-access.txt
-                  else
-                    TEAM_LINES=$(echo "$TEAMS" | jq -r '
-                      .[] |
-                      "  - \(.name): \(
-                        if .permission == "pull" then "read"
-                        elif .permission == "push" then "write"
-                        else .permission
-                      end
-                      )"
-                    ')
-                    echo "$TEAM_LINES" >> repo-access.txt
+                if [ -z "$TEAMS" ] || ! echo "$TEAMS" | jq empty >/dev/null 2>&1; then
+                  echo "  (error fetching teams)" >> repo-access.txt
+                elif [ "$(echo "$TEAMS" | jq length)" -eq 0 ]; then
+                  echo "  (no team access)" >> repo-access.txt
+                else
+                  TEAM_LINES=$(echo "$TEAMS" | jq -r '
+                    .[] |
+                    "  - \(.name): \(
+                      if .permission == "pull" then "read"
+                      elif .permission == "push" then "write"
+                      else .permission
+                    end
+                    )"
+                  ')
+                  echo "$TEAM_LINES" >> repo-access.txt
 
-                    # If the repo is one of the target repos and has CoDev: read or write, capture it
-                    if [[ "$repo" == *_L5 || "$repo" == "Nextgen" || "$repo" == "CoreAdmin" ]]; then
-                      # Check if CoDev is listed, and extract the permission
-                      CODEV_LINE=$(echo "$TEAM_LINES" | grep '^  - CoDev: ')
-                      if [[ -n "$CODEV_LINE" ]]; then
-                        # Extract permission (read/write)
-                        PERMISSION=$(echo "$CODEV_LINE" | awk -F': ' '{print $2}')
-                        echo "- $repo: $PERMISSION" >> codev-matched.txt
-                      fi
+                  # Check for CoDev team in specific repos
+                  if [[ "$repo" == *_L5 || "$repo" == "Nextgen" || "$repo" == "CoreAdmin" ]]; then
+                    CODEV_LINE=$(echo "$TEAM_LINES" | grep '^  - CoDev: ')
+                    if [[ -n "$CODEV_LINE" ]]; then
+                      PERMISSION=$(echo "$CODEV_LINE" | awk -F': ' '{print $2}')
+                      echo "- $repo: $PERMISSION" >> codev-matched.txt
                     fi
                   fi
-                else
-                  echo "  (error fetching teams)" >> repo-access.txt
                 fi
 
                 echo "" >> repo-access.txt
@@ -69,7 +73,6 @@ jobs:
             fi
           done
 
-          # Append summary if any matching repos were found
           if [ -s codev-matched.txt ]; then
             echo "" >> repo-access.txt
             echo "Below repos have access to CoDev team:" >> repo-access.txt
@@ -77,7 +80,7 @@ jobs:
             cat codev-matched.txt >> repo-access.txt
           fi
 
-          echo " Team access written to repo-access.txt"
+          echo "✅ Team access written to repo-access.txt"
           cat repo-access.txt
 
       - name: Upload Artifact
