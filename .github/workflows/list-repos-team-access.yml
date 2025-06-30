@@ -3,10 +3,20 @@ name: List Org Team Access to Repos
 on:
   workflow_dispatch:
 
+env:
+  SNS_TOPIC: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching
+
 jobs:
   team-access:
     runs-on: ubuntu-latest
     steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
       - name: Generate Team Access Report
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
@@ -14,7 +24,8 @@ jobs:
         run: |
           echo " Starting team access audit for organization: $ORG"
           > repo-access.txt
-          > codev-matched.txt  # Temporary file to store repos with CoDev access
+          > codev-matched.txt  # For final summary
+          > codev-summary.txt  # SNS message body file
 
           page=1
           per_page=100
@@ -48,7 +59,7 @@ jobs:
                     ')
                     echo "$TEAM_LINES" >> repo-access.txt
 
-                    # Check only repos matching *_L5 or named Nextgen/CoreAdmin for CoDev access
+                    # Check CoDev access for selected repos
                     if [[ "$repo" == *_L5 || "$repo" == "Nextgen" || "$repo" == "CoreAdmin" ]]; then
                       echo "✅ Checking CoDev access in matched repo: $repo"
                       CODEV_LINE=$(echo "$TEAM_LINES" | grep '^  - CoDev:' || true)
@@ -68,18 +79,25 @@ jobs:
             fi
           done
 
-          # Summary table for repos with CoDev access
+          # Summary for SNS (only CoDev-related info)
           if [ -s codev-matched.txt ]; then
-            echo "" >> repo-access.txt
-            echo "Repos with CoDev team access and their permissions:" >> repo-access.txt
-            echo "" >> repo-access.txt
-            echo "| Repository     | CoDev Permission |" >> repo-access.txt
-            echo "|----------------|------------------|" >> repo-access.txt
+            echo "Repos with CoDev team access and their permissions:" >> codev-summary.txt
+            echo "" >> codev-summary.txt
+            echo "| Repository     | CoDev Permission |" >> codev-summary.txt
+            echo "|----------------|------------------|" >> codev-summary.txt
             while read matched_line; do
               repo=$(echo "$matched_line" | cut -d':' -f1)
-              perm=$(echo "$matched_line" | awk -F'= ' '{print $2}')
-              printf "| %-14s | %-16s |\n" "$repo" "$perm" >> repo-access.txt
+              perm=$(echo "$matched_line" | awk -F': ' '{print $2}')
+              printf "| %-14s | %-16s |\n" "$repo" "$perm" >> codev-summary.txt
             done < codev-matched.txt
+          else
+            echo "No CoDev read or write access is granted for any L5, CoreAdmin, or Nextgen repositories." >> codev-summary.txt
+          fi
+
+          # Write full access report
+          if [ -s codev-matched.txt ]; then
+            echo "" >> repo-access.txt
+            cat codev-summary.txt >> repo-access.txt
           fi
 
           echo " Team access written to repo-access.txt"
@@ -90,3 +108,10 @@ jobs:
         with:
           name: team-repo-access
           path: repo-access.txt
+
+      - name: Send Summary via SNS
+        run: |
+          aws sns publish \
+            --topic-arn "$SNS_TOPIC" \
+            --subject "GitHub Org Repo Access Summary (CoDev)" \
+            --message file://codev-summary.txt
