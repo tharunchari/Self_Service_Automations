@@ -2,10 +2,10 @@ name: Monthly JIRA Patch Schedule
 
 on:
   schedule:
-   # - cron: '0 10 25-31 * 0'   # Sundays between 25-31 UTC (check for last Sunday)
-   # - cron: '0 2 * * 2'        # Every Tuesday 2 AM UTC (check for first Tuesday)
-   # - cron: '0 10 25-31 * 5'   # Fridays between 25-31 UTC (check for last Friday)
-   # - cron: '0 14 25-31 * 6'   # Saturday 2 PM UTC (JIRAPROD patching)
+    - cron: '0 10 25-31 * 0'   # Sundays between 25-31 UTC (check for last Sunday)
+    - cron: '0 2 * * 2'        # Every Tuesday 2 AM UTC (check for first Tuesday)
+    - cron: '0 10 25-31 * 5'   # Fridays between 25-31 UTC (check for last Friday)
+    - cron: '0 14 25-31 * 6'   # Saturday 2 PM UTC (JIRAPROD patching)
 
 permissions:
   id-token: write
