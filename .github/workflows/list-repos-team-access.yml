@@ -14,7 +14,7 @@ jobs:
         run: |
           echo " Starting team access audit for organization: $ORG"
           > repo-access.txt
-          > codev-matched.txt
+          > codev-matched.txt  # Temporary file to store repos with CoDev access
 
           page=1
           per_page=100
@@ -24,16 +24,6 @@ jobs:
             REPOS=$(curl -s -H "Authorization: token $GH_TOKEN" \
               "https://api.github.com/orgs/$ORG/repos?per_page=$per_page&page=$page")
 
-            echo "DEBUG: REPOS response (first 20 lines):"
-            echo "$REPOS" | head -20
-
-            # Validate JSON response
-            if ! echo "$REPOS" | jq empty >/dev/null 2>&1; then
-              echo "ERROR: Failed to parse repos JSON. Response was:"
-              echo "$REPOS"
-              exit 1
-            fi
-
             COUNT=$(echo "$REPOS" | jq 'length')
             if [ "$COUNT" -eq 0 ]; then
               has_more=false
@@ -42,12 +32,6 @@ jobs:
                 echo "🔹 Repo: $ORG/$repo" >> repo-access.txt
                 TEAMS=$(curl -s -H "Authorization: token $GH_TOKEN" \
                   "https://api.github.com/repos/$ORG/$repo/teams")
-
-                # Validate TEAMS JSON
-                if ! echo "$TEAMS" | jq empty >/dev/null 2>&1; then
-                  echo "  (error fetching teams - invalid JSON)" >> repo-access.txt
-                  continue
-                fi
 
                 if echo "$TEAMS" | jq -e 'type=="array"' >/dev/null; then
                   if [ "$(echo "$TEAMS" | jq length)" -eq 0 ]; then
@@ -64,11 +48,10 @@ jobs:
                     ')
                     echo "$TEAM_LINES" >> repo-access.txt
 
+                    # If the repo is _L5, Nextgen, or CoreAdmin and has CoDev: write, record it
                     if [[ "$repo" == *_L5 || "$repo" == "Nextgen" || "$repo" == "CoreAdmin" ]]; then
-                      CODEV_LINE=$(echo "$TEAM_LINES" | grep '^  - CoDev: ')
-                      if [[ -n "$CODEV_LINE" ]]; then
-                        PERMISSION=$(echo "$CODEV_LINE" | awk -F': ' '{print $2}')
-                        echo "- $repo: $PERMISSION" >> codev-matched.txt
+                      if echo "$TEAM_LINES" | grep -q '^  - CoDev: write'; then
+                        echo "$repo" >> codev-matched.txt
                       fi
                     fi
                   fi
@@ -82,11 +65,14 @@ jobs:
             fi
           done
 
+          # Append summary if any of the matching repos have CoDev: write
           if [ -s codev-matched.txt ]; then
             echo "" >> repo-access.txt
             echo "Below repos have access to CoDev team:" >> repo-access.txt
             echo "" >> repo-access.txt
-            cat codev-matched.txt >> repo-access.txt
+            while read matched_repo; do
+              echo "- $matched_repo" >> repo-access.txt
+            done < codev-matched.txt
           fi
 
           echo " Team access written to repo-access.txt"
