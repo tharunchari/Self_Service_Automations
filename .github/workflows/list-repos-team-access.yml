@@ -110,10 +110,9 @@ jobs:
           name: team-repo-access
           path: repo-access.txt
 
-      - name: Send Email with SES
+      - name: Write SES Email Script
         run: |
-          pip install boto3
-          python - <<EOF
+          cat <<EOF > send_email.py
           import boto3
           from email.mime.multipart import MIMEMultipart
           from email.mime.text import MIMEText
@@ -144,4 +143,9 @@ jobs:
               RawMessage={"Data": msg.as_string()}
           )
           print("Email sent! Message ID:", response["MessageId"])
-EOF
+          EOF
+
+      - name: Send Email via SES
+        run: |
+          pip install boto3
+          python send_email.py
