@@ -2,9 +2,9 @@ name: Monthly JIRA Patch Schedule
 
 on:
   schedule:
-    - cron: '0 10 25-31 * 0'   # Sundays between 25-31 UTC (check for last Sunday)
-    - cron: '0 2 * * 2'        # Every Tuesday 2 AM UTC (check for first Tuesday)
-    - cron: '0 10 25-31 * 5'   # Fridays between 25-31 UTC (check for last Friday)
+    - cron: '0 10 25-31 * 0'   # Sundays between 25-31 UTC (last Sunday)
+    - cron: '0 2 * * 2'        # Every Tuesday 2 AM UTC (first Tuesday)
+    - cron: '0 10 25-31 * 5'   # Fridays between 25-31 UTC (last Friday)
     - cron: '0 14 25-31 * 6'   # Saturday 2 PM UTC (JIRAPROD patching)
 
 permissions:
@@ -47,7 +47,6 @@ jobs:
             --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
             --subject "NON-PROD Patching Scheduled" \
             --message "NON-PROD JIRA patching will start Tuesday night (EST) as part of the monthly schedule."
-
 
   check_first_tuesday:
     name: Check if today is the first Tuesday
@@ -122,7 +121,6 @@ jobs:
             --subject "JIRAUPG Patching Failed" \
             --message "Patching on the JIRAUPG instance failed. Manual intervention may be required."
 
-
   notify_prod:
     name: Notify PROD Patching (Last Friday)
     if: github.event_name == 'schedule'
@@ -162,10 +160,12 @@ jobs:
     name: Trigger PROD Patching
     if: github.event_name == 'schedule'
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
-    secrets: inherit
     with:
       environment: "jiraprod"
-      prod_patch_password: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+      KEY: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+    secrets:
+      inherit: true
+      VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
 
   notify_failure_jiraprod:
     name: Notify Failure - JIRAPROD
@@ -185,4 +185,4 @@ jobs:
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
             --subject "JIRAPROD Patching Failed" \
-            --message "Patching on the JIRAPROD instance failed. Please investigate the issue."
+            --message "Patching on the JIRAPROD instance failed. Please investigate immediately."
