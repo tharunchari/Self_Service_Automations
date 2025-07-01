@@ -1,0 +1,221 @@
+name: pgTAP Tests
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  security-events: write
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '**/*.sql'
+    branches:
+      - v310uc_L5_f8
+
+jobs:
+  LaunchingSelfHostedRunner:
+    runs-on: ubuntu-24.04
+    if: github.event.repository.fork == false
+    outputs:
+      genrun_1: ${{ steps.gen_step.outputs.INSTANCE_VALUE }}      # <== Note the output variable
+    steps:      
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Try launching Spot Instance
+        id: start-spot-ec2
+        continue-on-error: true
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ vars.SELF_HOSTED_RUNNER_AMI }} \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE_C5_2XLARGE }} \
+            --key-name InternalTools \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id ${{ vars.SUBNET_ID }} \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github}]' \
+            --iam-instance-profile Name=VitechTools \
+            --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType="one-time"}' > /tmp/ec2_output.json || echo "SPOT_FAILED=true" >> $GITHUB_ENV
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+ 
+      - name: Fallback to On-Demand Instance if Spot fails
+        if: env.SPOT_FAILED == 'true'
+        id: start-ondemand-ec2
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ vars.SELF_HOSTED_RUNNER_AMI }} \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE_C5_2XLARGE }} \
+            --key-name InternalTools \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id ${{ vars.SUBNET_ID }} \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github}]' \
+            --iam-instance-profile Name=VitechTools > /tmp/ec2_output.json
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+
+      - name: Set INSTANCE_ID based on event type
+        id: set-instance-id
+        run: |
+          repo_name=$(echo "${{ github.event.repository.name }}" | sed 's/Marketplace/MP/g' | sed 's/MARKETPLACE/MP/g' | sed 's/EDGE/E/g' | sed 's/Edge/E/g')  # Replace 'Marketplace' with 'MP' and 'Edge' with 'E'
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "INSTANCE_VALUE=${INSTANCE_ID}-${repo_name}-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          else
+            echo "INSTANCE_VALUE=${INSTANCE_ID}-${repo_name}-scheduled-or-dispatch" >> $GITHUB_ENV
+          fi
+
+      - name: Set environment variable for second job
+        id: gen_step                                # <====== Note the step id here
+        shell: bash
+        run: |
+          echo "INSTANCE_VALUE=$INSTANCE_VALUE" >> $GITHUB_OUTPUT
+
+      - name: Run Command on EC2 Instance to register the runner with instance ID
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets Key=instanceids,Values=$INSTANCE_ID \
+            --parameters "commands=['runuser -l ec2-user -c \"/actions-runner/config.sh --url https://github.com/vitechsystems --pat ${{ secrets.PROD_FINE_GRAINED_PAT }} --name $INSTANCE_VALUE --runnergroup ops --labels $INSTANCE_VALUE --work _work && /actions-runner/run.sh\"']" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+  PGTAP_Tests:
+    needs: LaunchingSelfHostedRunner
+    runs-on: "${{ needs.LaunchingSelfHostedRunner.outputs.genrun_1 }}"
+    outputs:
+      genrun_3: ${{ steps.gen_step.outputs.INSTANCE_VALUE }}      # <== Note the output variable
+    continue-on-error: true
+
+    steps:
+      - name: Set environment variable for third job
+        id: gen_step                                # <====== Note the step id here
+        shell: bash
+        run: |
+          echo "INSTANCE_VALUE=${{ needs.LaunchingSelfHostedRunner.outputs.genrun_1 }}" >> $GITHUB_OUTPUT
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pgTAP
+        run: |
+          sudo dnf install -y gcc make perl perl-CPAN patch readline-devel zlib-devel
+          mkdir -p /tmp/postgres
+          cd /tmp/postgres
+          wget https://ftp.postgresql.org/pub/source/v15.8/postgresql-15.8.tar.gz
+          tar -xzf postgresql-15.8.tar.gz
+          cd postgresql-15.8
+          ./configure --prefix=/usr/local/pgsql-15
+          make
+          sudo make install
+          export PATH=$PATH:/usr/local/pgsql-15/bin
+          sudo ln -s /usr/local/pgsql-15/bin/pg_config /usr/bin/pg_config
+
+      - name: Install pg_prove
+        run: |
+          cd /tmp/postgres
+          git clone https://github.com/theory/pgtap.git
+          cd pgtap
+          PERL_MM_USE_DEFAULT=1 cpan -i TAP::Parser::SourceHandler::pgTAP
+          make
+          sudo make install
+
+      - name: Get changed files in the Pull Request
+        if: ${{ github.event_name == 'pull_request' }}
+        id: changed_files_specific
+        run: |
+          response=$(curl -s -H "Authorization: token ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            "https://api.github.com/repos/${{ github.repository_owner }}/${{ github.event.repository.name }}/pulls/${{ github.event.pull_request.number }}/files")
+          filenames=$(echo "$response" | jq -r '.[].filename')
+
+          # Separate all .sql files into test_files and sql_files
+          test_files=$(echo "$filenames" | grep '/test_.*\.sql$' || true)
+          sql_files=$(echo "$filenames" | grep '\.sql$' | grep -v '/test_.*\.sql$' || true)
+
+          echo "SQL Files (non-test): $sql_files"
+          echo "Test Files: $test_files"
+
+          echo "sql_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$sql_files" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          echo "test_files<<EOF" >> $GITHUB_OUTPUT
+          echo "$test_files" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Deploy SQL files using psql
+        if: steps.changed_files_specific.outputs.sql_files != ''
+        run: |
+          export PATH=$PATH:/usr/local/pgsql-15/bin
+          echo "${{ steps.changed_files_specific.outputs.sql_files }}" | while read -r file; do
+            echo "Running psql for $file"
+            PGPASSWORD=dbo psql -h 172.26.44.162 -U dbo -d v3corpdev -f "$file"
+          done
+
+      - name: Run pgTAP Tests using pg_prove
+        if: steps.changed_files_specific.outputs.test_files != ''
+        run: |
+          export PATH=$PATH:/usr/local/pgsql-15/bin
+          sudo cpan App::cpanminus
+          sudo cpanm --notest --quiet TAP::Parser::SourceHandler::pgTAP
+          echo "${{ steps.changed_files_specific.outputs.test_files }}" | while read -r file; do
+            echo "Running pg_prove for $file"
+            PGPASSWORD=dbo pg_prove -h 172.26.44.162 -U dbo -d v3corpdev "$file"
+          done
+
+  TerminatingSelfHostedRunner:
+    runs-on: ubuntu-24.04
+    needs: PGTAP_Tests
+    continue-on-error: true
+
+    steps:       
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+          
+          
+      - name: Debug Instance ID
+        id: extract_instance_id
+        run: |
+          INSTANCE_ID=$(echo "${{ needs.PGTAP_Tests.outputs.genrun_3 }}" | grep -o 'i-[a-zA-Z0-9]\+')
+          echo "Extracted INSTANCE_ID: $INSTANCE_ID"
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+
+      - name: Run Command on EC2 Instance to remove runner from GitHub
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets "Key=instanceids,Values=${{ env.INSTANCE_ID }}" \
+            --parameters commands="sudo -u ec2-user /actions-runner/config.sh remove --pat ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+      - name: Get the associations IDS
+        id: get_associations
+        run: |
+          ASSOC_IDS_1=$(aws ssm describe-effective-instance-associations --instance-id "${{ env.INSTANCE_ID }}" | jq -r '.Associations[].AssociationId')
+          EOF_1=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "ASSOC_IDS_1<<$EOF_1" >> $GITHUB_ENV
+          echo "$ASSOC_IDS_1" >> $GITHUB_ENV
+          echo "$EOF_1" >> $GITHUB_ENV
+ 
+      - name: Delete associations
+        run: |
+          for ASSOC_ID_1 in $ASSOC_IDS_1
+          do
+            aws ssm delete-association --association-id $ASSOC_ID_1
+          done
+
+      - name: Workflow will be in sleep mode until GITHUB runner gets removed from GitHub
+        run: |
+          sleep 10
+          
+      - name: Terminate Self Hosted Runner instance
+        run: |
+          aws ec2 terminate-instances --instance-ids "${{ env.INSTANCE_ID }}" --region ${{ vars.AWS_REGION }}
