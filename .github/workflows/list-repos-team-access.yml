@@ -3,10 +3,7 @@ name: List Org Team Access to Repos
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 6 * * 0'  # Every Sunday at 06:00 UTC (~1 AM EST)
-
-env:
-  SNS_TOPIC: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching
+    - cron: '0 6 * * 0'  # Every Sunday at 06:00 UTC
 
 jobs:
   team-access:
@@ -61,9 +58,7 @@ jobs:
                     ')
                     echo "$TEAM_LINES" >> repo-access.txt
 
-                    # Check CoDev access
                     if [[ "$repo" == *_L5 || "$repo" == "Nextgen" || "$repo" == "CoreAdmin" ]]; then
-                      echo "✅ Checking CoDev access in matched repo: $repo"
                       CODEV_LINE=$(echo "$TEAM_LINES" | grep '^  - CoDev:' || true)
                       if [ -n "$CODEV_LINE" ]; then
                         CODEV_PERMISSION=$(echo "$CODEV_LINE" | awk -F': ' '{print $2}')
@@ -81,7 +76,6 @@ jobs:
             fi
           done
 
-          # Build SNS summary message
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           if [ -s codev-matched.txt ]; then
@@ -102,7 +96,6 @@ jobs:
           echo "🔗 View full report and logs: $RUN_URL" >> codev-summary.txt
           echo "📎 Download artifact: From the 'Artifacts' section in the link above" >> codev-summary.txt
 
-          # Append summary to main report
           if [ -s codev-matched.txt ]; then
             echo "" >> repo-access.txt
             cat codev-summary.txt >> repo-access.txt
@@ -117,9 +110,38 @@ jobs:
           name: team-repo-access
           path: repo-access.txt
 
-      - name: Send Summary via SNS
+      - name: Send Email with SES
         run: |
-          aws sns publish \
-            --topic-arn "$SNS_TOPIC" \
-            --subject "[GitHub Audit] vitechsystems – CoDev Repo Access Summary" \
-            --message file://codev-summary.txt
+          pip install boto3
+          python - <<EOF
+          import boto3
+          from email.mime.multipart import MIMEMultipart
+          from email.mime.text import MIMEText
+          from email.mime.application import MIMEApplication
+
+          sender = "v3atlassianops@vitechinc.com"
+          recipient = "v3atlassianops@vitechinc.com"
+          subject = "[GitHub Audit] vitechsystems – CoDev Repo Access Summary"
+
+          with open("codev-summary.txt", "r") as f:
+              body_text = f.read()
+
+          msg = MIMEMultipart()
+          msg["Subject"] = subject
+          msg["From"] = sender
+          msg["To"] = recipient
+          msg.attach(MIMEText(body_text, "plain"))
+
+          with open("repo-access.txt", "rb") as f:
+              part = MIMEApplication(f.read())
+              part.add_header("Content-Disposition", "attachment", filename="repo-access.txt")
+              msg.attach(part)
+
+          client = boto3.client("ses", region_name="us-east-1")
+          response = client.send_raw_email(
+              Source=sender,
+              Destinations=[recipient],
+              RawMessage={"Data": msg.as_string()}
+          )
+          print("Email sent! Message ID:", response["MessageId"])
+EOF
