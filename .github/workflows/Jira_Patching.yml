@@ -1,4 +1,5 @@
 name: Jira Server Patching
+
 permissions:
   contents: read
   pull-requests: read
@@ -14,10 +15,10 @@ on:
         description: 'Comma-separated plugin keys to disable'
       environment:
         required: true
-        description: 'The environment to patch (jiraupg, jiraqa or jiraprod)'   
+        description: 'The environment to patch (jiraupg, jiraqa or jiraprod)'
       KEY:
         required: true
-        description: Authentication Key for Jiraprod
+        description: 'Authentication Key for Jiraprod'
 
   workflow_call:
     inputs:
@@ -38,7 +39,12 @@ on:
         required: true
       VITECH_LINUX_ZOIO_PASSWORD:
         required: false
-        
+      JIRAUPG_ACCESS_TOKEN:
+        required: false
+      JIRAQA_ACCESS_TOKEN:
+        required: false
+      JIRAPROD_ACCESS_TOKEN:
+        required: false
 
 jobs:
   Jira-Patching:
@@ -48,38 +54,46 @@ jobs:
       id-token: write
 
     steps:
+      - name: Determine Trigger Source Inputs
+        id: input_resolver
+        run: |
+          echo "PLUGIN_KEYS=${{ github.event.inputs.pluginKeys || inputs.pluginKeys }}" >> $GITHUB_ENV
+          echo "ENVIRONMENT=${{ github.event.inputs.environment || inputs.environment }}" >> $GITHUB_ENV
+          echo "KEY_INPUT=${{ github.event.inputs.KEY || inputs.KEY }}" >> $GITHUB_ENV
+
       - name: Set environment-specific variables
         run: |
-          if [ "${{ github.event.inputs.environment }}" == "jiraupg" ]; then
-            echo "Using jiraupg configuration"
+          echo "Using environment: $ENVIRONMENT"
+
+          if [ "$ENVIRONMENT" = "jiraupg" ]; then
             echo "ASG_NAME=JIRAUPG-JIRAAWSUPGADScalingGroup-mAS5ealzU5Lc" >> $GITHUB_ENV
             echo "URL=https://jiraupg.vitechinc.com/jiraupg" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.JIRAUPG_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
             echo "SUBJECT_PREFIX=Restart of JiraUPG Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=JiraUPG patching is scheduled." >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.environment }}" == "jiraqa" ]; then
-            echo "Using jiraqa configuration"
+
+          elif [ "$ENVIRONMENT" = "jiraqa" ]; then
             echo "ASG_NAME=JIRAQA-JiraQAADScalingGroup-YfhGsDer5pMj" >> $GITHUB_ENV
             echo "URL=https://jiraqa.vitechinc.com/jiraqa" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.JIRAQA_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
             echo "SUBJECT_PREFIX=Restart of JiraQa Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=JiraQA patching is scheduled." >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.environment }}" == "jiraprod" ]; then
-                   if [ "${{ inputs.KEY }}" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
-                      echo "The KEY does not match the expected secret for jiraprod environment."
-                      exit 1
-                   fi
-            echo "Using jiraprod configuration"
+
+          elif [ "$ENVIRONMENT" = "jiraprod" ]; then
+            if [ "$KEY_INPUT" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
+              echo "ERROR: Invalid KEY provided for JIRAPROD environment."
+              exit 1
+            fi
             echo "ASG_NAME=JIRAAWSPROD-JiraAWSPRODDScalingGroup-KH04DAC48ZQX" >> $GITHUB_ENV
             echo "URL=https://jira.vitechinc.com/jira" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.JIRAPROD_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
             echo "SUBJECT_PREFIX=Restart of JiraProd Nodes for Scheduled Patching" >> $GITHUB_ENV
-            echo "BODY_PREFIX=JiraProd patching is scheduled." >> $GITHUB_ENV  
+            echo "BODY_PREFIX=JiraProd patching is scheduled." >> $GITHUB_ENV
           else
-            echo "Invalid environment specified. Please choose either 'jiraupg', 'jiraqa', or 'jiraprod'."
+            echo " ERROR: Invalid environment specified."
             exit 1
           fi
 
@@ -98,9 +112,10 @@ jobs:
             --output text)
 
           if [[ -z "$INSTANCE_IDS" ]]; then
-            echo "No instances found in the Auto Scaling Group. Exiting."
+            echo "ERROR: No instances found in ASG. Exiting."
             exit 1
           fi
+
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
@@ -108,14 +123,13 @@ jobs:
 
       - name: Disable Jira Plugins
         run: |
-          PLUGIN_KEYS="${{ github.event.inputs.pluginKeys }}"
+          echo "Disabling plugins: $PLUGIN_KEYS"
           for PLUGIN_KEY in $(echo $PLUGIN_KEYS | tr "," "\n")
           do
-            echo "Disabling plugin: $PLUGIN_KEY"
             curl --request PUT "${{ env.URL }}/rest/plugins/1.0/${PLUGIN_KEY}-key" \
-                 --header "Authorization: Bearer ${{ env.TOKEN }}" \
-                 --header "Content-Type: application/vnd.atl.plugins.plugin+json" \
-                 --data '{"enabled": false}'
+              --header "Authorization: Bearer ${{ env.TOKEN }}" \
+              --header "Content-Type: application/vnd.atl.plugins.plugin+json" \
+              --data '{"enabled": false}'
           done
 
       - name: Get Auto Scaling Group Instances
