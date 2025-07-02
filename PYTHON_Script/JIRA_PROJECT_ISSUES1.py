@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timedelta
  
 # -------------------- Configuration --------------------
-JIRA_URL = "https://jiraupg.vitechinc.com/jiraupg"
+JIRA_URL = "https://jira.vitechinc.com/jira"
 JIRA_USERNAME = "svallabhuni"
 JIRA_PASSWORD = os.environ.get("JIRA_PASSWORD")
 JIRA_PROJECT = os.environ.get("JIRA_PROJECT", "").strip()
