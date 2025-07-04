@@ -1,9 +1,9 @@
 name: "Create Amazon Linux Bamboo AMI US-EAST-1"
 on:
   workflow_dispatch:
-#  schedule:
-#    # This will run the workflow 1st day of every month
-#    - cron: "0 0 1 * *"
+  schedule:
+    # This will run the workflow 1st day of every month
+    - cron: "0 0 1 * *"
 env:
   BAMBOO_BASEURL: "https://bamboo.vitechinc.com/bamboo"
   BAMBOO_TOKEN: ${{ secrets.BAMBOO_TOKEN }}
