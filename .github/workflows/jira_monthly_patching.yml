@@ -2,10 +2,10 @@ name: Monthly JIRA Patch Schedule
 
 on:
   schedule:
-    - cron: '0 10 25-31 * 0'   # Sundays between 25-31 UTC (last Sunday)
-    - cron: '0 2 * * 2'        # Every Tuesday 2 AM UTC (first Tuesday)
-    - cron: '0 10 25-31 * 5'   # Fridays between 25-31 UTC (last Friday)
-    - cron: '0 14 25-31 * 6'   # Saturday 2 PM UTC (JIRAPROD patching)
+    - cron: '0 10 25-31 * 0'   # Sundays between 25-31 UTC (potential last Sunday)
+    - cron: '0 2 * * 2'        # Every Tuesday 2 AM UTC (check for first Tuesday)
+    - cron: '0 10 25-31 * 5'   # Fridays between 25-31 UTC (potential last Friday)
+    - cron: '0 14 25-31 * 6'   # Saturdays between 25-31 UTC (potential last Saturday, not used yet)
 
 permissions:
   id-token: write
@@ -70,18 +70,18 @@ jobs:
     needs: check_first_tuesday
     if: needs.check_first_tuesday.outputs.continue == 'true' && github.event_name == 'schedule'
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
-    secrets: inherit
     with:
       environment: "jiraqa"
+    secrets: inherit
 
   trigger_nonprod_jiraupg:
     name: Trigger JIRAUPG Patching
     needs: trigger_nonprod_jiraqa
     if: success()
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
-    secrets: inherit
     with:
       environment: "jiraupg"
+    secrets: inherit
 
   notify_failure_jiraqa:
     needs: trigger_nonprod_jiraqa
