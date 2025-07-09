@@ -3,7 +3,7 @@ name: Monthly JIRA Patch Schedule
 on:
   schedule:
     - cron: '0 10 25-31 * 0'   # Sundays between 25-31 UTC (potential last Sunday)
-    - cron: '0 2 * * 2'        # Every Tuesday 2 AM UTC (check for first Tuesday)
+    - cron: '0 2 * * 1'        # Every Monday 2 AM UTC (check for first Monday)
     - cron: '0 10 25-31 * 5'   # Fridays between 25-31 UTC (potential last Friday)
     - cron: '0 14 25-31 * 6'   # Saturdays between 25-31 UTC (potential last Saturday, not used yet)
 
@@ -45,30 +45,30 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
-            --subject "NON-PROD Patching Scheduled" \
-            --message "NON-PROD JIRA patching will start Tuesday night (EST) as part of the monthly schedule."
+            --subject "Non-Production JIRA Monthly Patch - Rolling Restart (No Downtime)" \
+            --message "Automated notification: Non-Production JIRA patching with rolling restart is scheduled for the upcoming first Monday of the month (EST). No application downtime is expected. Please contact DevOps if you have any questions."
 
-  check_first_tuesday:
-    name: Check if today is the first Tuesday
+  check_first_monday:
+    name: Check if today is the first Monday
     runs-on: ubuntu-latest
     outputs:
       continue: ${{ steps.check.outputs.continue }}
     steps:
-      - name: Check if today is the first Tuesday
+      - name: Check if today is the first Monday
         id: check
         run: |
           day=$(date -u +'%d')
           weekday=$(date -u +'%u')
-          if [ "$weekday" -eq 2 ] && [ "$day" -le 7 ]; then
+          if [ "$weekday" -eq 1 ] && [ "$day" -le 7 ]; then
             echo "continue=true" >> $GITHUB_OUTPUT
           else
             echo "continue=false" >> $GITHUB_OUTPUT
           fi
 
   trigger_nonprod_jiraqa:
-    name: Trigger JIRAQA Patching (First Tuesday)
-    needs: check_first_tuesday
-    if: needs.check_first_tuesday.outputs.continue == 'true' && github.event_name == 'schedule'
+    name: Trigger JIRAQA Patching (First Monday)
+    needs: check_first_monday
+    if: needs.check_first_monday.outputs.continue == 'true' && github.event_name == 'schedule'
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraqa"
@@ -99,8 +99,8 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
-            --subject "JIRAQA Patching Failed" \
-            --message "Patching on the JIRAQA instance failed. Manual intervention may be required."
+            --subject "ALERT: JIRAQA Monthly Patch Failure" \
+            --message "Automated patching (rolling restart, no expected downtime) for the JIRAQA environment has failed. Immediate manual intervention is required. Please check GitHub Actions logs for details."
 
   notify_failure_jiraupg:
     needs: trigger_nonprod_jiraupg
@@ -118,8 +118,8 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
-            --subject "JIRAUPG Patching Failed" \
-            --message "Patching on the JIRAUPG instance failed. Manual intervention may be required."
+            --subject "ALERT: JIRAUPG Monthly Patch Failure" \
+            --message "Automated patching (rolling restart, no expected downtime) for the JIRAUPG environment has failed. Immediate manual intervention is required. Please check GitHub Actions logs for details."
 
   notify_prod:
     name: Notify PROD Patching (Last Friday)
@@ -153,8 +153,8 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-            --subject "PROD Patching Notification" \
-            --message "PROD JIRA patching is scheduled for Saturday morning (EST). Please prepare accordingly."
+            --subject "Production JIRA Monthly Patch - Rolling Restart (No Downtime)" \
+            --message "Automated notice: Production JIRA patching is scheduled for Saturday morning (EST) following the last Friday of this month. A rolling restart will be performed and no application downtime is expected. Please contact DevOps if you have questions."
 
   trigger_prod:
     name: Trigger PROD Patching
@@ -162,7 +162,6 @@ jobs:
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraprod"
-      KEY: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
     secrets:
       inherit: true
       VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
@@ -184,5 +183,5 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-            --subject "JIRAPROD Patching Failed" \
-            --message "Patching on the JIRAPROD instance failed. Please investigate immediately."
+            --subject "URGENT: Production JIRA Monthly Patch Failure" \
+            --message "Critical: The scheduled monthly rolling restart patching process for Production JIRA (JIRAPROD) has failed. Immediate investigation is required. Review GitHub Actions logs and notify stakeholders."
