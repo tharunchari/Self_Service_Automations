@@ -1,0 +1,32 @@
+name: Mirror GitHub Repos to AWS CodeCommit
+ 
+on:
+  workflow_dispatch:
+ 
+jobs:
+  GitHub_Backup:
+    name: Run Ansible Playbook
+    runs-on: Internal_Tools_Automation_Server
+ 
+    env:
+      path_00: /u02/github_to_codecommit
+      path_01: /u02/github_to_codecommit/github_clone
+      path_02: /u02/github_to_codecommit/logs
+      github_username: github-bamboo_vitech
+      github_password: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+      organization: vitechsystems
+      region: us-west-2
+      codecommit_username: ${{ secrets.CODECOMMIT_USERNAME }}
+      codecommit_password: ${{ secrets.CODECOMMIT_PASSWORD }}
+      smtp_host: smtp-relay.vitech.com
+      smtp_port: '25'
+      from_mail: v3opsinternal@vitechinc.com
+      to_mail: v3atlassianops@vitechinc.com
+ 
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+ 
+      - name: Run Ansible Playbook
+        run: |
+          ansible-playbook -i localhost, --connection=local Ansible/github_backup.yml
