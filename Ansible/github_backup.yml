@@ -1,0 +1,180 @@
+---
+- name: print starting date and time 
+  shell: date
+  register: date_1
+
+- debug:
+    msg: "{{ date_1.stdout }}"
+
+- shell: "{{ path_00 }}/github_repo_names.sh"
+  register: script_output
+  environment:
+    TOKEN: "{{ github_password }}"
+    ORG_NAME: "{{ organization }}"
+  become: false
+
+- name: Set Ansible fact with repository names
+  set_fact:
+    github_repos_names: "{{ script_output.stdout | regex_replace('\n', '') | split(' ') | map('trim') | select | list }}"
+
+- debug:
+    msg: "{{ github_repos_names }}"
+
+- name: filtering Nextgen and CoreAdmin from list
+  set_fact: 
+    filtered_github_repos: "{{ github_repos_names | difference(['CoreAdmin', 'Nextgen']) }}"
+
+- debug:
+    msg: "{{ filtered_github_repos }}"
+
+- name: create a directory
+  file: 
+    path: "{{ path_00 }}"
+    state: directory
+
+- name: create a directory
+  file: 
+    path: "{{ path_01 }}"
+    state: directory
+
+- name: Clone GitHub repositories
+  shell: |
+    cd {{ path_01 }}
+    if [ -d {{ item }}.git ]; then
+      git -C {{ item }}.git remote update
+    else
+      git clone --mirror https://{{ github_username }}:{{ github_password }}@github.com/{{ organization }}/{{ item }}
+    fi
+  loop: "{{ github_repos_names }}" 
+  register: git_clone_results
+
+- name: Create CodeCommit repositories 
+  shell: aws codecommit create-repository --repository-name "{{ item }}" --region {{ region }} 
+  register: codecommit_create_results 
+  with_items: "{{ github_repos_names }}"
+  ignore_errors: yes
+
+- name: Newly created repos on codecommit
+  set_fact:
+    codecommit_repo_names: "{{ codecommit_repo_names | default([]) + [item.item] | list }}"
+  with_items: "{{ codecommit_create_results.results }}"
+  when: item.rc == 0
+ 
+- name: Display newly created repositories
+  debug:
+    msg: "{{ codecommit_repo_names }}"
+  when: codecommit_repo_names is defined
+
+- name: Push code to newly created repositories on CodeCommit
+  shell: |
+    cp -r /u02/incremental-repo-migration.py {{ path_01 }}/{{ item }}.git/
+    cd {{ path_01 }}/{{ item }}.git
+    git remote add codecommit https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+    python incremental-repo-migration.py
+    git remote remove codecommit
+  register: codecommit_first_push_result 
+  when: codecommit_repo_names is defined
+  loop: "{{ codecommit_repo_names }}"
+  ignore_errors: yes
+
+- name: sending mail
+  mail:
+                 host: '{{smtp_host}}'
+                 port: '{{smtp_port}}'
+                 subject: "New Repositories Added To CodeCommit"
+                 body: |
+                   A New repository have been added to CodeCommit:
+       
+                   {%for repo in codecommit_repo_names %}
+                     - {{ repo }}
+                   {% endfor %}
+
+                   Please verify.
+
+
+                   Thanks,
+                   v3atlassianops
+                 from: '{{from_mail}}'
+                 to: '{{to_mail}}'
+  when: codecommit_repo_names is defined
+
+- name: Push code to Nextgen after deleting feature branches
+  shell: |
+    cd {{ path_01 }}/Nextgen.git
+    git fetch --prune
+    git branch -D $(git branch | grep 'source_audit_')
+    git branch -D $(git branch | grep 'nextgen_l5_f')
+    git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/Nextgen
+  register: codecommit_push_nextgen
+
+
+- name: Push code to CoreAdmin after deleting feature branches
+  shell: |
+    cd {{ path_01 }}/CoreAdmin.git
+    git fetch --prune
+    git branch -D $(git branch | grep 'v310uc_L5_f')
+    git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/CoreAdmin
+  register: codecommit_push_coreadmin
+
+
+- name: Push all repositories to CodeCommit
+  shell: |
+    cd {{ path_01 }}/{{ item }}.git
+    git fetch --prune
+    git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+  register: codecommit_push_result 
+  loop: "{{ filtered_github_repos }}"
+
+- name: check for directory
+  stat:
+    path: "{{ path_02 }}"
+  register: user_check
+
+- name: Remove svn_git_coreadmin_clone directory 
+  file: 
+    path: "{{ path_02 }}" 
+    state: absent 
+  when: user_check.stat.exists == true 
+
+- name: create a directory
+  file: 
+    path: "{{ path_02 }}"
+    state: directory
+
+- name: Save git clone log to file 
+  copy: 
+    content: "{{ git_clone_results }}" 
+    dest: "{{ path_02 }}/git_clone_results.log"
+
+- name: Save codecommit_create_results log to file 
+  copy: 
+    content: "{{ codecommit_create_results }}" 
+    dest: "{{ path_02 }}/codecommit_create_results.log"
+
+- name: Save codecommit_first_push_result log to file 
+  copy: 
+    content: "{{ codecommit_first_push_result }}" 
+    dest: "{{ path_02 }}/codecommit_first_push_result.log"
+
+- name: Save codecommit_push_result log to file 
+  copy: 
+    content: "{{ codecommit_push_result }}" 
+    dest: "{{ path_02 }}/codecommit_push_result.log"
+
+- name: Save git clone log to file 
+  copy: 
+    content: "{{ codecommit_push_nextgen }}" 
+    dest: "{{ path_02 }}/codecommit_push_nextgen.log"
+
+- name: Save codecommit_create_results log to file 
+  copy: 
+    content: "{{ codecommit_push_coreadmin }}" 
+    dest: "{{ path_02 }}/codecommit_push_coreadmin.log"
+
+
+- name: print ending date and time 
+  shell: date
+  register: date_2
+
+- debug:
+    msg: "{{ date_2.stdout }}"
