@@ -1,0 +1,56 @@
+---
+- name: print starting date and time 
+  shell: date
+  register: date_1
+
+- debug:
+    msg: "{{ date_1.stdout }}"
+
+- shell: "{{ path_00 }}/github_repo_names.sh"
+  register: script_output
+  environment:
+    TOKEN: "{{ github_password }}"
+    ORG_NAME: "{{ organization }}"
+  become: false
+
+- name: Set Ansible fact with repository names
+  set_fact:
+    github_repos_names: "{{ script_output.stdout | regex_replace('\n', '') | split(' ') | map('trim') | select | list }}"
+
+- debug:
+    msg: "{{ github_repos_names }}"
+
+- name: filtering Nextgen and CoreAdmin from list
+  set_fact: 
+    filtered_github_repos: "{{ github_repos_names | difference(['CoreAdmin', 'Nextgen']) }}"
+
+- debug:
+    msg: "{{ filtered_github_repos }}"
+
+- name: create a directory
+  file: 
+    path: "{{ path_00 }}"
+    state: directory
+
+- name: create a directory
+  file: 
+    path: "{{ path_01 }}"
+    state: directory
+
+- name: Clone GitHub repositories
+  shell: |
+    cd {{ path_01 }}
+    if [ -d {{ item }}.git ]; then
+      git -C {{ item }}.git remote update
+    else
+      git clone --mirror https://{{ github_username }}:{{ github_password }}@github.com/{{ organization }}/{{ item }}
+    fi
+  loop: "{{ github_repos_names }}" 
+  register: git_clone_results
+
+- name: print ending date and time 
+  shell: date
+  register: date_2
+
+- debug:
+    msg: "{{ date_2.stdout }}"
