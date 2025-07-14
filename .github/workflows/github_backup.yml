@@ -4,8 +4,13 @@ on:
   workflow_dispatch:
  
 jobs:
+  start-runner:
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    secrets: inherit
+
   GitHub_Backup:
     name: Run Ansible Playbook
+    needs: start-runner
     runs-on: Internal_Tools_Automation_Server
  
     env:
@@ -29,4 +34,4 @@ jobs:
  
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook -i localhost, --connection=local Ansible/github_backup.yml
+          ansible-playbook -i localhost, --connection=local Ansible/github_backup_1.yml
