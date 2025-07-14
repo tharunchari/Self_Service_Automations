@@ -1,5 +1,7 @@
 ---
 - hosts: localhost
+  connection: local
+  gather_facts: false
   tasks:
     - name: print starting date and time
       shell: date
