@@ -86,7 +86,7 @@ jobs:
 
         run: |
 
-          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_ssh_pass='${ANSIBLE_PASSWORD}'"
+          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_ssh_pass='${ANSIBLE_SSH_PASS}'"
  
 #  stop-runner:
 
