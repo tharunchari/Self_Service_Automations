@@ -1,5 +1,5 @@
 ---
-- hosts: localhost
+- hosts: Internal_Server
   gather_facts: yes
   tasks:
     - name: print starting date and time
