@@ -9,7 +9,7 @@
     - debug:
         msg: "{{ date_1.stdout }}"
 
-    - shell: "{{ path_00 }}/github_repo_names.sh"
+    - shell: "shell_scripts/github_repo_names.sh"
       register: script_output
       environment:
         TOKEN: "{{ github_password }}"
