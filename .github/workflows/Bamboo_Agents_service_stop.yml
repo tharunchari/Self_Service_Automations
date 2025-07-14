@@ -107,8 +107,7 @@ jobs:
 
         run: |
 
-          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory 
-
-  # --extra-vars "ansible_user=bamboo ansible_ssh_pass='${{ secrets.ANSIBLE_SSH_PASS }}'"
+          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory \ 
+            --extra-vars "ansible_user=bamboo ansible_ssh_pass='${{ secrets.ANSIBLE_SSH_PASS }}'"
 
  
