@@ -38,7 +38,7 @@ jobs:
 
     env:
 
-      ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_PASSWORD }}
+      ANSIBLE_PASSWORD: $'${{ secrets.ANSIBLE_PASSWORD }}'$
  
     steps:
 
@@ -86,7 +86,7 @@ jobs:
 
         run: |
 
-          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_ssh_pass=${ANSIBLE_PASSWORD}"
+          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_ssh_pass=$'${{ secrets.ANSIBLE_PASSWORD }}'$"
  
 #  stop-runner:
 
