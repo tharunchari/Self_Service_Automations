@@ -9,9 +9,9 @@
     - debug:
         msg: "{{ date_1.stdout }}"
 
-    - shell: "{{ lookup('env',  'path_00') }}/github_repo_names.sh"
+    - shell: "{{ path_00 }}/github_repo_names.sh"
       register: script_output
       environment:
-        TOKEN: "{{ lookup('env',  'github_password') }}"
-        ORG_NAME: "{{ lookup('env',  'organization') }}"
+        TOKEN: "{{ github_password }}"
+        ORG_NAME: "{{ organization }}"
       become: false
