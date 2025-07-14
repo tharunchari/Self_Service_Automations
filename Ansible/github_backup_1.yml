@@ -9,6 +9,12 @@
     - debug:
         msg: "{{ date_1.stdout }}"
 
+    - name: Make github_repo_names.sh executable
+      file:
+        path: "../shell_scripts/github_repo_names.sh"
+        mode: '0755'
+        state: file
+
     - shell: "../shell_scripts/github_repo_names.sh"
       register: script_output
       environment:
