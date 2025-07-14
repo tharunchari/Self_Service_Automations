@@ -1,7 +1,7 @@
 import os
  
 def main():
-    secret = os.getenv("SECRET_CODE_GITHUB")
+    secret = os.getenv("ANSIBLE_PASSWORD")
     if secret:
         # Never print the raw secret! This is just for demonstration.
         print("✅ SECRET_CODE_GITHUB is set.")
