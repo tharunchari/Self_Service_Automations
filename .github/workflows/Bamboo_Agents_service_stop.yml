@@ -93,7 +93,7 @@ jobs:
 
         env:
 
-          ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
+          ANSIBLE_PASSWORD: '${{ secrets.ANSIBLE_SSH_PASS }}'
 
           RUNNER_NAME: ${{ env.RUNNER_NAME }}
 
