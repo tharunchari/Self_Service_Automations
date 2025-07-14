@@ -1,0 +1,9 @@
+---
+- hosts: all
+  tasks:
+
+    - name: Stop VM-BAMBOOPREPRD-TEST-AGENT.vitech.com
+      shell:  /u01/BambooCLOUDAGNT/bin/bamboo-agent.sh stop
+      become: true
+      become_user: bamboo
+      when:  ansible_host == '172.26.46.219'
