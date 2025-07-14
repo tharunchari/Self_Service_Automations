@@ -1,0 +1,91 @@
+---
+
+name: Bamboo agents stop
+ 
+env:
+
+  RUNNER_NAME: "Internal_Tools_Automation_Server"
+
+  INSTANCE_ID: "i-020530b54ac86537b"
+ 
+jobs:
+
+  start-runner:
+
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+
+    secrets: inherit
+ 
+  execute-job:
+
+    name: Execute Job on Self-Hosted Runner
+
+    needs: start-runner
+
+    runs-on: [self-hosted, Internal_Tools_Automation_Server]
+
+    env:
+
+      ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
+ 
+    steps:
+
+      - name: Checkout repository
+
+        uses: actions/checkout@v4
+ 
+      - name: Set up AWS CLI
+
+        uses: vitechsystems/configure-aws-credentials@v1.0
+
+        with:
+
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+
+          aws-region: ${{ vars.AWS_REGION }}
+ 
+      - name: Validate Authentication Key
+
+        id: validate_key
+
+        if: github.event_name == 'workflow_dispatch'
+
+        run: |
+
+          if [[ "${{ inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
+
+            echo "Invalid authentication key."
+
+            aws sns publish \
+
+              --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+
+              --message "$(echo -e "**${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n$(date +%Y-%m-%d)")" \
+
+              --subject "${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Patching Aborted: Invalid Key"
+
+            exit 1
+
+          fi
+ 
+      - name: Run Ansible Playbook
+
+        run: |
+
+          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_password=${ANSIBLE_PASSWORD}"
+ 
+  stop-runner:
+
+    name: Stop Self-Hosted Runner
+
+    needs: execute-job
+
+    if: always()
+
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+
+    secrets: inherit
+
+ 
