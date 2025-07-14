@@ -35,10 +35,6 @@ jobs:
     needs: start-runner
 
     runs-on: [self-hosted, Internal_Tools_Automation_Server]
-
-    env:
-
-       ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
  
     steps:
 
@@ -74,30 +70,42 @@ jobs:
 
               --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
 
-              --message "$(echo -e "**${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n$(date +%Y-%m-%d)")" \
+              --message "$(echo -e "**Patching Aborted**\n\nInvalid authentication key provided.\n$(date +%Y-%m-%d)")" \
 
-              --subject "${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Patching Aborted: Invalid Key"
+              --subject "Patching Aborted: Invalid Key"
 
             exit 1
 
           fi
  
-      - name: Run Ansible Playbook
+      - name: ✅ Print env variable (masked) - password length only
 
         run: |
 
-          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_ssh_pass='${ANSIBLE_SSH_PASS}'"
+          echo "Ansible password length is: ${#ANSIBLE_PASSWORD}"
+
+          echo "Runner Name: $RUNNER_NAME"
+
+          echo "Instance ID: $INSTANCE_ID"
+
+        env:
+
+          ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
+
+          RUNNER_NAME: ${{ env.RUNNER_NAME }}
+
+          INSTANCE_ID: ${{ env.INSTANCE_ID }}
  
-#  stop-runner:
+      - name: Run Ansible Playbook
 
-#    name: Stop Self-Hosted Runner
+        env:
 
-#    needs: execute-job
+          ANSIBLE_HOST_KEY_CHECKING: false
 
-#    if: always()
+        run: |
 
-#    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory \
 
-#    secrets: inherit
+            --extra-vars "ansible_user=bamboo ansible_ssh_pass='${{ secrets.ANSIBLE_SSH_PASS }}'"
 
  
