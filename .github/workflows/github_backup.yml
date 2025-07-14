@@ -1,4 +1,4 @@
-name: Mirror GitHub Repos to AWS CodeCommit_TEST
+name: TEST_Mirror GitHub Repos to AWS CodeCommit
  
 on:
   workflow_dispatch:
