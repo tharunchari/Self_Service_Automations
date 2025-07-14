@@ -29,4 +29,4 @@ jobs:
  
       - name: Run Ansible Playbook
         run: |
-          sudo ansible-playbook Ansible/github_backup_1.yml -i Ansible/inventory -e "github_password=${{ secrets.PROD_FINE_GRAINED_PAT }}" organization=vitechsystems"
+          sudo ansible-playbook Ansible/github_backup_1.yml -i Ansible/inventory -e "github_password=${{ secrets.PROD_FINE_GRAINED_PAT }} organization=vitechsystems"
