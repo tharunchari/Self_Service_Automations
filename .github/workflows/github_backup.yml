@@ -29,7 +29,7 @@ jobs:
  
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook Ansible/github_backup_1.yml -i Ansible/inventory \
+          sudo ansible-playbook Ansible/github_backup_1.yml -i Ansible/inventory \
             --extra-vars "
               path_00=/u02/github_to_codecommit
               path_01=/u02/github_to_codecommit/github_clone
