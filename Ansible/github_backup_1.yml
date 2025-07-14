@@ -1,5 +1,6 @@
 ---
 - hosts: localhost
+  gather_facts: yes
   tasks:
     - name: print starting date and time
       shell: date
