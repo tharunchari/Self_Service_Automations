@@ -1,1 +1,2 @@
-localhost
+[Internal_Server]
+localhost ansible_connection=local
