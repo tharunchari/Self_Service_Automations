@@ -7,3 +7,7 @@
       become: true
       become_user: bamboo
       when:  ansible_host == '172.26.46.219'
+
+    - name: Debug password
+      debug:
+        msg: "Password is {{ ansible_ssh_pass | length }} characters long"
