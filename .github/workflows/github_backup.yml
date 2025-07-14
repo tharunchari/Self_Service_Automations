@@ -35,3 +35,9 @@ jobs:
       - name: Run Ansible Playbook
         run: |
           ansible-playbook Ansible/github_backup_1.yml
+
+  stop-runner:
+    needs: GitHub_Backup
+    if: always() 
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    secrets: inherit
