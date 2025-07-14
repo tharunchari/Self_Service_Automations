@@ -79,7 +79,7 @@ jobs:
           fi
 
       - name: Debug ansible_ssh_pass value
-        run: echo "Password is: ${{ secrets.ANSIBLE_SSH_PASS }}"
+        run: echo "Password is:${{ secrets.ANSIBLE_SSH_PASS }}"
 
       - name: ✅ Print env variable (masked) - password length only
 
