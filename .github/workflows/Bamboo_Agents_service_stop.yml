@@ -3,6 +3,16 @@ name: Bamboo agents stop
 on:
 
   workflow_dispatch:
+
+    inputs:
+
+      KEY:
+
+        description: "Authentication key"
+
+        required: true
+
+        type: string
  
 env:
 
