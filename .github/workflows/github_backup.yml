@@ -34,7 +34,22 @@ jobs:
  
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook Ansible/github_backup_1.yml
+          ansible-playbook Ansible/github_backup_1.yml \
+            --extra-vars "
+              path_00=/u02/github_to_codecommit
+              path_01=/u02/github_to_codecommit/github_clone
+              path_02=/u02/github_to_codecommit/logs
+              github_username=github-bamboo_vitech
+              github_password=${{ secrets.PROD_FINE_GRAINED_PAT }}
+              organization=vitechsystems
+              region=us-west-2
+              codecommit_username=${codecommit_username}
+              codecommit_password=${codecommit_password}
+              smtp_host=${smtp_host}
+              smtp_port=${smtp_port}
+              from_mail=${from_mail}
+              to_mail=${to_mail}
+      "
 
   stop-runner:
     needs: GitHub_Backup
