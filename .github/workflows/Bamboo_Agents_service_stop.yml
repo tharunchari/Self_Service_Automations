@@ -1,6 +1,34 @@
----
-
 name: Bamboo agents stop
+ 
+on:
+
+  workflow_dispatch:
+
+    inputs:
+
+      KEY:
+
+        description: "Authentication key to authorize patching"
+
+        required: true
+
+        type: string
+
+      APP_ENVIRONMENT:
+
+        description: "Application environment (e.g., DEV, UAT, PROD)"
+
+        required: true
+
+        type: string
+
+      APP_COMPONENT:
+
+        description: "Component to patch (e.g., Bamboo)"
+
+        required: true
+
+        type: string
  
 env:
 
@@ -54,7 +82,7 @@ jobs:
 
         run: |
 
-          if [[ "${{ inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
+          if [[ "${{ github.event.inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
 
             echo "Invalid authentication key."
 
@@ -87,3 +115,5 @@ jobs:
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
 
     secrets: inherit
+
+ 
