@@ -88,16 +88,16 @@ jobs:
 
           ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_password=${ANSIBLE_PASSWORD}"
  
-  stop-runner:
+#  stop-runner:
 
-    name: Stop Self-Hosted Runner
+#    name: Stop Self-Hosted Runner
 
-    needs: execute-job
+#    needs: execute-job
 
-    if: always()
+#    if: always()
 
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+#    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
 
-    secrets: inherit
+#    secrets: inherit
 
  
