@@ -93,7 +93,7 @@ jobs:
 
         env:
 
-          ANSIBLE_PASSWORD: '${{ secrets.ANSIBLE_SSH_PASS }}'
+      #    ANSIBLE_PASSWORD: '${{ secrets.ANSIBLE_SSH_PASS }}'
 
           RUNNER_NAME: ${{ env.RUNNER_NAME }}
 
@@ -107,8 +107,8 @@ jobs:
 
         run: |
 
-          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory \
+          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory 
 
-            --extra-vars "ansible_user=bamboo ansible_ssh_pass='${{ secrets.ANSIBLE_SSH_PASS }}'"
+  # --extra-vars "ansible_user=bamboo ansible_ssh_pass='${{ secrets.ANSIBLE_SSH_PASS }}'"
 
  
