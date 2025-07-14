@@ -3,32 +3,6 @@ name: Bamboo agents stop
 on:
 
   workflow_dispatch:
-
-    inputs:
-
-      KEY:
-
-        description: "Authentication key to authorize patching"
-
-        required: true
-
-        type: string
-
-      APP_ENVIRONMENT:
-
-        description: "Application environment (e.g., DEV, UAT, PROD)"
-
-        required: true
-
-        type: string
-
-      APP_COMPONENT:
-
-        description: "Component to patch (e.g., Bamboo)"
-
-        required: true
-
-        type: string
  
 env:
 
