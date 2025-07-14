@@ -1,3 +1,3 @@
 [all]
 #VM-BAMBOOPREPRD-AGENT.vitech.com
-172.26.46.219 ansible_user=bamboo ansible_ssh_pass="{{ ansible_ssh_pass }}"
+172.26.46.219 ansible_user=bamboo ansible_ssh_pass='{{ ansible_ssh_pass }}'
