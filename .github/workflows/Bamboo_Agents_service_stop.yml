@@ -8,10 +8,10 @@ on:
         required: true
       APP_ENVIRONMENT:
         description: 'Environment (e.g., dev, prod)'
-        required: true
+        required: false
       APP_COMPONENT:
         description: 'Component name (e.g., Bamboo)'
-        required: true
+        required: false
 
 env:
   RUNNER_NAME: "Internal_Tools_Automation_Server"
