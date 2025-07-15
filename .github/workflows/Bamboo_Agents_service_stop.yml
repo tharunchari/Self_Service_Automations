@@ -97,7 +97,7 @@ jobs:
 
           ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory \
 
-          --extra-vars "ansible_user=bamboo ansible_ssh_pass=$ANSIBLE_PASSWORD my_secure_pass=$ANSIBLE_PASSWORD"
+          --extra-vars "ansible_ssh_pass=$ANSIBLE_PASSWORD my_secure_pass=$ANSIBLE_PASSWORD"
 
  
 
