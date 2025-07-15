@@ -15,7 +15,7 @@
         mode: '0755'
         state: file
 
-    - shell: "../shell_scripts/github_repo_names.sh"
+    - shell: "../shell_scripts/github_repo_names_both.sh"
       register: script_output
       environment:
         token_1: "{{ github_password_1 }}" 
