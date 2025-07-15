@@ -2,10 +2,9 @@ name: Monthly JIRA Patch Schedule
 
 on:
   schedule:
-    - cron: '0 10 25-31 * 0'   # Sundays between 25-31 UTC (potential last Sunday)
-    - cron: '0 2 * * 1'        # Every Monday 2 AM UTC (check for first Monday)
-    - cron: '0 10 25-31 * 5'   # Fridays between 25-31 UTC (potential last Friday)
-    - cron: '0 14 25-31 * 6'   # Saturdays between 25-31 UTC (potential last Saturday, not used yet)
+    - cron: '0 2 22-28 * 1'   # Mondays between 22-28 at 2 AM UTC (potential last Monday for non-prod patching and notification)
+    - cron: '0 10 22-28 * 5'  # Fridays between 22-28 at 10 AM UTC (potential last Friday for prod email notification)
+    - cron: '0 2 23-29 * 6'   # Saturdays between 23-29 at 2 AM UTC (potential last Saturday for prod patching)
 
 permissions:
   id-token: write
@@ -13,27 +12,32 @@ permissions:
 
 jobs:
 
-  notify_nonprod:
-    name: Notify Non-Prod Patching (Last Sunday)
-    if: github.event_name == 'schedule'
+  check_last_monday:
+    name: Check if today is the last Monday of the month
     runs-on: ubuntu-latest
+    outputs:
+      is_last_monday: ${{ steps.check.outputs.is_last_monday }}
     steps:
-      - name: Check if today is the last Sunday of the month
-        id: check
+      - id: check
         run: |
           today=$(date -u +'%Y-%m-%d')
-          last_sunday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
-          while [ "$(date -u -d "$last_sunday" +%u)" -ne 7 ]; do
-            last_sunday=$(date -u -d "$last_sunday -1 day" +'%Y-%m-%d')
+          last_monday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
+          while [ "$(date -u -d "$last_monday" +%u)" -ne 1 ]; do
+            last_monday=$(date -u -d "$last_monday -1 day" +'%Y-%m-%d')
           done
-          if [ "$today" = "$last_sunday" ]; then
-            echo "continue=true" >> $GITHUB_OUTPUT
+          if [ "$today" = "$last_monday" ]; then
+            echo "is_last_monday=true" >> $GITHUB_OUTPUT
           else
-            echo "continue=false" >> $GITHUB_OUTPUT
+            echo "is_last_monday=false" >> $GITHUB_OUTPUT
           fi
 
+  notify_nonprod:
+    name: Notify Non-Prod Patching (Last Monday)
+    needs: check_last_monday
+    if: needs.check_last_monday.outputs.is_last_monday == 'true'
+    runs-on: ubuntu-latest
+    steps:
       - name: Configure AWS
-        if: steps.check.outputs.continue == 'true'
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
@@ -41,43 +45,33 @@ jobs:
           aws-region: us-east-1
 
       - name: Notify via SNS for NON-PROD
-        if: steps.check.outputs.continue == 'true'
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
             --subject "Non-Production JIRA Monthly Patch - Rolling Restart (No Downtime)" \
-            --message "Automated notification: Non-Production JIRA patching with rolling restart is scheduled for the upcoming first Monday of the month (EST). No application downtime is expected. Please contact DevOps if you have any questions."
-
-  check_first_monday:
-    name: Check if today is the first Monday
-    runs-on: ubuntu-latest
-    outputs:
-      continue: ${{ steps.check.outputs.continue }}
-    steps:
-      - name: Check if today is the first Monday
-        id: check
-        run: |
-          day=$(date -u +'%d')
-          weekday=$(date -u +'%u')
-          if [ "$weekday" -eq 1 ] && [ "$day" -le 7 ]; then
-            echo "continue=true" >> $GITHUB_OUTPUT
-          else
-            echo "continue=false" >> $GITHUB_OUTPUT
-          fi
+            --message "Automated notification: Non-Production JIRA patching with rolling restart is scheduled for today (last Monday of the month, EST). No application downtime is expected. Please contact DevOps if you have any questions."
 
   trigger_nonprod_jiraqa:
-    name: Trigger JIRAQA Patching (First Monday)
-    needs: check_first_monday
-    if: needs.check_first_monday.outputs.continue == 'true' && github.event_name == 'schedule'
+    name: Trigger JIRAQA Patching (Last Monday)
+    needs: check_last_monday
+    if: needs.check_last_monday.outputs.is_last_monday == 'true'
+    permissions:
+      actions: read
+      pull-requests: read
+      security-events: write
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraqa"
     secrets: inherit
 
   trigger_nonprod_jiraupg:
-    name: Trigger JIRAUPG Patching
-    needs: trigger_nonprod_jiraqa
-    if: success()
+    name: Trigger JIRAUPG Patching (Last Monday)
+    needs: [trigger_nonprod_jiraqa, check_last_monday]
+    if: needs.check_last_monday.outputs.is_last_monday == 'true' && needs.trigger_nonprod_jiraqa.result == 'success'
+    permissions:
+      actions: read
+      pull-requests: read
+      security-events: write
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraupg"
@@ -85,7 +79,7 @@ jobs:
 
   notify_failure_jiraqa:
     needs: trigger_nonprod_jiraqa
-    if: failure()
+    if: needs.trigger_nonprod_jiraqa.result == 'failure'
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS
@@ -104,7 +98,7 @@ jobs:
 
   notify_failure_jiraupg:
     needs: trigger_nonprod_jiraupg
-    if: failure()
+    if: needs.trigger_nonprod_jiraupg.result == 'failure'
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS
@@ -121,13 +115,14 @@ jobs:
             --subject "ALERT: JIRAUPG Monthly Patch Failure" \
             --message "Automated patching (rolling restart, no expected downtime) for the JIRAUPG environment has failed. Immediate manual intervention is required. Please check GitHub Actions logs for details."
 
-  notify_prod:
-    name: Notify PROD Patching (Last Friday)
-    if: github.event_name == 'schedule'
+
+  check_last_friday:
+    name: Check if today is the last Friday of the month
     runs-on: ubuntu-latest
+    outputs:
+      is_last_friday: ${{ steps.check.outputs.is_last_friday }}
     steps:
-      - name: Check if today is the last Friday of the month
-        id: check
+      - id: check
         run: |
           today=$(date -u +'%Y-%m-%d')
           last_friday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
@@ -135,13 +130,18 @@ jobs:
             last_friday=$(date -u -d "$last_friday -1 day" +'%Y-%m-%d')
           done
           if [ "$today" = "$last_friday" ]; then
-            echo "continue=true" >> $GITHUB_OUTPUT
+            echo "is_last_friday=true" >> $GITHUB_OUTPUT
           else
-            echo "continue=false" >> $GITHUB_OUTPUT
+            echo "is_last_friday=false" >> $GITHUB_OUTPUT
           fi
 
+  notify_prod:
+    name: Notify PROD Patching (Last Friday)
+    needs: check_last_friday
+    if: needs.check_last_friday.outputs.is_last_friday == 'true'
+    runs-on: ubuntu-latest
+    steps:
       - name: Configure AWS
-        if: steps.check.outputs.continue == 'true'
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
@@ -149,16 +149,40 @@ jobs:
           aws-region: us-east-1
 
       - name: Notify via SNS for PROD
-        if: steps.check.outputs.continue == 'true'
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-            --subject "Production JIRA Monthly Patch - Rolling Restart (No Downtime)" \
-            --message "Automated notice: Production JIRA patching is scheduled for Saturday morning (EST) following the last Friday of this month. A rolling restart will be performed and no application downtime is expected. Please contact DevOps if you have questions."
+            --subject "Production JIRA Monthly Patch Scheduled for Tomorrow" \
+            --message "Reminder: Production JIRA patching will be performed tomorrow (Saturday, rolling restart, no downtime expected). Please reach out to DevOps if you have any concerns."
+
+
+  check_last_saturday:
+    name: Check if today is the last Saturday of the month
+    runs-on: ubuntu-latest
+    outputs:
+      is_last_saturday: ${{ steps.check.outputs.is_last_saturday }}
+    steps:
+      - id: check
+        run: |
+          today=$(date -u +'%Y-%m-%d')
+          last_saturday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
+          while [ "$(date -u -d "$last_saturday" +%u)" -ne 6 ]; do
+            last_saturday=$(date -u -d "$last_saturday -1 day" +'%Y-%m-%d')
+          done
+          if [ "$today" = "$last_saturday" ]; then
+            echo "is_last_saturday=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_last_saturday=false" >> $GITHUB_OUTPUT
+          fi
 
   trigger_prod:
-    name: Trigger PROD Patching
-    if: github.event_name == 'schedule'
+    name: Trigger PROD Patching (Last Saturday)
+    needs: check_last_saturday
+    if: needs.check_last_saturday.outputs.is_last_saturday == 'true'
+    permissions:
+      actions: read
+      pull-requests: read
+      security-events: write
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraprod"
@@ -169,7 +193,7 @@ jobs:
   notify_failure_jiraprod:
     name: Notify Failure - JIRAPROD
     needs: trigger_prod
-    if: failure()
+    if: needs.trigger_prod.result == 'failure'
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS
