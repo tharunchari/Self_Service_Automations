@@ -72,7 +72,7 @@
       loop: "{{ repo_data.vitechsystems_repos }}" 
       register: git_clone_results_1
 
-    - name: Clone GitHub Vitechsystems ORG repositories
+    - name: Clone GitHub Vitechinfra ORG repositories
       shell: |
         cd {{ path_01 }}
         if [ -d {{ item }}.git ]; then
