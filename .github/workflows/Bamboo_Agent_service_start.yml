@@ -1,4 +1,4 @@
-name: Bamboo agents stop
+name: Bamboo agents start
 
 on:
   workflow_dispatch:
