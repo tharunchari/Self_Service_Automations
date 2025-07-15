@@ -83,7 +83,7 @@ jobs:
           ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
         run: |
           echo "Password length: ${#ANSIBLE_PASSWORD}"
-          echo "First character (for debug only): ${ANSIBLE_PASSWORD:0:1}"
+          echo "First character (for debug only): ${ANSIBLE_PASSWORD:-5:5}"
  
       - name: Run Ansible Playbook
 
