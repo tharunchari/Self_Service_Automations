@@ -56,8 +56,6 @@ jobs:
  
       - name: Validate Authentication Key
 
-        id: validate_key
-
         if: github.event_name == 'workflow_dispatch'
 
         run: |
@@ -77,30 +75,33 @@ jobs:
             exit 1
 
           fi
+ 
+      - name: Create Ansible Inventory File
 
-      - name: Print password securely
-        env:
-          ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
         run: |
-          echo "Password length: ${#ANSIBLE_PASSWORD}"
-          echo "First character (for debug only): ${ANSIBLE_PASSWORD:-5:5}"
+
+          cat <<EOF > inventory
+
+          [bamboo_agents]
+          172.26.46.219 
+          172.26.57.13
+ 
+          [bamboo_agents:vars]
+
+          ansible_user=bamboo
+
+          ansible_ssh_pass=${{ secrets.ANSIBLE_SSH_PASS }}
+
+          EOF
  
       - name: Run Ansible Playbook
 
-        env: 
+        env:
 
           ANSIBLE_HOST_KEY_CHECKING: false
 
-          ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}   # <-- this was missing
-
         run: |
 
-          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory \
-
-          --extra-vars "ansible_ssh_pass=$ANSIBLE_PASSWORD my_secure_pass=$ANSIBLE_PASSWORD" -vvv
-
- 
-
-#$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$"
+          ansible-playbook -i inventory Bamboo.agents/bamboo_stop.yml -l bamboo_agents
 
  
