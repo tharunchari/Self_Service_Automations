@@ -100,11 +100,20 @@ jobs:
           INSTANCE_ID: ${{ env.INSTANCE_ID }}
  
       - name: Run Ansible Playbook
-        env:
+
+        env: 
+
           ANSIBLE_HOST_KEY_CHECKING: false
+
+          ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}   # <-- this was missing
+
         run: |
+
           ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory \
-            --extra-vars "ansible_user=bamboo ansible_ssh_pass=$ANSIBLE_PASSWORD my_secure_pass=$ANSIBLE_PASSWORD"
+
+          --extra-vars "ansible_user=bamboo ansible_ssh_pass=$ANSIBLE_PASSWORD my_secure_pass=$ANSIBLE_PASSWORD"
+
+ 
 
 #$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$"
 
