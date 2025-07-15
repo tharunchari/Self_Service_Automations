@@ -104,7 +104,7 @@ jobs:
           ANSIBLE_HOST_KEY_CHECKING: false
         run: |
           ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory \
-            --extra-vars "ansible_ssh_pass='${{ secrets.ANSIBLE_SSH_PASS }}'"
+            --extra-vars "ansible_user=bamboo ansible_ssh_pass='${{ secrets.ANSIBLE_SSH_PASS }}' my_secure_pass='${{ secrets.ANSIBLE_SSH_PASS }}'"
 
 #$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$"
 
