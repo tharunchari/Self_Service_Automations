@@ -1,7 +1,7 @@
 [all]
 
 #Host Name BAMBOO-OEL9-CLOUDAGNT-01-H.vitech.com
-172.26.57.13 ansible_user=bamboo 
+#172.26.57.13 ansible_user=bamboo 
 
 ##Host Name BAMBOO-OEL9-CLOUDAGNT-02.vitech.com
 172.26.57.14 ansible_user=bamboo 
