@@ -90,7 +90,7 @@ jobs:
 
           ansible_user=bamboo
 
-          ansible_ssh_pass=$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$" 
+          ansible_ssh_pass="$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$" 
 
           EOF
  
