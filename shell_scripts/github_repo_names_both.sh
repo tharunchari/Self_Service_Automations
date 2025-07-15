@@ -54,3 +54,17 @@ printf "%s\n" "${common_repos[@]}"
  
 echo -e "\nFiltered repos (unique to $org_name_2):"
 printf "%s\n" "${filtered_repos[@]}"
+
+# Convert Bash arrays to JSON arrays
+to_json_array() {
+  printf '%s\n' "$@" | jq -R . | jq -s .
+}
+ 
+echo "$(
+  jq -n \
+    --argjson org1 "$(to_json_array "${vitechsystems_repos[@]}")" \
+    --argjson org2 "$(to_json_array "${vitechinfra_repos[@]}")" \
+    --argjson common "$(to_json_array "${common_repos[@]}")" \
+    --argjson unique_to_org2 "$(to_json_array "${filtered_repos[@]}")" \
+    '{vitechsystems_repos: $org1, vitechinfra_repos: $org2, common_repos: $common, filtered_repos: $unique_to_org2}'
+)"
