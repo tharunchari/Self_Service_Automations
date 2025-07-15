@@ -34,7 +34,7 @@ jobs:
 
     needs: start-runner
 
-    runs-on: [self-hosted, Internal_Tools_Automation_Server]
+    runs-on: Internal_Tools_Automation_Server
  
     steps:
 
