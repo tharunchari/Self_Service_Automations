@@ -24,6 +24,10 @@
         org_name_2: "{{ organization_2 }}"
       become: false
 
+    - name: Print raw script output
+      debug:
+        msg: "{{ script_output.stdout }}"
+
     - name: Parse JSON output from repo comparison script
       set_fact:
         repo_data: "{{ script_output.stdout | from_json }}"
