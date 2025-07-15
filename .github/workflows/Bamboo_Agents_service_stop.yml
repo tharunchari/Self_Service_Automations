@@ -78,26 +78,12 @@ jobs:
 
           fi
 
-      - name: Debug ansible_ssh_pass value
-        run: echo "Password is:${{ secrets.ANSIBLE_SSH_PASS }}"
-
-      - name: ✅ Print env variable (masked) - password length only
-
-        run: |
-
-          echo "Ansible password length is: ${#ANSIBLE_PASSWORD}"
-
-          echo "Runner Name: $RUNNER_NAME"
-
-          echo "Instance ID: $INSTANCE_ID"
-
+      - name: Print password securely
         env:
-
           ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
-
-          RUNNER_NAME: ${{ env.RUNNER_NAME }}
-
-          INSTANCE_ID: ${{ env.INSTANCE_ID }}
+        run: |
+          echo "Password length: ${#ANSIBLE_PASSWORD}"
+          echo "First character (for debug only): ${ANSIBLE_PASSWORD:0:1}"
  
       - name: Run Ansible Playbook
 
