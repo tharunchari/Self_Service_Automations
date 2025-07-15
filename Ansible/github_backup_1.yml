@@ -1,6 +1,8 @@
 ---
 - hosts: Internal_Server
   gather_facts: yes
+  vars:
+    region: "us-west-2"
   tasks:
     - name: print starting date and time
       shell: date
@@ -70,7 +72,7 @@
           git clone --mirror https://{{ github_username }}:{{ github_password_1 }}@github.com/{{ organization_1 }}/{{ item }}
         fi
       loop: "{{ repo_data.vitechsystems_repos }}" 
-      register: git_clone_results_1
+      register: git_clone_results_vitechsystems
 
     - name: Clone GitHub Vitechinfra ORG repositories
       shell: |
@@ -81,4 +83,21 @@
           git clone --mirror https://{{ github_username }}:{{ github_password_2 }}@github.com/{{ organization_2 }}/{{ item }}
         fi
       loop: "{{ repo_data.filtered_repos }}" 
-      register: git_clone_results_2
+      register: git_clone_results_vitechinfra
+
+    - name: Create CodeCommit repositories for vitechsystems 
+      shell: aws codecommit create-repository --repository-name "{{ item }}" --region {{ region }} 
+      register: codecommit_create_results_vitechsystems 
+      with_items: "{{ repo_data.vitechsystems_repos }}"
+      ignore_errors: yes
+
+    - name: Newly created vitechsystems org repos on codecommit
+      set_fact:
+        codecommit_repo_names_vitechsystems: "{{ codecommit_repo_names_vitechsystems | default([]) + [item.item] | list }}"
+      with_items: "{{ codecommit_create_results_vitechsystems.results }}"
+      when: item.rc == 0
+ 
+    - name: Display newly created vitechsystems org repositories
+      debug:
+        msg: "{{ codecommit_repo_names_vitechsystemscodecommit_repo_names_vitechsystems }}"
+      when: codecommit_repo_names_vitechsystems is defined
