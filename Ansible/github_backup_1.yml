@@ -116,3 +116,7 @@
       when: codecommit_repo_names_vitechsystems is defined
       loop: "{{ codecommit_repo_names_vitechsystems }}"
       ignore_errors: yes
+
+    - name: Display newly created vitechsystems org repositories
+      debug:
+        msg: "{{ codecommit_first_push_result_vitechsystems }}"
