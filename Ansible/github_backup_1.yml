@@ -3,6 +3,9 @@
   gather_facts: yes
   vars:
     region: "us-west-2"
+    path_00: "/u02/github_to_codecommit"
+    path_01: "/u02/github_to_codecommit/github_clone"
+    path_02: "/u02/github_to_codecommit/logs"
   tasks:
     - name: print starting date and time
       shell: date
@@ -101,3 +104,15 @@
       debug:
         msg: "{{ codecommit_repo_names_vitechsystems }}"
       when: codecommit_repo_names_vitechsystems is defined
+
+    - name: Push code to newly created vitechsystems org repositories on CodeCommit
+      shell: |
+        cp -r ../PYTHON_Script/incremental-repo-migration.py {{ path_01 }}/{{ item }}.git/
+        cd {{ path_01 }}/{{ item }}.git
+        git remote add codecommit https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+        python incremental-repo-migration.py
+        git remote remove codecommit
+      register: codecommit_first_push_result_vitechsystems
+      when: codecommit_repo_names_vitechsystems is defined
+      loop: "{{ codecommit_repo_names_vitechsystems }}"
+      ignore_errors: yes
