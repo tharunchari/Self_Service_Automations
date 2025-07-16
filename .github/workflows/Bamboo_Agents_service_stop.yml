@@ -27,8 +27,8 @@ jobs:
     needs: start-runner
     runs-on: [self-hosted, Internal_Tools_Automation_Server]
 
-    env:
-      ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
+  #  env:
+  #    ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
 
     steps:
       - name: Checkout repository
@@ -57,7 +57,7 @@ jobs:
 
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_password=${ANSIBLE_PASSWORD}"
+          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory 
 
   stop-runner:
     name: Stop Self-Hosted Runner
