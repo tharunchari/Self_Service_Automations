@@ -22,9 +22,9 @@ ENTERPRISE = "vitech"  # Replace with your GitHub enterprise name
  
 AWS_REGION = "us-east-1"  # Replace as needed
 
-SES_SENDER = "svallabhuni@vitechinc.com"  # Must be verified in SES
+SES_SENDER = "v3atlassianops@vitechinc.com"  # Must be verified in SES
 
-SES_RECIPIENT = "svallabhuni@vitechinc.com"  # Must be verified if SES is in sandbox
+SES_RECIPIENT = "v3atlassianops@vitechinc.com"  # Must be verified if SES is in sandbox
  
 EMAIL_SUBJECT = "GitHub Enterprise Users Licence Report"
 
