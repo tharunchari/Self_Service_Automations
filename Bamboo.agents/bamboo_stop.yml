@@ -19,3 +19,11 @@
     - name: Debug password
       debug:
         msg: "Password is {{ ansible_ssh_pass | length }} characters long"
+
+    - name: start BAMBOO-OEL9-CLOUDAGNT-02.vitech.com 
+      shell: |
+        source /home/bamboo/.bash_profile
+        /u01/BambooCLOUDAGNT/bin/bamboo-agent.sh start
+      become: true
+      become_user: bamboo
+      when: ansible_host == '172.26.57.14'  # only run on specified host
