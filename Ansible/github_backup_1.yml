@@ -120,3 +120,12 @@
     - name: Display newly created vitechsystems org repositories
       debug:
         msg: "{{ codecommit_first_push_result_vitechsystems }}"
+      when: codecommit_first_push_result_vitechsystems is defined
+
+    - name: Send Notification on Success
+      shell: |
+        aws sns publish \
+          --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+          --message "$(echo -e '**A New repositories have been added to AWS CodeCommit from Vitechsystems GitHub organization:**\n\n{{ codecommit_first_push_result_vitechsystems }}\n\nPlease verify.\n\nThanks,\n\nv3atlassianops')" \
+          --subject "New Vitechsystems Repositories Added To AWS CodeCommit"
+	  when: codecommit_first_push_result_vitechsystems is defined
