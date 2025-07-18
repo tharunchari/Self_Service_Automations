@@ -51,7 +51,7 @@
 
     - name: filtering Nextgen and CoreAdmin from list
       set_fact: 
-        filtered_github_repos: "{{ repo_data.vitechsystems_repos | difference(['CoreAdmin', 'Nextgen']) }}"
+        filtered_vitechsystems_repos: "{{ repo_data.vitechsystems_repos | difference(['CoreAdmin', 'Nextgen']) }}"
 
     - debug:
         msg: "{{ filtered_github_repos }}"
@@ -117,17 +117,51 @@
       loop: "{{ codecommit_repo_names_vitechsystems }}"
       ignore_errors: yes
 
-    - name: Display newly created vitechsystems org repositories
+    - name: Send Notification on Success
+      shell: |
+        aws sns publish \
+          --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+          --message "$(echo -e '**A New repositories have been added to AWS CodeCommit from Vitechsystems GitHub organization:**\n\n{{ codecommit_repo_names_vitechsystems }}\n\nPlease verify.\n\nThanks,\n\nv3atlassianops')" \
+          --subject "New Vitechsystems Repositories Added To AWS CodeCommit"
+      when:
+        - codecommit_first_push_result_vitechsystems is defined
+        - codecommit_first_push_result_vitechsystems.changed | default(false)
+
+    - name: Create CodeCommit repositories for vitechinfra 
+      shell: aws codecommit create-repository --repository-name "{{ item }}" --region {{ region }} 
+      register: codecommit_create_results_vitechinfra 
+      with_items: "{{ repo_data.filtered_repos }}"
+      ignore_errors: yes
+
+    - name: Newly created vitechinfra org repos on codecommit
+      set_fact:
+        codecommit_repo_names_vitechinfra: "{{ codecommit_repo_names_vitechinfra | default([]) + [item.item] | list }}"
+      with_items: "{{ codecommit_create_results_vitechinfra.results }}"
+      when: item.rc == 0
+ 
+    - name: Display newly created vitechinfra org repositories
       debug:
-        msg: "{{ codecommit_first_push_result_vitechsystems }}"
-      when: codecommit_first_push_result_vitechsystems is defined
+        msg: "{{ codecommit_repo_names_vitechinfra }}"
+      when: codecommit_repo_names_vitechinfra is defined
+
+    - name: Push code to newly created vitechinfra org repositories on CodeCommit
+      shell: |
+        cp -r ../PYTHON_Script/incremental-repo-migration.py {{ path_01 }}/{{ item }}.git/
+        cd {{ path_01 }}/{{ item }}.git
+        git remote add codecommit https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+        python incremental-repo-migration.py
+        git remote remove codecommit
+      register: codecommit_first_push_result_vitechinfra
+      when: codecommit_repo_names_vitechinfra is defined
+      loop: "{{ codecommit_repo_names_vitechinfra }}"
+      ignore_errors: yes
 
     - name: Send Notification on Success
       shell: |
         aws sns publish \
           --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-          --message "$(echo -e '**A New repositories have been added to AWS CodeCommit from Vitechsystems GitHub organization:**\n\n{{ codecommit_first_push_result_vitechsystems }}\n\nPlease verify.\n\nThanks,\n\nv3atlassianops')" \
-          --subject "New Vitechsystems Repositories Added To AWS CodeCommit"
+          --message "$(echo -e '**A New repositories have been added to AWS CodeCommit from Vitechinfra GitHub organization:**\n\n{{ codecommit_repo_names_vitechinfra }}\n\nPlease verify.\n\nThanks,\n\nv3atlassianops')" \
+          --subject "New Vitechinfra Repositories Added To AWS CodeCommit"
       when:
-        - codecommit_first_push_result_vitechsystems is defined
-        - codecommit_first_push_result_vitechsystems.changed | default(false)
+        - codecommit_first_push_result_vitechinfra is defined
+        - codecommit_first_push_result_vitechinfra.changed | default(false)
