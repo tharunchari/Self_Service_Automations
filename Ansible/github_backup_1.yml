@@ -183,3 +183,18 @@
         git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/CoreAdmin
       register: codecommit_push_coreadmin
 
+    - name: Push all Vitechsystems repositories to AWS CodeCommit
+      shell: |
+        cd {{ path_01 }}/{{ item }}.git
+        git fetch --prune
+        git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+      register: codecommit_push_result 
+      loop: "{{ filtered_vitechsystems_repos }}"
+
+    - name: Push all Vitechinfra repositories to AWS CodeCommit
+      shell: |
+        cd {{ path_01 }}/{{ item }}.git
+        git fetch --prune
+        git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+      register: codecommit_push_result 
+      loop: "{{ repo_data.filtered_repos }}"
