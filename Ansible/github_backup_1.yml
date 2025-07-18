@@ -165,3 +165,21 @@
       when:
         - codecommit_first_push_result_vitechinfra is defined
         - codecommit_first_push_result_vitechinfra.changed | default(false)
+
+    - name: Push code to Nextgen after deleting feature branches
+      shell: |
+        cd {{ path_01 }}/Nextgen.git
+        git fetch --prune
+        git branch -D $(git branch | grep 'source_audit_')
+        git branch -D $(git branch | grep 'nextgen_l5_f')
+        git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/Nextgen
+      register: codecommit_push_nextgen
+
+    - name: Push code to CoreAdmin after deleting feature branches
+      shell: |
+        cd {{ path_01 }}/CoreAdmin.git
+        git fetch --prune
+        git branch -D $(git branch | grep 'v310uc_L5_f')
+        git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/CoreAdmin
+      register: codecommit_push_coreadmin
+
