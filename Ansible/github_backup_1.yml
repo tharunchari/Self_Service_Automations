@@ -54,7 +54,7 @@
         filtered_vitechsystems_repos: "{{ repo_data.vitechsystems_repos | difference(['CoreAdmin', 'Nextgen']) }}"
 
     - debug:
-        msg: "{{ filtered_github_repos }}"
+        msg: "{{ filtered_vitechsystems_repos }}"
 
     - name: create a directory
       file: 
