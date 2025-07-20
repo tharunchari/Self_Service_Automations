@@ -57,7 +57,7 @@ jobs:
 
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no"
+          ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no" --check
 
 #  stop-runner:
 #    name: Stop Self-Hosted Runner
