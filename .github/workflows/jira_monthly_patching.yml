@@ -56,6 +56,8 @@ jobs:
     needs: check_last_monday
     if: needs.check_last_monday.outputs.is_last_monday == 'true'
     permissions:
+      contents: read
+      id-token: write
       actions: read
       pull-requests: read
       security-events: write
@@ -69,6 +71,8 @@ jobs:
     needs: [trigger_nonprod_jiraqa, check_last_monday]
     if: needs.check_last_monday.outputs.is_last_monday == 'true' && needs.trigger_nonprod_jiraqa.result == 'success'
     permissions:
+      contents: read
+      id-token: write
       actions: read
       pull-requests: read
       security-events: write
@@ -180,6 +184,8 @@ jobs:
     needs: check_last_saturday
     if: needs.check_last_saturday.outputs.is_last_saturday == 'true'
     permissions:
+      contents: read
+      id-token: write
       actions: read
       pull-requests: read
       security-events: write
