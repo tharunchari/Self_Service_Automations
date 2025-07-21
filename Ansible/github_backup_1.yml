@@ -188,7 +188,7 @@
         cd {{ path_01 }}/{{ item }}.git
         git fetch --prune
         git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
-      register: codecommit_push_result 
+      register: codecommit_push_result_vitechsystems
       loop: "{{ filtered_vitechsystems_repos }}"
 
     - name: Push all Vitechinfra repositories to AWS CodeCommit
@@ -196,5 +196,78 @@
         cd {{ path_01 }}/{{ item }}.git
         git fetch --prune
         git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
-      register: codecommit_push_result 
+      register: codecommit_push_result_vitechinfra
       loop: "{{ repo_data.filtered_repos }}"
+
+    - name: check for directory
+      stat:
+        path: "{{ path_02 }}"
+      register: user_check
+
+    - name: Remove svn_git_coreadmin_clone directory 
+      file: 
+        path: "{{ path_02 }}" 
+        state: absent 
+      when: user_check.stat.exists == true 
+
+    - name: create a directory
+      file: 
+        path: "{{ path_02 }}"
+        state: directory
+
+    - name: Save vitechsystems git clone log to file 
+      copy: 
+        content: "{{ git_clone_results_vitechsystems }}" 
+        dest: "{{ path_02 }}/git_clone_results_vitechsystems.log"
+
+    - name: Save codecommit_create_results_vitechsystems log to file 
+      copy: 
+        content: "{{ codecommit_create_results_vitechsystems }}" 
+        dest: "{{ path_02 }}/codecommit_create_results_vitechsystems.log"
+
+    - name: Save codecommit_first_push_result_vitechsystems log to file 
+      copy: 
+        content: "{{ codecommit_first_push_result_vitechsystems }}" 
+        dest: "{{ path_02 }}/codecommit_first_push_result_vitechsystems.log"
+
+    - name: Save codecommit_push_result_vitechsystems log to file 
+      copy: 
+        content: "{{ codecommit_push_result_vitechsystems }}" 
+        dest: "{{ path_02 }}/codecommit_push_result_vitechsystems.log"
+
+    - name: Save vitechsystems git clone log to file 
+      copy: 
+        content: "{{ git_clone_results_vitechinfra }}" 
+        dest: "{{ path_02 }}/git_clone_results_vitechinfra.log"
+
+    - name: Save codecommit_create_results_vitechinfra log to file 
+      copy: 
+        content: "{{ codecommit_create_results_vitechinfra }}" 
+        dest: "{{ path_02 }}/codecommit_create_results_vitechinfra.log"
+
+    - name: Save codecommit_first_push_result_vitechinfra log to file 
+      copy: 
+        content: "{{ codecommit_first_push_result_vitechinfra }}" 
+        dest: "{{ path_02 }}/codecommit_first_push_result_vitechinfra.log"
+
+    - name: Save codecommit_push_result_vitechinfra log to file 
+      copy: 
+        content: "{{ codecommit_push_result_vitechinfra }}" 
+        dest: "{{ path_02 }}/codecommit_push_result_vitechinfra.log"
+
+    - name: Save codecommit_push_nextgen log to file 
+      copy: 
+        content: "{{ codecommit_push_nextgen }}" 
+        dest: "{{ path_02 }}/codecommit_push_nextgen.log"
+
+    - name: Save codecommit_push_coreadmin log to file 
+      copy: 
+        content: "{{ codecommit_push_coreadmin }}" 
+        dest: "{{ path_02 }}/codecommit_push_coreadmin.log"
+
+    - name: print ending date and time 
+      shell: date
+      register: date_2
+
+    - debug:
+        msg: "{{ date_2.stdout }}"
