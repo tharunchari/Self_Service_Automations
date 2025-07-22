@@ -98,7 +98,7 @@ jobs:
           fi
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "ERPPRD-DR Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\nPlease check the GitHub Actions logs for more details.\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.\nPlease take action.")" \
+            --message "$(echo -e "ERPPRD-DR Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\nPlease check the GitHub Actions logs for more details.\n\n\nAttention: ERPPRD_PROD will be undergoing a patch at this same time on the upcoming Saturday.\nPlease take action.")" \
             --subject "ERPPRD-DR Patching Failed"
  
       - name: Send Notification on Success
@@ -106,7 +106,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "**ERPPRD-DR Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.")" \
+            --message "$(echo -e "**ERPPRD-DR Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be undergoing a patch at this same time on the upcoming Saturday.")" \
             --subject "ERPPRD-DR Patching Completed"
  
       - name: Send Notification on App Down
@@ -114,7 +114,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "**Attention: ERPPRD-DR Patch Status: SUCCESS but App is Down**\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.\nPlease take action.")" \
+            --message "$(echo -e "**Attention: ERPPRD-DR Patch Status: SUCCESS but App is Down**\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be undergoing a patch at this same time on the upcoming Saturday.\nPlease take action.")" \
             --subject "ERPPRD-DR Patching Completed but App is Down"
 
       - name: Send Patch Notification Notification
@@ -122,7 +122,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "**Attention: ERPPRD_PROD will be going to patch at the same time this coming Saturday.**\n\nPlease take action." \
+            --message "$(echo -e "**Attention: ERPPRD_PROD will be undergoing a patch at this same time on the upcoming Saturday.**\n\nPlease take action." \
             --subject "ERPPRD-PROD Upcomming Patching Notification"
 
   execute-job-manual:
@@ -195,7 +195,7 @@ jobs:
           fi
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "ERPPRD-DR Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\nPlease check the GitHub Actions logs for more details.\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.\nPlease take action.")" \
+            --message "$(echo -e "ERPPRD-DR Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\nPlease check the GitHub Actions logs for more details.\n\n\nAttention: ERPPRD_PROD will be undergoing a patch at this same time on the upcoming Saturday.\nPlease take action.")" \
             --subject "ERPPRD-DR Patching Failed"
  
       - name: Send Notification on Success
@@ -203,7 +203,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "**ERPPRD-DR Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.")" \
+            --message "$(echo -e "**ERPPRD-DR Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be undergoing a patch at this same time on the upcoming Saturday.")" \
             --subject "ERPPRD-DR Patching Completed"
  
       - name: Send Notification on App Down
@@ -211,7 +211,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "**Attention: ERPPRD-DR Patch Status: SUCCESS but App is Down**\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be going to patch at the same time next week.\nPlease take action.")" \
+            --message "$(echo -e "**Attention: ERPPRD-DR Patch Status: SUCCESS but App is Down**\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)\n\n\nAttention: ERPPRD_PROD will be undergoing a patch at this same time on the upcoming Saturday.\nPlease take action.")" \
             --subject "ERPPRD-DR Patching Completed but App is Down"
 
   stop-runner:
