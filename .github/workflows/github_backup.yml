@@ -2,9 +2,16 @@ name: TEST_Mirror GitHub Repos to AWS CodeCommit
  
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 0/3 * * 1-5'
  
 jobs:
+  start-runner:
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    secrets: inherit
+
   GitHub_Backup:
+    needs: start-runner
     name: Run Ansible Playbook
     runs-on: Internal_Tools_Automation_Server
  
@@ -15,3 +22,9 @@ jobs:
       - name: Run Ansible Playbook
         run: |
           sudo ansible-playbook Ansible/github_backup_1.yml -i Ansible/inventory -e "github_username=github-bamboo_vitech github_password_1=${{ secrets.PROD_FINE_GRAINED_PAT }} organization_1=vitechsystems github_password_2=${{ secrets.INFRA_FINE_GRAINED_PAT }} organization_2=vitechinfra codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }}"
+
+  stop-runner:
+    needs: GitHub_Backup
+    if: always()  # Ensures this job runs even if execute-job fails
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    secrets: inherit
