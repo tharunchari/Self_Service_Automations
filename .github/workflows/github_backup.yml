@@ -2,8 +2,8 @@ name: TEST_Mirror GitHub Repos to AWS CodeCommit
  
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 0/3 * * 1-5'
+#  schedule:
+#    - cron: '0 0/3 * * 1-5'
  
 jobs:
   start-runner:
