@@ -98,6 +98,7 @@ jobs:
           # Pushing the newly created branch to the remote repository
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
+          git config --global http.postBuffer 524288000
           git remote set-url origin "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git"
           git push -u origin $TARGET_BRANCH
 
