@@ -64,7 +64,10 @@ jobs:
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraqa"
-    secrets: inherit
+    secrets:
+      CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+      CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+      VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
 
   trigger_nonprod_jiraupg:
     name: Trigger JIRAUPG Patching (Last Monday)
@@ -79,7 +82,10 @@ jobs:
     uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraupg"
-    secrets: inherit
+    secrets:
+      CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+      CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+      VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
 
   notify_failure_jiraqa:
     needs: trigger_nonprod_jiraqa
@@ -193,7 +199,8 @@ jobs:
     with:
       environment: "jiraprod"
     secrets:
-      inherit: true
+      CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+      CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
       VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
 
   notify_failure_jiraprod:
