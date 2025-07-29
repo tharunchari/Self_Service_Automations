@@ -57,7 +57,7 @@ jobs:
             echo "Non-product repository ('$target_repo'). Skipping validation and proceeding."
           fi
 
-      - name: Create and Push Branch
+      - name: Create and Prepare Branch
         run: |
           SOURCE_REPO_NAME="${{ inputs.SOURCE_REPO_NAME }}"
           TARGET_REPO_NAME="${{ inputs.TARGET_REPO_NAME }}"
@@ -78,48 +78,37 @@ jobs:
           else
             echo "Branch $TARGET_BRANCH doesn't exist. Proceeding with branch creation..."
           fi
-          # Cloning the repository and checking out the source branch
+          # Clone source branch only
           git clone "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
           cd $SOURCE_REPO_NAME
-          # Checking out the target branch
-          if [ "$COMMIT_NUMBER" = "HEAD" ]; then
-            git checkout -b $TARGET_BRANCH
-          else
+          # Prepare branch from commit or HEAD
+          if [ "$COMMIT_NUMBER" != "HEAD" ]; then
+            git fetch origin $COMMIT_NUMBER || (echo "ERROR: Could not fetch commit $COMMIT_NUMBER" && exit 3)
             git checkout -b $TARGET_BRANCH $COMMIT_NUMBER
+          else
+            git checkout -b $TARGET_BRANCH
           fi
-          # Pushing the newly created branch to the remote repository
+          # Prepare for later push
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
           git config --global http.postBuffer 524288000
           git remote set-url origin "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git"
-          # Do NOT push here, we will push in chunks later
-
-          # Checking if branch was created locally
-          if [ "$(git rev-parse --abbrev-ref HEAD)" = "$TARGET_BRANCH" ]; then
-            echo "Branch $TARGET_BRANCH created locally. Proceeding with pom update."
-            # Updating pom files, committing and pushing changes
-            echo "Updating pom.xml files..."
-            if [[ -n "$SOURCE_CLIENT_VERSION" && -n "$TARGET_CLIENT_VERSION" ]]; then
-              echo "Updating client versions: $SOURCE_CLIENT_VERSION → $TARGET_CLIENT_VERSION"
-              find . -name pom.xml -exec sed -i "s|${SOURCE_CLIENT_VERSION}|${TARGET_CLIENT_VERSION}|g" {} +
-            fi
-            # Replace prod version if both values are provided
-            if [[ -n "$SOURCE_PROD_VERSION" && -n "$TARGET_PROD_VERSION" ]]; then
-              echo "Updating prod versions: $SOURCE_PROD_VERSION → $TARGET_PROD_VERSION"
-              find . -name pom.xml -exec sed -i "s|${SOURCE_PROD_VERSION}|${TARGET_PROD_VERSION}|g" {} +
-            fi
-            sleep 10
-            # Commit if there are changes
-            if git diff --quiet; then
-              echo "No changes detected. Skipping commit."
-            else
-              echo "Changes detected. Committing updated files."
-              git add -u
-              git commit -m "Updated pom files to version $TARGET_CLIENT_VERSION/$TARGET_PROD_VERSION"
-            fi
+          # Update pom.xml files if needed
+          if [[ -n "$SOURCE_CLIENT_VERSION" && -n "$TARGET_CLIENT_VERSION" ]]; then
+            echo "Updating client versions: $SOURCE_CLIENT_VERSION → $TARGET_CLIENT_VERSION"
+            find . -name pom.xml -exec sed -i "s|${SOURCE_CLIENT_VERSION}|${TARGET_CLIENT_VERSION}|g" {} +
+          fi
+          if [[ -n "$SOURCE_PROD_VERSION" && -n "$TARGET_PROD_VERSION" ]]; then
+            echo "Updating prod versions: $SOURCE_PROD_VERSION → $TARGET_PROD_VERSION"
+            find . -name pom.xml -exec sed -i "s|${SOURCE_PROD_VERSION}|${TARGET_PROD_VERSION}|g" {} +
+          fi
+          sleep 10
+          if git diff --quiet; then
+            echo "No changes detected. Skipping commit."
           else
-            echo "Error: Branch $TARGET_BRANCH was not created successfully."
-            exit 3
+            echo "Changes detected. Committing updated files."
+            git add -u
+            git commit -m "Updated pom files to version $TARGET_CLIENT_VERSION/$TARGET_PROD_VERSION"
           fi
 
       - name: Create push-large-repo.sh script
@@ -169,7 +158,7 @@ jobs:
 
       - name: Push branch in chunks for large repos
         run: ./push-large-repo.sh
-        working-directory: ./Branch_creation/${{ inputs.TARGET_REPO_NAME }}
+        working-directory: ./Branch_creation/${{ inputs.SOURCE_REPO_NAME }}
 
       - name: Clean up workspace
         run: |
