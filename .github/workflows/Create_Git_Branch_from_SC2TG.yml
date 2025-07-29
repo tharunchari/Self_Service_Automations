@@ -72,7 +72,7 @@ jobs:
           mkdir Branch_creation
           cd Branch_creation
           # Checking if the target branch already exists
-          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Error: Branch $TARGET_BRANCH already exists. Please discard the existing one or create with a different name."
             exit 2
           else
@@ -112,6 +112,7 @@ jobs:
           fi
 
       - name: Create push-large-repo.sh script
+        working-directory: ./Branch_creation/${{ inputs.SOURCE_REPO_NAME }}
         run: |
           cat <<'EOF' > push-large-repo.sh
           #!/bin/bash
