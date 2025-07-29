@@ -35,19 +35,17 @@ on:
         required: true
         description: SHA Value or default HEAD
 
-
 jobs:
   create-branch-and-update-pom:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Validate Inputs and Repository Type
         run: |
           target_repo="${{ inputs.TARGET_REPO_NAME }}"
           confirm="${{ inputs.confirm }}"
-          
           if [[ "$target_repo" == "Coreadmin" || "$target_repo" == "nextgen" ]]; then
             if [[ "$confirm" == "YES" ]]; then
               echo "Proceeding with target branch in product REPO $target_repo"
@@ -58,7 +56,6 @@ jobs:
           else
             echo "Non-product repository ('$target_repo'). Skipping validation and proceeding."
           fi
-
 
       - name: Create and Push Branch
         run: |
@@ -71,11 +68,9 @@ jobs:
           SOURCE_PROD_VERSION="${{ inputs.SOURCE_PROD_VERSION }}"
           TARGET_PROD_VERSION="${{ inputs.TARGET_PROD_VERSION }}"
           COMMIT_NUMBER="${{ inputs.Commit_Number }}"
-          
           set -x
           mkdir Branch_creation
           cd Branch_creation
-
           # Checking if the target branch already exists
           if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Error: Branch $TARGET_BRANCH already exists. Please discard the existing one or create with a different name."
@@ -83,58 +78,98 @@ jobs:
           else
             echo "Branch $TARGET_BRANCH doesn't exist. Proceeding with branch creation..."
           fi
-
           # Cloning the repository and checking out the source branch
           git clone "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
           cd $SOURCE_REPO_NAME
-
           # Checking out the target branch
           if [ "$COMMIT_NUMBER" = "HEAD" ]; then
             git checkout -b $TARGET_BRANCH
           else
             git checkout -b $TARGET_BRANCH $COMMIT_NUMBER
           fi
-
           # Pushing the newly created branch to the remote repository
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
           git config --global http.postBuffer 524288000
           git remote set-url origin "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git"
-          git push -u origin $TARGET_BRANCH
+          # Do NOT push here, we will push in chunks later
 
-          # Checking if the branch was created successfully
-          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
-            echo "Branch $TARGET_BRANCH was created successfully."
-            echo "Updating pom files and committing code..."
-
+          # Checking if branch was created locally
+          if [ "$(git rev-parse --abbrev-ref HEAD)" = "$TARGET_BRANCH" ]; then
+            echo "Branch $TARGET_BRANCH created locally. Proceeding with pom update."
             # Updating pom files, committing and pushing changes
-           echo "Updating pom.xml files..."
-
-          if [[ -n "$SOURCE_CLIENT_VERSION" && -n "$TARGET_CLIENT_VERSION" ]]; then
-            echo "Updating client versions: $SOURCE_CLIENT_VERSION → $TARGET_CLIENT_VERSION"
-            find . -name pom.xml -exec sed -i "s|${SOURCE_CLIENT_VERSION}|${TARGET_CLIENT_VERSION}|g" {} +
-          fi
-          
-          # Replace prod version if both values are provided
-          if [[ -n "$SOURCE_PROD_VERSION" && -n "$TARGET_PROD_VERSION" ]]; then
-            echo "Updating prod versions: $SOURCE_PROD_VERSION → $TARGET_PROD_VERSION"
-            find . -name pom.xml -exec sed -i "s|${SOURCE_PROD_VERSION}|${TARGET_PROD_VERSION}|g" {} +
-          fi
-          sleep 10
-          
-          # Commit if there are changes
-          if git diff --quiet; then
-            echo "No changes detected. Skipping commit."
-          else
-            echo "Changes detected. Committing updated files."
-            git add -u
-            git commit -m "Updated pom files to version $TARGET_VERSION"
-            git push -u origin "$TARGET_BRANCH"
-          fi
+            echo "Updating pom.xml files..."
+            if [[ -n "$SOURCE_CLIENT_VERSION" && -n "$TARGET_CLIENT_VERSION" ]]; then
+              echo "Updating client versions: $SOURCE_CLIENT_VERSION → $TARGET_CLIENT_VERSION"
+              find . -name pom.xml -exec sed -i "s|${SOURCE_CLIENT_VERSION}|${TARGET_CLIENT_VERSION}|g" {} +
+            fi
+            # Replace prod version if both values are provided
+            if [[ -n "$SOURCE_PROD_VERSION" && -n "$TARGET_PROD_VERSION" ]]; then
+              echo "Updating prod versions: $SOURCE_PROD_VERSION → $TARGET_PROD_VERSION"
+              find . -name pom.xml -exec sed -i "s|${SOURCE_PROD_VERSION}|${TARGET_PROD_VERSION}|g" {} +
+            fi
+            sleep 10
+            # Commit if there are changes
+            if git diff --quiet; then
+              echo "No changes detected. Skipping commit."
+            else
+              echo "Changes detected. Committing updated files."
+              git add -u
+              git commit -m "Updated pom files to version $TARGET_CLIENT_VERSION/$TARGET_PROD_VERSION"
+            fi
           else
             echo "Error: Branch $TARGET_BRANCH was not created successfully."
             exit 3
           fi
+
+      - name: Create push-large-repo.sh script
+        run: |
+          cat <<'EOF' > push-large-repo.sh
+          #!/bin/bash
+          GITHUB_PAT="${{ secrets.PROD_FINE_GRAINED_PAT }}"
+          PATH_TO_REPO=$(pwd)
+          ORG_NAME=vitechsystems
+          REPO_NAME="${{ inputs.TARGET_REPO_NAME }}"
+          BRANCH_NAME="${{ inputs.TARGET_BRANCH }}"
+          STEP_SIZE=1000
+          LOG_FILE="push-log.txt"
+          cd "$PATH_TO_REPO" || { echo "Error: Directory $PATH_TO_REPO does not exist."; exit 1; }
+          git remote remove origin-2 2>/dev/null || true
+          git remote add origin-2 "https://${GITHUB_PAT}@github.com/${ORG_NAME}/${REPO_NAME}.git" || { echo "Error: Failed to add remote origin-2."; exit 1; }
+          if ! git remote get-url origin-2 > /dev/null 2>&1; then
+              echo "Error: Remote 'origin-2' not found. Please check the repository URL or PAT."
+              exit 1
+          fi
+          > "$LOG_FILE"
+          step_commits=$(git log --oneline --reverse refs/heads/"$BRANCH_NAME" | awk "NR % $STEP_SIZE == 0" | awk '{print $1}')
+          if [ -z "$step_commits" ]; then
+              echo "No commits found to push. Check the branch name or repository history."
+              exit 1
+          fi
+          echo "Pushing commits in chunks..."
+          for commit in $step_commits; do
+              echo "Pushing commit $commit to origin-2:$BRANCH_NAME" | tee -a "$LOG_FILE"
+              if git push -u origin-2 +"$commit":refs/heads/"$BRANCH_NAME" 2>&1 | tee -a "$LOG_FILE"; then
+                  echo "Successfully pushed commit $commit" | tee -a "$LOG_FILE"
+              else
+                  echo "Error: Failed to push commit $commit" | tee -a "$LOG_FILE"
+                  echo "This may be due to the chunk size being too large. Try reducing STEP_SIZE (e.g., $((STEP_SIZE / 2)))" | tee -a "$LOG_FILE"
+                  exit 1
+              fi
+          done
+          echo "Performing final push to sync branch $BRANCH_NAME..." | tee -a "$LOG_FILE"
+          if git push origin-2 "$BRANCH_NAME" 2>&1 | tee -a "$LOG_FILE"; then
+              echo "Successfully completed the final branch push." | tee -a "$LOG_FILE"
+          else
+              echo "Error: Branch push failed. Check the log ($LOG_FILE) for details." | tee -a "$LOG_FILE"
+              exit 1
+          fi
+          EOF
+          chmod +x push-large-repo.sh
+
+      - name: Push branch in chunks for large repos
+        run: ./push-large-repo.sh
+        working-directory: ./Branch_creation/${{ inputs.TARGET_REPO_NAME }}
 
       - name: Clean up workspace
         run: |
