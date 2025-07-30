@@ -17,12 +17,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.CLASSIC_PAT }} 
           ORG: "vitechsystems"
         run: |
-          # Get list of offline runners except "Internal_Tools_Automation_Server"
+          # Get list of offline runners except "Internal_Tools_Automation_Server" & "Internal_Tools_Automation_Server_2"
           RUNNERS=$(curl -s -L \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/orgs/$ORG/actions/runners" | jq '[.runners[] | select(.status == "offline" and .name != "Internal_Tools_Automation_Server")]')
+            "https://api.github.com/orgs/$ORG/actions/runners" | jq '[.runners[] | select(.status == "offline" and .name != "Internal_Tools_Automation_Server" and .name != "Internal_Tools_Automation_Server_2")]')
  
           # Check if there are any offline runners
           if [[ $(echo "$RUNNERS" | jq length) -eq 0 ]]; then
