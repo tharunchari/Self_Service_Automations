@@ -91,7 +91,6 @@ jobs:
           # Prepare for later push
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
-          git config --global http.postBuffer 524288000
           git remote set-url origin "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git"
           # Update pom.xml files if needed
           if [[ -n "$SOURCE_CLIENT_VERSION" && -n "$TARGET_CLIENT_VERSION" ]]; then
@@ -112,6 +111,7 @@ jobs:
           fi
 
       - name: Create push-large-repo.sh script
+        if: ${{ inputs.SOURCE_REPO_NAME == 'Coreadmin' }}
         working-directory: ./Branch_creation/${{ inputs.SOURCE_REPO_NAME }}
         run: |
           cat <<'EOF' > push-large-repo.sh
@@ -158,7 +158,14 @@ jobs:
           chmod +x push-large-repo.sh
 
       - name: Push branch in chunks for large repos
+        if: ${{ inputs.SOURCE_REPO_NAME == 'Coreadmin' }}
         run: ./push-large-repo.sh
+        working-directory: ./Branch_creation/${{ inputs.SOURCE_REPO_NAME }}
+
+      - name: Push branch normally for other repos
+        if: ${{ inputs.SOURCE_REPO_NAME != 'Coreadmin' }}
+        run: |
+          git push -u origin "${{ inputs.TARGET_BRANCH }}"
         working-directory: ./Branch_creation/${{ inputs.SOURCE_REPO_NAME }}
 
       - name: Clean up workspace
