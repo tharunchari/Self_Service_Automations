@@ -9,7 +9,8 @@ jobs:
   start-runner:
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
-      runner_name: Internal_Tools_Automation_Runner
+      runner_name: "Internal_Tools_Automation_Server"
+    secrets: inherit
 
   GitHub_Backup:
     needs: start-runner
@@ -29,4 +30,5 @@ jobs:
     if: always()  # Ensures this job runs even if execute-job fails
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
-      runner_name: "Internal_Tools_Automation_Runner"
+      runner_name: "Internal_Tools_Automation_Server"
+    secrets: inherit
