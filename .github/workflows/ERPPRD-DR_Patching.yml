@@ -21,11 +21,15 @@ jobs:
     if: github.event_name == 'schedule' && needs.run_on_last_saturday.result == 'success' && needs.run_on_last_saturday.outputs.should_proceed == 'true'
     needs: run_on_last_saturday
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
  
   start-runner-manual:
     if: github.event_name == 'workflow_dispatch'
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
  
   execute-job-scheduled:
@@ -220,4 +224,6 @@ jobs:
       needs.execute-job-scheduled.result != 'skipped' ||
       needs.execute-job-manual.result != 'skipped'
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
