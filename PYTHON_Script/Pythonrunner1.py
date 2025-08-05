@@ -90,7 +90,7 @@ def check_running_ec2_instances():
             final_message += f"Running Time: {inst['Running Time']}\n\n"
  
     if final_message:
-        send_sns_notification("EC2 Instances Running Beyond Threshold", final_message)
+        send_sns_notification("Self-Hosted Runners (2+ hrs) & Bamboo Elastic Instances (3+ hrs) Running", final_message)
     else:
         print("No instances exceeding thresholds.")
  
