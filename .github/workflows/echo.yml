@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Set env as secret
         env:
-          MY_VAL: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+          MY_VAL: ${{ secrets.CLASSIC_PAT }}
         run: |
           import os
           data = open("file", "w")
