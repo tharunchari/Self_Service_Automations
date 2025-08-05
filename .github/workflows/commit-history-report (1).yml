@@ -1,0 +1,122 @@
+name: Commit History Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: 'Repository name in vitechsystems organization'
+        required: true
+        default: 'SYMETRA'
+      branch:
+        description: 'Branch to check for commits'
+        required: true
+      since:
+        description: 'Start date (YYYY-MM-DD) for commit history (optional if using commit SHAs)'
+        required: false
+      until:
+        description: 'End date (YYYY-MM-DD) for commit history (optional if using commit SHAs)'
+        required: false
+      sha_from:
+        description: |
+          Starting commit SHA (optional, if using date range leave blank).
+          **Please enter the SHA of the oldest commit in your desired range (ancestor).**
+          Example: If you want all commits from commit X to commit Y, use SHA of commit X here.
+        required: false
+      sha_to:
+        description: |
+          Ending commit SHA (optional, if using date range leave blank).
+          **Please enter the SHA of the newest commit in your desired range (descendant).**
+          Example: If you want all commits from commit X to commit Y, use SHA of commit Y here.
+        required: false
+      email:
+        description: 'Recipient email for report (comma separated for multiple emails)'
+        required: true
+
+jobs:
+  get-commit-history:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - name: Checkout code from selected repo/branch (full history)
+        uses: actions/checkout@v4
+        with:
+          repository: vitechsystems/${{ github.event.inputs.repository }}
+          token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Generate commit report (HTML table, dynamic description, debug SHA logic)
+        id: gen_report
+        run: |
+          set -e
+          REPORT_FILE="commit_report.html"
+          REPO="${{ github.event.inputs.repository }}"
+          BRANCH="${{ github.event.inputs.branch }}"
+          SHA_FROM="${{ github.event.inputs.sha_from }}"
+          SHA_TO="${{ github.event.inputs.sha_to }}"
+          SINCE="${{ github.event.inputs.since }}"
+          UNTIL="${{ github.event.inputs.until }}"
+
+          # Compose dynamic description based on filter used
+          DESCRIPTION=""
+          if [[ -n "$SHA_FROM" ]] && [[ -n "$SHA_TO" ]]; then
+            DESCRIPTION="This report includes commits from <b>$SHA_FROM</b> (oldest/ancestor) to <b>$SHA_TO</b> (newest/descendant) on branch <b>$BRANCH</b>. <br><i>Note: SHA range must be ordered from oldest to newest commit to show results.</i>"
+          elif [[ -n "$SINCE" ]] && [[ -n "$UNTIL" ]]; then
+            DESCRIPTION="This report includes commits made between <b>$SINCE</b> and <b>$UNTIL</b> on branch <b>$BRANCH</b>."
+          else
+            DESCRIPTION="No filter provided; please use either SHA range (oldest to newest) or date range to generate a commit history report."
+          fi
+
+          echo "<h3>Commit History Report for <b>$REPO</b> [<b>$BRANCH</b>]</h3>" > $REPORT_FILE
+          echo "<p>$DESCRIPTION</p>" >> $REPORT_FILE
+          echo "<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">" >> $REPORT_FILE
+          echo "<tr><th>SHA</th><th>Author</th><th>Date</th><th>Message</th></tr>" >> $REPORT_FILE
+
+          if [[ -n "$SHA_FROM" ]] && [[ -n "$SHA_TO" ]]; then
+            echo "DEBUG: SHA_FROM=$SHA_FROM SHA_TO=$SHA_TO"
+            # Check if both SHAs exist
+            git rev-parse $SHA_FROM || { echo "<tr><td colspan=\"4\"><b>SHA_FROM not found: $SHA_FROM</b></td></tr>" >> "$REPORT_FILE"; exit 0; }
+            git rev-parse $SHA_TO || { echo "<tr><td colspan=\"4\"><b>SHA_TO not found: $SHA_TO</b></td></tr>" >> "$REPORT_FILE"; exit 0; }
+            # Show the commits between SHAs
+            git log $SHA_FROM..$SHA_TO --pretty=format:"<tr><td>%h</td><td>%an</td><td>%aD</td><td>%s</td></tr>" --date=iso >> "$REPORT_FILE"
+            # If no rows were added, show a message
+            if ! grep -q "<tr><td>" "$REPORT_FILE"; then
+              echo "<tr><td colspan=\"4\"><b>No commits found between the specified SHAs. Ensure SHA_FROM is older and SHA_TO is newer.</b></td></tr>" >> "$REPORT_FILE"
+            fi
+          elif [[ -n "$SINCE" ]] && [[ -n "$UNTIL" ]]; then
+            git log --since="${SINCE}T00:00:00" --until="${UNTIL}T23:59:59" --pretty=format:"<tr><td>%h</td><td>%an</td><td>%aD</td><td>%s</td></tr>" --date=iso >> "$REPORT_FILE"
+            if ! grep -q "<tr><td>" "$REPORT_FILE"; then
+              echo "<tr><td colspan=\"4\"><b>No commits found in the specified date range.</b></td></tr>" >> "$REPORT_FILE"
+            fi
+          else
+            echo "<tr><td colspan=\"4\"><b>No filter provided.</b></td></tr>" >> "$REPORT_FILE"
+          fi
+
+          echo "</table>" >> $REPORT_FILE
+          echo "report_path=$REPORT_FILE" >> $GITHUB_OUTPUT
+
+      - name: Send report via SES (HTML table in email body, supports multiple ToAddresses)
+        run: |
+          REPO="${{ github.event.inputs.repository }}"
+          BRANCH="${{ github.event.inputs.branch }}"
+          SUBJECT="Commit History Report: $REPO [$BRANCH]"
+          EMAILS="${{ github.event.inputs.email }}"
+          # Remove newlines for SES and escape quotes
+          REPORT_BODY=$(awk '{printf "%s", $0}' commit_report.html | sed 's/"/\\"/g')
+          aws ses send-email \
+            --from "v3atlassianops@vitechinc.com" \
+            --destination "ToAddresses=$(echo $EMAILS | tr -d ' ')" \
+            --message "Subject={Data=\"$SUBJECT\"},Body={Html={Data=\"$REPORT_BODY\"}}" \
+            --region $AWS_REGION
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }}
