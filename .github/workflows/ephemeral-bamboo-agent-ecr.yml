@@ -21,6 +21,9 @@ jobs:
     - name: Clone Bitbucket Bamboo Agent Base
       run: git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base
 
+    - name: Clone Atlassian Docker Shared Components
+      run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
+
     - name: Compare Dockerfiles
       id: compare
       run: |
@@ -88,6 +91,14 @@ jobs:
       if: steps.compare.outputs.changed == 'true'
       run: |
         cp -r agent-base/* .
+
+    - name: Copy shared-components from upstream to workspace
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        # This copies the shared-components directory from the upstream clone into the workspace root,
+        # so Docker build context is correct for COPY shared-components/* instructions.
+        rm -rf shared-components
+        cp -r shared-components-upstream shared-components
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
