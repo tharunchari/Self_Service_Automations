@@ -36,114 +36,38 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
+    - name: Prepare AWS Linux Dockerfile using sed
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        cp agent-base/Dockerfile Dockerfile
+        # Replace Ubuntu base image with Amazon Linux
+        sed -i 's|FROM ubuntu:.*|FROM amazonlinux:latest|' Dockerfile
+        # Replace apt-get update/upgrade/clean/autoremove and rm -rf /var/lib/apt/lists/* with yum equivalents or remove them
+        sed -i '/apt-get.*update/d' Dockerfile
+        sed -i '/apt-get.*upgrade/d' Dockerfile
+        sed -i '/apt-get.*clean/d' Dockerfile
+        sed -i '/apt-get.*autoremove/d' Dockerfile
+        sed -i '/rm -rf \/var\/lib\/apt\/lists\/*/d' Dockerfile
+        # Replace apt-get install with yum install, convert package list, and add amazonlinux packages as needed
+        sed -i 's/apt-get install -y\( --no-install-recommends\)\? /yum install -y /g' Dockerfile
+        # Replace common Ubuntu packages with Amazon Linux equivalents
+        sed -i 's/openssh-client/openssh/g' Dockerfile
+        sed -i 's/python-is-python3/python3/g' Dockerfile
+        # Always ensure Java is installed
+        sed -i '/yum install -y/ s/$/ java-17-amazon-corretto-devel tar/' Dockerfile
+        # Tini not in Amazon Linux repo; install manually if referenced
+        if grep -q 'tini' Dockerfile; then
+          echo -e '# Install tini for Amazon Linux\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' >> Dockerfile
+        fi
+        # Convert ENV key value to ENV key=value for Docker best practices
+        sed -i -E 's/^ENV ([A-Za-z_][A-Za-z0-9_]*) (.*)$/ENV \1=\2/' Dockerfile
+
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
         aws-region: us-west-2
-
-    # - name: Notify via SNS if no changes
-    #   if: steps.compare.outputs.changed == 'false'
-    #   run: |
-    #     aws sns publish \
-    #       --topic-arn $SNS_TOPIC_ARN \
-    #       --subject "Bamboo Dockerfile: No changes detected" \
-    #       --message "No changes detected in the upstream Dockerfile. No build executed."
-
-    # - name: Notify via SNS if changes detected
-    #   if: steps.compare.outputs.changed == 'true'
-    #   run: |
-    #     aws sns publish \
-    #       --topic-arn $SNS_TOPIC_ARN \
-    #       --subject "Bamboo Dockerfile: Changes detected and build started" \
-    #       --message "Changes detected in the upstream Dockerfile. Build and push to ECR is starting."
-
-    - name: Convert Dockerfile to Amazon Linux on the fly
-      if: steps.compare.outputs.changed == 'true'
-      working-directory: agent-base
-      run: |
-        set -e
-        out="Dockerfile.aws"
-        : > "$out"
-        tini_installed=0
-        in_install_block=0
-        install_pkgs=""
-
-        swap_pkg() {
-          case "$1" in
-            openssh-client) echo "openssh" ;;
-            python3-jinja2) echo "python3-jinja2" ;;
-            python-is-python3) echo "python3" ;;
-            tini) tini_installed=1; echo "" ;;
-            *) echo "$1" ;;
-          esac
-        }
-
-        while IFS= read -r line || [ -n "$line" ]; do
-          # Start of apt-get install (could be multiline)
-          if echo "$line" | grep -q 'apt-get install'; then
-            in_install_block=1
-            pkgs=$(echo "$line" | sed -n 's/.*apt-get install[^ ]* \(.*\)/\1/p' | sed 's/\\$//')
-            install_pkgs="$pkgs"
-            continue
-          fi
-
-          # Continuation of apt-get install block
-          if [ $in_install_block -eq 1 ]; then
-            # If the line is just a continuation or ends with '\'
-            if echo "$line" | grep -q '^\s*\\\s*$'; then
-              continue
-            # Likely a package line
-            elif echo "$line" | grep -q '^[[:space:]]*[a-zA-Z0-9\-]\+'; then
-              pkg=$(echo "$line" | sed 's/\\$//;s/^[[:space:]]*//')
-              install_pkgs="$install_pkgs $pkg"
-              continue
-            else
-              # End of install block, flush the RUN yum line
-              in_install_block=0
-              yum_pkgs=""
-              for pkg in $install_pkgs; do
-                ypkg=$(swap_pkg "$pkg")
-                [ "$ypkg" ] && yum_pkgs="$yum_pkgs $ypkg"
-              done
-              echo "RUN yum update -y && yum install -y$yum_pkgs java-17-amazon-corretto-devel tar && yum clean all" >> "$out"
-              install_pkgs=""
-            fi
-          fi
-
-          # Skip unwanted commands
-          if echo "$line" | grep -qE 'apt-get.*update|apt-get.*upgrade|apt-get.*clean|apt-get.*autoremove|rm -rf|--no-install-recommends'; then
-            continue
-          elif echo "$line" | grep -qE '^FROM|^ARG BASE_IMAGE='; then
-            echo "FROM amazonlinux:latest" >> "$out"
-          elif echo "$line" | grep -qE 'tini|Tini|tini-0.19.0-amd64'; then
-            tini_installed=1
-          else
-            echo "$line" >> "$out"
-          fi
-        done < Dockerfile
-
-        # Flush any remaining install block at EOF
-        if [ -n "$install_pkgs" ]; then
-          yum_pkgs=""
-          for pkg in $install_pkgs; do
-            ypkg=$(swap_pkg "$pkg")
-            [ "$ypkg" ] && yum_pkgs="$yum_pkgs $ypkg"
-          done
-          echo "RUN yum update -y && yum install -y$yum_pkgs java-17-amazon-corretto-devel tar && yum clean all" >> "$out"
-        fi
-
-        if [ "$tini_installed" -eq 1 ]; then
-          cat <<EOF >> "$out"
-        # Install tini manually (not available in Amazon Linux repos)
-        RUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\
-            && chmod +x /tini \\
-            && mv /tini /usr/local/bin/tini
-        EOF
-        fi
-
-        mv "$out" Dockerfile
 
     - name: Login to Amazon ECR
       if: steps.compare.outputs.changed == 'true'
@@ -153,7 +77,7 @@ jobs:
     - name: Build Docker image
       if: steps.compare.outputs.changed == 'true'
       run: |
-        docker build -t vitech-bamboodr-repo agent-base
+        docker build -t vitech-bamboodr-repo .
 
     - name: Tag Docker image
       if: steps.compare.outputs.changed == 'true'
