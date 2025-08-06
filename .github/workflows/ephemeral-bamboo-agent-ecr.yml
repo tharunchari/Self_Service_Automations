@@ -67,7 +67,7 @@ jobs:
         awk '
         BEGIN {
           install=0; pkg_count=0;
-          seen["git"]=0; seen["git-lfs"]=0; seen["openssh-clients"]=0;
+          seen["git"]=0; seen["openssh-clients"]=0;
           seen["python3"]=0; seen["python3-pip"]=0
         }
         /apt-get install -y/ {install=1; next}
@@ -78,14 +78,14 @@ jobs:
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
+          # Skip git-lfs as it will be installed manually
+          gsub("git-lfs", "", pkg)
           if(pkg != "" && pkg != "\\") {
             if(pkg == "git" && seen["git"]==1) next
-            if(pkg == "git-lfs" && seen["git-lfs"]==1) next
             if(pkg == "openssh-clients" && seen["openssh-clients"]==1) next
             if(pkg == "python3" && seen["python3"]==1) next
             if(pkg == "python3-pip" && seen["python3-pip"]==1) next
             if(pkg == "git") seen["git"]=1
-            if(pkg == "git-lfs") seen["git-lfs"]=1
             if(pkg == "openssh-clients") seen["openssh-clients"]=1
             if(pkg == "python3") seen["python3"]=1
             if(pkg == "python3-pip") seen["python3-pip"]=1
@@ -104,6 +104,11 @@ jobs:
                 print "    " pkg_list[i] " && yum clean all"
             }
             print "RUN pip3 install jinja2"
+            # Add manual git-lfs installation
+            print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
+            print "    && tar -xzf git-lfs.tar.gz \\"
+            print "    && mv git-lfs-*/git-lfs /usr/local/bin/ \\"
+            print "    && rm -rf git-lfs.tar.gz git-lfs-*"
           }
           install=0
           pkg_count=0
@@ -118,9 +123,9 @@ jobs:
         {print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
     
-        # Debug: Log the generated package list
-        echo "Generated yum install command:"
-        grep "yum install -y" Dockerfile || echo "No yum install command found"
+        # Debug: Log the generated Dockerfile
+        echo "Generated Dockerfile:"
+        cat Dockerfile
     
         # Install tini manually if not present
         if ! grep -q "/tini" Dockerfile; then
@@ -141,13 +146,12 @@ jobs:
         # Remove empty continuation lines
         sed -i '/^\\$/d' Dockerfile
     
-        # Validate package availability (optional, requires yum to be available)
+        # Validate package availability
         echo "Checking package availability..."
         docker run --rm amazonlinux:2023 yum install -y git openssh-clients python3 python3-pip || {
           echo "One or more packages not found in Amazon Linux 2023 repository"
           exit 1
         }
-
     - name: Copy everything from agent-base to workspace
       if: steps.compare.outputs.changed == 'true'
       run: |
