@@ -36,16 +36,18 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
+    - name: Copy everything from agent-base to workspace
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        cp -r agent-base/* .
+
     - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
       run: |
-        cp agent-base/Dockerfile Dockerfile
-
-        # Replace base image
+        # Convert Dockerfile from Ubuntu/Debian to Amazon Linux
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
 
-        # Remove old debian/ubuntu commands and apt blocks entirely
         awk '
         BEGIN {install=0}
         /apt-get update/ {next}
@@ -71,25 +73,20 @@ jobs:
         {print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
-        # Insert tini install after the yum block if not already present
+        # Insert tini install after yum block if not already present
         if ! grep -q "/tini" Dockerfile; then
           sed -i '/yum clean all/a \
-        # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' Dockerfile
+# Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' Dockerfile
         fi
 
         # Robustly convert ENV lines to key=value format
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
 
-        # Remove any accidental lines starting with &&
+        # Remove accidental lines starting with &&
         sed -i '/^&&/d' Dockerfile
         # Remove empty continuation lines
         sed -i '/^\\$/d' Dockerfile
-
-    - name: Copy bamboo-update-capability.sh into build context
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        cp agent-base/bamboo-update-capability.sh .
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
