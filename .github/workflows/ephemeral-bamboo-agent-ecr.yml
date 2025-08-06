@@ -36,29 +36,29 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Prepare AWS Linux Dockerfile using sed
+    - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
       run: |
         cp agent-base/Dockerfile Dockerfile
-        # Replace Ubuntu base image with Amazon Linux
-        sed -i 's|FROM ubuntu:.*|FROM amazonlinux:latest|' Dockerfile
-        # Remove apt-get commands
+        # Replace base image and package manager
+        sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
+        sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
+        # Remove apt-get lines and replace with yum
         sed -i '/apt-get.*update/d' Dockerfile
         sed -i '/apt-get.*upgrade/d' Dockerfile
         sed -i '/apt-get.*clean/d' Dockerfile
         sed -i '/apt-get.*autoremove/d' Dockerfile
         sed -i '/rm -rf \/var\/lib\/apt\/lists\/*/d' Dockerfile
-        # Replace apt-get install with yum install
-        sed -i 's/apt-get install -y\( --no-install-recommends\)\? /yum install -y /g' Dockerfile
-        # Replace common Ubuntu package names with Amazon Linux equivalents
+        sed -i 's/apt-get install -y --no-install-recommends /yum install -y /g' Dockerfile
+        sed -i 's/apt-get install -y /yum install -y /g' Dockerfile
+        # Replace Ubuntu package names with Amazon Linux equivalents
         sed -i 's/openssh-client/openssh/g' Dockerfile
         sed -i 's/python-is-python3/python3/g' Dockerfile
-        # Ensure Java and tar are installed
+        sed -i '/tini/d' Dockerfile
+        # Insert manual tini install after yum install
+        awk '/yum install -y/ && !x {print;print "# Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini";x=1;next}1' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+        # Ensure Java and tar are included
         sed -i '/yum install -y/ s/$/ java-17-amazon-corretto-devel tar/' Dockerfile
-        # If tini is referenced, add Amazon Linux compatible install at the end
-        if grep -q 'tini' Dockerfile; then
-          echo -e '\n# Install tini for Amazon Linux\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' >> Dockerfile
-        fi
         # Robustly convert ENV lines to key=value format for Docker compatibility
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
