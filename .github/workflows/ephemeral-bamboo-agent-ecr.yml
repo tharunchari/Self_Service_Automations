@@ -42,25 +42,26 @@ jobs:
         cp agent-base/Dockerfile Dockerfile
         # Replace Ubuntu base image with Amazon Linux
         sed -i 's|FROM ubuntu:.*|FROM amazonlinux:latest|' Dockerfile
-        # Replace apt-get update/upgrade/clean/autoremove and rm -rf /var/lib/apt/lists/* with yum equivalents or remove them
+        # Remove apt-get commands
         sed -i '/apt-get.*update/d' Dockerfile
         sed -i '/apt-get.*upgrade/d' Dockerfile
         sed -i '/apt-get.*clean/d' Dockerfile
         sed -i '/apt-get.*autoremove/d' Dockerfile
         sed -i '/rm -rf \/var\/lib\/apt\/lists\/*/d' Dockerfile
-        # Replace apt-get install with yum install, convert package list, and add amazonlinux packages as needed
+        # Replace apt-get install with yum install
         sed -i 's/apt-get install -y\( --no-install-recommends\)\? /yum install -y /g' Dockerfile
-        # Replace common Ubuntu packages with Amazon Linux equivalents
+        # Replace common Ubuntu package names with Amazon Linux equivalents
         sed -i 's/openssh-client/openssh/g' Dockerfile
         sed -i 's/python-is-python3/python3/g' Dockerfile
-        # Always ensure Java is installed
+        # Ensure Java and tar are installed
         sed -i '/yum install -y/ s/$/ java-17-amazon-corretto-devel tar/' Dockerfile
-        # Tini not in Amazon Linux repo; install manually if referenced
+        # If tini is referenced, add Amazon Linux compatible install at the end
         if grep -q 'tini' Dockerfile; then
-          echo -e '# Install tini for Amazon Linux\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' >> Dockerfile
+          echo -e '\n# Install tini for Amazon Linux\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' >> Dockerfile
         fi
-        # Convert ENV key value to ENV key=value for Docker best practices
-        sed -i -E 's/^ENV ([A-Za-z_][A-Za-z0-9_]*) (.*)$/ENV \1=\2/' Dockerfile
+        # Robustly convert ENV lines to key=value format for Docker compatibility
+        sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
+        sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
