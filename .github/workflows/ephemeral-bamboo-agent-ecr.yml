@@ -74,7 +74,7 @@ jobs:
         # Insert tini install after the yum block if not already present
         if ! grep -q "/tini" Dockerfile; then
           sed -i '/yum clean all/a \
-# Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' Dockerfile
+          # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' Dockerfile
         fi
 
         # Robustly convert ENV lines to key=value format
