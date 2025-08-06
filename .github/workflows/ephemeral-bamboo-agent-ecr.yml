@@ -36,13 +36,9 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Copy everything from agent-base to workspace
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        cp -r agent-base/* .
-
     - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
+      working-directory: agent-base
       run: |
         # Convert Dockerfile from Ubuntu/Debian to Amazon Linux
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
@@ -87,6 +83,11 @@ jobs:
         sed -i '/^&&/d' Dockerfile
         # Remove empty continuation lines
         sed -i '/^\\$/d' Dockerfile
+
+    - name: Copy everything from agent-base to workspace
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        cp -r agent-base/* .
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
