@@ -1,0 +1,154 @@
+name: ephemeral-Bamboo-Agent-build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 5 1 * *'  #This will run on the 1st of every month at 11:00 IST.
+  push:
+    branches: [main]
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    env:
+      SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
+      ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
+    steps:
+    - name: Checkout this repo
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+
+    - name: Clone Bitbucket Bamboo Agent Base
+      run: git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base
+
+    - name: Compare Dockerfiles
+      id: compare
+      run: |
+        if [ -f agent-base/Dockerfile ] && [ -f Dockerfile.last ]; then
+          diff -q agent-base/Dockerfile Dockerfile.last > diff.log || true
+        else
+          echo "No previous Dockerfile to compare, treating as changes present"
+          echo "DIFF" > diff.log
+        fi
+        if [ -s diff.log ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Notify via SNS if no changes
+      if: steps.compare.outputs.changed == 'false'
+      run: |
+        aws sns publish \
+          --topic-arn $SNS_TOPIC_ARN \
+          --subject "Bamboo Dockerfile: No changes detected" \
+          --message "No changes detected in the upstream Dockerfile. No build executed."
+
+    # Only build/push if changes
+    - name: Notify via SNS if changes detected
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        aws sns publish \
+          --topic-arn $SNS_TOPIC_ARN \
+          --subject "Bamboo Dockerfile: Changes detected and build started" \
+          --message "Changes detected in the upstream Dockerfile. Build and push to ECR is starting."
+
+    - name: Convert Dockerfile to Amazon Linux on the fly
+      if: steps.compare.outputs.changed == 'true'
+      working-directory: agent-base
+      run: |
+        set -e
+        out="Dockerfile.aws"
+        : > "$out"
+        tini_installed=0
+
+        swap_pkg() {
+          case "$1" in
+            openssh-client) echo "openssh" ;;
+            python3-jinja2) echo "python3-jinja2" ;;
+            python-is-python3) echo "python3" ;;
+            tini) tini_installed=1; echo "" ;;
+            *) echo "$1" ;;
+          esac
+        }
+
+        while IFS= read -r line; do
+          case "$line" in
+            FROM* | "ARG BASE_IMAGE="*)
+              echo "FROM amazonlinux:latest" >> "$out"
+              ;;
+            *apt-get*install*)
+              pkgs=$(echo "$line" | sed -n 's/.*apt-get install[^ ]* \([^&|;]*\).*/\1/p')
+              yum_pkgs=""
+              for pkg in $pkgs; do
+                ypkg=$(swap_pkg "$pkg")
+                [ "$ypkg" ] && yum_pkgs="$yum_pkgs $ypkg"
+              done
+              echo "RUN yum update -y && yum install -y$yum_pkgs java-17-amazon-corretto-devel tar && yum clean all" >> "$out"
+              ;;
+            *apt-get*update*|*apt-get*upgrade*|*apt-get*clean*|*apt-get*autoremove*|*rm -rf /var/lib/apt/lists*|*--no-install-recommends*)
+              # skip
+              ;;
+            *tini*|*Tini*|*tini-0.19.0-amd64*)
+              tini_installed=1
+              ;;
+            *)
+              echo "$line" >> "$out"
+              ;;
+          esac
+        done < Dockerfile
+
+        if [ "$tini_installed" -eq 1 ]; then
+          cat <<EOF >> "$out"
+# Install tini manually (not available in Amazon Linux repos)
+RUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\
+    && chmod +x /tini \\
+    && mv /tini /usr/local/bin/tini
+EOF
+        fi
+
+        mv "$out" Dockerfile
+
+    - name: Login to Amazon ECR
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
+
+    - name: Build Docker image
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        docker build -t vitech-bamboodr-repo agent-base
+
+    - name: Tag Docker image
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        docker tag vitech-bamboodr-repo:latest $ECR_REPO:latest-test
+
+    - name: Push Docker image to ECR
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        docker push $ECR_REPO:latest-test
+
+    - name: Update Dockerfile.last in repo for future comparison
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        cp agent-base/Dockerfile Dockerfile.last
+
+    - name: Commit and push Dockerfile.last
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        git config --global user.email "actions@github.com"
+        git config --global user.name "GitHub Actions"
+        git add Dockerfile.last
+        git commit -m "Update last known Bamboo Dockerfile [skip ci]" || echo "No changes to commit"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
