@@ -1,180 +1,273 @@
 ---
-- name: print starting date and time 
-  shell: date
-  register: date_1
+- hosts: Internal_Server
+  gather_facts: yes
+  vars:
+    region: "us-west-2"
+    path_00: "/u02/github_to_codecommit"
+    path_01: "/u02/github_to_codecommit/github_clone"
+    path_02: "/u02/github_to_codecommit/logs"
+  tasks:
+    - name: print starting date and time
+      shell: date
+      register: date_1
 
-- debug:
-    msg: "{{ date_1.stdout }}"
+    - debug:
+        msg: "{{ date_1.stdout }}"
 
-- shell: "{{ path_00 }}/github_repo_names.sh"
-  register: script_output
-  environment:
-    TOKEN: "{{ github_password }}"
-    ORG_NAME: "{{ organization }}"
-  become: false
+    - name: Make github_repo_names.sh executable
+      file:
+        path: "../shell_scripts/github_repo_names_both.sh"
+        mode: '0755'
+        state: file
 
-- name: Set Ansible fact with repository names
-  set_fact:
-    github_repos_names: "{{ script_output.stdout | regex_replace('\n', '') | split(' ') | map('trim') | select | list }}"
+    - shell: "../shell_scripts/github_repo_names_both.sh"
+      register: script_output
+      environment:
+        token_1: "{{ github_password_1 }}" 
+        token_2: "{{ github_password_2 }}" 
+        org_name_1: "{{ organization_1 }}"
+        org_name_2: "{{ organization_2 }}"
+      become: false
 
-- debug:
-    msg: "{{ github_repos_names }}"
-
-- name: filtering Nextgen and CoreAdmin from list
-  set_fact: 
-    filtered_github_repos: "{{ github_repos_names | difference(['CoreAdmin', 'Nextgen']) }}"
-
-- debug:
-    msg: "{{ filtered_github_repos }}"
-
-- name: create a directory
-  file: 
-    path: "{{ path_00 }}"
-    state: directory
-
-- name: create a directory
-  file: 
-    path: "{{ path_01 }}"
-    state: directory
-
-- name: Clone GitHub repositories
-  shell: |
-    cd {{ path_01 }}
-    if [ -d {{ item }}.git ]; then
-      git -C {{ item }}.git remote update
-    else
-      git clone --mirror https://{{ github_username }}:{{ github_password }}@github.com/{{ organization }}/{{ item }}
-    fi
-  loop: "{{ github_repos_names }}" 
-  register: git_clone_results
-
-- name: Create CodeCommit repositories 
-  shell: aws codecommit create-repository --repository-name "{{ item }}" --region {{ region }} 
-  register: codecommit_create_results 
-  with_items: "{{ github_repos_names }}"
-  ignore_errors: yes
-
-- name: Newly created repos on codecommit
-  set_fact:
-    codecommit_repo_names: "{{ codecommit_repo_names | default([]) + [item.item] | list }}"
-  with_items: "{{ codecommit_create_results.results }}"
-  when: item.rc == 0
+    - name: Parse JSON output from repo comparison script
+      set_fact:
+        repo_data: "{{ script_output.stdout | from_json }}"
  
-- name: Display newly created repositories
-  debug:
-    msg: "{{ codecommit_repo_names }}"
-  when: codecommit_repo_names is defined
+    - name: Print repos in {{ organization_1 }}
+      debug:
+        msg: "{{ repo_data.vitechsystems_repos }}"
+ 
+    - name: Print repos in {{ organization_2 }}
+      debug:
+       msg: "{{ repo_data.vitechinfra_repos }}"
+ 
+    - name: Print common repos (in both orgs)
+      debug:
+        msg: "{{ repo_data.common_repos }}"
+ 
+    - name: Print unique repos in {{ organization_2 }} (not in {{ organization_1 }})
+      debug:
+        msg: "{{ repo_data.filtered_repos }}"
 
-- name: Push code to newly created repositories on CodeCommit
-  shell: |
-    cp -r /u02/incremental-repo-migration.py {{ path_01 }}/{{ item }}.git/
-    cd {{ path_01 }}/{{ item }}.git
-    git remote add codecommit https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
-    python incremental-repo-migration.py
-    git remote remove codecommit
-  register: codecommit_first_push_result 
-  when: codecommit_repo_names is defined
-  loop: "{{ codecommit_repo_names }}"
-  ignore_errors: yes
+    - name: filtering Nextgen and CoreAdmin from list
+      set_fact: 
+        filtered_vitechsystems_repos: "{{ repo_data.vitechsystems_repos | difference(['CoreAdmin', 'Nextgen', 'CPF_PRODUCT_L5']) }}"
 
-- name: sending mail
-  mail:
-                 host: '{{smtp_host}}'
-                 port: '{{smtp_port}}'
-                 subject: "New Repositories Added To CodeCommit"
-                 body: |
-                   A New repository have been added to CodeCommit:
-       
-                   {%for repo in codecommit_repo_names %}
-                     - {{ repo }}
-                   {% endfor %}
+    - debug:
+        msg: "{{ filtered_vitechsystems_repos }}"
 
-                   Please verify.
+    - name: create a directory
+      file: 
+        path: "{{ path_00 }}"
+        state: directory
 
+    - name: create a directory
+      file: 
+        path: "{{ path_01 }}"
+        state: directory
 
-                   Thanks,
-                   v3atlassianops
-                 from: '{{from_mail}}'
-                 to: '{{to_mail}}'
-  when: codecommit_repo_names is defined
+    - name: Clone GitHub Vitechsystems ORG repositories
+      shell: |
+        cd {{ path_01 }}
+        if [ -d {{ item }}.git ]; then
+          git -C {{ item }}.git remote update
+        else
+          git clone --mirror https://{{ github_username }}:{{ github_password_1 }}@github.com/{{ organization_1 }}/{{ item }}
+        fi
+      loop: "{{ repo_data.vitechsystems_repos }}" 
+      register: git_clone_results_vitechsystems
 
-- name: Push code to Nextgen after deleting feature branches
-  shell: |
-    cd {{ path_01 }}/Nextgen.git
-    git fetch --prune
-    git branch -D $(git branch | grep 'source_audit_')
-    git branch -D $(git branch | grep 'nextgen_l5_f')
-    git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/Nextgen
-  register: codecommit_push_nextgen
+    - name: Clone GitHub Vitechinfra ORG repositories
+      shell: |
+        cd {{ path_01 }}
+        if [ -d {{ item }}.git ]; then
+          git -C {{ item }}.git remote update
+        else
+          git clone --mirror https://{{ github_username }}:{{ github_password_2 }}@github.com/{{ organization_2 }}/{{ item }}
+        fi
+      loop: "{{ repo_data.filtered_repos }}" 
+      register: git_clone_results_vitechinfra
 
+    - name: Create CodeCommit repositories for vitechsystems 
+      shell: aws codecommit create-repository --repository-name "{{ item }}" --region {{ region }} 
+      register: codecommit_create_results_vitechsystems 
+      with_items: "{{ repo_data.vitechsystems_repos }}"
+      ignore_errors: yes
 
-- name: Push code to CoreAdmin after deleting feature branches
-  shell: |
-    cd {{ path_01 }}/CoreAdmin.git
-    git fetch --prune
-    git branch -D $(git branch | grep 'v310uc_L5_f')
-    git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/CoreAdmin
-  register: codecommit_push_coreadmin
+    - name: Newly created vitechsystems org repos on codecommit
+      set_fact:
+        codecommit_repo_names_vitechsystems: "{{ codecommit_repo_names_vitechsystems | default([]) + [item.item] | list }}"
+      with_items: "{{ codecommit_create_results_vitechsystems.results }}"
+      when: item.rc == 0
+ 
+    - name: Display newly created vitechsystems org repositories
+      debug:
+        msg: "{{ codecommit_repo_names_vitechsystems }}"
+      when: codecommit_repo_names_vitechsystems is defined
 
+    - name: Push code to newly created vitechsystems org repositories on CodeCommit
+      shell: |
+        cp -r ../PYTHON_Script/incremental-repo-migration.py {{ path_01 }}/{{ item }}.git/
+        cd {{ path_01 }}/{{ item }}.git
+        git remote add codecommit https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+        python incremental-repo-migration.py
+        git remote remove codecommit
+      register: codecommit_first_push_result_vitechsystems
+      when: codecommit_repo_names_vitechsystems is defined
+      loop: "{{ codecommit_repo_names_vitechsystems }}"
+      ignore_errors: yes
 
-- name: Push all repositories to CodeCommit
-  shell: |
-    cd {{ path_01 }}/{{ item }}.git
-    git fetch --prune
-    git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
-  register: codecommit_push_result 
-  loop: "{{ filtered_github_repos }}"
+    - name: Send Notification on Success
+      shell: |
+        aws sns publish \
+          --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+          --message "$(echo -e '**A New repositories have been added to AWS CodeCommit from Vitechsystems GitHub organization:**\n\n{{ codecommit_repo_names_vitechsystems }}\n\nPlease verify.\n\nThanks,\n\nv3atlassianops')" \
+          --subject "New Vitechsystems Repositories Added To AWS CodeCommit"
+      when:
+        - codecommit_first_push_result_vitechsystems is defined
+        - codecommit_first_push_result_vitechsystems.changed | default(false)
 
-- name: check for directory
-  stat:
-    path: "{{ path_02 }}"
-  register: user_check
+    - name: Create CodeCommit repositories for vitechinfra 
+      shell: aws codecommit create-repository --repository-name "{{ item }}" --region {{ region }} 
+      register: codecommit_create_results_vitechinfra 
+      with_items: "{{ repo_data.filtered_repos }}"
+      ignore_errors: yes
 
-- name: Remove svn_git_coreadmin_clone directory 
-  file: 
-    path: "{{ path_02 }}" 
-    state: absent 
-  when: user_check.stat.exists == true 
+    - name: Newly created vitechinfra org repos on codecommit
+      set_fact:
+        codecommit_repo_names_vitechinfra: "{{ codecommit_repo_names_vitechinfra | default([]) + [item.item] | list }}"
+      with_items: "{{ codecommit_create_results_vitechinfra.results }}"
+      when: item.rc == 0
+ 
+    - name: Display newly created vitechinfra org repositories
+      debug:
+        msg: "{{ codecommit_repo_names_vitechinfra }}"
+      when: codecommit_repo_names_vitechinfra is defined
 
-- name: create a directory
-  file: 
-    path: "{{ path_02 }}"
-    state: directory
+    - name: Push code to newly created vitechinfra org repositories on CodeCommit
+      shell: |
+        cp -r ../PYTHON_Script/incremental-repo-migration.py {{ path_01 }}/{{ item }}.git/
+        cd {{ path_01 }}/{{ item }}.git
+        git remote add codecommit https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+        python incremental-repo-migration.py
+        git remote remove codecommit
+      register: codecommit_first_push_result_vitechinfra
+      when: codecommit_repo_names_vitechinfra is defined
+      loop: "{{ codecommit_repo_names_vitechinfra }}"
+      ignore_errors: yes
 
-- name: Save git clone log to file 
-  copy: 
-    content: "{{ git_clone_results }}" 
-    dest: "{{ path_02 }}/git_clone_results.log"
+    - name: Send Notification on Success
+      shell: |
+        aws sns publish \
+          --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+          --message "$(echo -e '**A New repositories have been added to AWS CodeCommit from Vitechinfra GitHub organization:**\n\n{{ codecommit_repo_names_vitechinfra }}\n\nPlease verify.\n\nThanks,\n\nv3atlassianops')" \
+          --subject "New Vitechinfra Repositories Added To AWS CodeCommit"
+      when:
+        - codecommit_first_push_result_vitechinfra is defined
+        - codecommit_first_push_result_vitechinfra.changed | default(false)
 
-- name: Save codecommit_create_results log to file 
-  copy: 
-    content: "{{ codecommit_create_results }}" 
-    dest: "{{ path_02 }}/codecommit_create_results.log"
+    - name: Push code to Nextgen after deleting feature branches
+      shell: |
+        cd {{ path_01 }}/Nextgen.git
+        git fetch --prune
+        git branch -D $(git branch | grep 'source_audit_')
+        git branch -D $(git branch | grep 'nextgen_l5_f')
+        git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/Nextgen
+      register: codecommit_push_nextgen
 
-- name: Save codecommit_first_push_result log to file 
-  copy: 
-    content: "{{ codecommit_first_push_result }}" 
-    dest: "{{ path_02 }}/codecommit_first_push_result.log"
+    - name: Push code to CoreAdmin after deleting feature branches
+      shell: |
+        cd {{ path_01 }}/CoreAdmin.git
+        git fetch --prune
+        git branch -D $(git branch | grep 'v310uc_L5_f')
+        git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/CoreAdmin
+      register: codecommit_push_coreadmin
 
-- name: Save codecommit_push_result log to file 
-  copy: 
-    content: "{{ codecommit_push_result }}" 
-    dest: "{{ path_02 }}/codecommit_push_result.log"
+    - name: Push all Vitechsystems repositories to AWS CodeCommit
+      shell: |
+        cd {{ path_01 }}/{{ item }}.git
+        git fetch --prune
+        git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+      register: codecommit_push_result_vitechsystems
+      loop: "{{ filtered_vitechsystems_repos }}"
 
-- name: Save git clone log to file 
-  copy: 
-    content: "{{ codecommit_push_nextgen }}" 
-    dest: "{{ path_02 }}/codecommit_push_nextgen.log"
+    - name: Push all Vitechinfra repositories to AWS CodeCommit
+      shell: |
+        cd {{ path_01 }}/{{ item }}.git
+        git fetch --prune
+        git push --mirror https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }}
+      register: codecommit_push_result_vitechinfra
+      loop: "{{ repo_data.filtered_repos }}"
 
-- name: Save codecommit_create_results log to file 
-  copy: 
-    content: "{{ codecommit_push_coreadmin }}" 
-    dest: "{{ path_02 }}/codecommit_push_coreadmin.log"
+    - name: check for directory
+      stat:
+        path: "{{ path_02 }}"
+      register: user_check
 
+    - name: Remove svn_git_coreadmin_clone directory 
+      file: 
+        path: "{{ path_02 }}" 
+        state: absent 
+      when: user_check.stat.exists == true 
 
-- name: print ending date and time 
-  shell: date
-  register: date_2
+    - name: create a directory
+      file: 
+        path: "{{ path_02 }}"
+        state: directory
 
-- debug:
-    msg: "{{ date_2.stdout }}"
+    - name: Save vitechsystems git clone log to file 
+      copy: 
+        content: "{{ git_clone_results_vitechsystems }}" 
+        dest: "{{ path_02 }}/git_clone_results_vitechsystems.log"
+
+    - name: Save codecommit_create_results_vitechsystems log to file 
+      copy: 
+        content: "{{ codecommit_create_results_vitechsystems }}" 
+        dest: "{{ path_02 }}/codecommit_create_results_vitechsystems.log"
+
+    - name: Save codecommit_first_push_result_vitechsystems log to file 
+      copy: 
+        content: "{{ codecommit_first_push_result_vitechsystems }}" 
+        dest: "{{ path_02 }}/codecommit_first_push_result_vitechsystems.log"
+
+    - name: Save codecommit_push_result_vitechsystems log to file 
+      copy: 
+        content: "{{ codecommit_push_result_vitechsystems }}" 
+        dest: "{{ path_02 }}/codecommit_push_result_vitechsystems.log"
+
+    - name: Save vitechsystems git clone log to file 
+      copy: 
+        content: "{{ git_clone_results_vitechinfra }}" 
+        dest: "{{ path_02 }}/git_clone_results_vitechinfra.log"
+
+    - name: Save codecommit_create_results_vitechinfra log to file 
+      copy: 
+        content: "{{ codecommit_create_results_vitechinfra }}" 
+        dest: "{{ path_02 }}/codecommit_create_results_vitechinfra.log"
+
+    - name: Save codecommit_first_push_result_vitechinfra log to file 
+      copy: 
+        content: "{{ codecommit_first_push_result_vitechinfra }}" 
+        dest: "{{ path_02 }}/codecommit_first_push_result_vitechinfra.log"
+
+    - name: Save codecommit_push_result_vitechinfra log to file 
+      copy: 
+        content: "{{ codecommit_push_result_vitechinfra }}" 
+        dest: "{{ path_02 }}/codecommit_push_result_vitechinfra.log"
+
+    - name: Save codecommit_push_nextgen log to file 
+      copy: 
+        content: "{{ codecommit_push_nextgen }}" 
+        dest: "{{ path_02 }}/codecommit_push_nextgen.log"
+
+    - name: Save codecommit_push_coreadmin log to file 
+      copy: 
+        content: "{{ codecommit_push_coreadmin }}" 
+        dest: "{{ path_02 }}/codecommit_push_coreadmin.log"
+
+    - name: print ending date and time 
+      shell: date
+      register: date_2
+
+    - debug:
+        msg: "{{ date_2.stdout }}"
