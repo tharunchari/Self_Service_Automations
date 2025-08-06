@@ -3,8 +3,7 @@ name: ephemeral-Bamboo-Agent-build
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 5 1 * *'
-    # 11:00 IST on the 1st of every month
+    - cron: '30 5 1 * *' # 11:00 IST on the 1st of every month
 
 jobs:
   check-and-build:
@@ -12,6 +11,7 @@ jobs:
     env:
       SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
+      TINI_VERSION: v0.19.0
     steps:
     - name: Checkout this repo
       uses: actions/checkout@v4
@@ -19,10 +19,18 @@ jobs:
         token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
 
     - name: Clone Bitbucket Bamboo Agent Base
-      run: git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base
+      run: |
+        git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base || {
+          echo "Failed to clone docker-bamboo-agent-base repository"
+          exit 1
+        }
 
     - name: Clone Atlassian Docker Shared Components
-      run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
+      run: |
+        git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream || {
+          echo "Failed to clone docker-shared-components repository"
+          exit 1
+        }
 
     - name: Compare Dockerfiles
       id: compare
@@ -37,6 +45,14 @@ jobs:
           echo "changed=true" >> $GITHUB_OUTPUT
         else
           echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Validate Upstream Dockerfile
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        if ! grep -q "FROM.*ubuntu" agent-base/Dockerfile; then
+          echo "Upstream Dockerfile does not use Ubuntu base, conversion may fail"
+          exit 1
         fi
 
     - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
@@ -89,10 +105,10 @@ jobs:
         {print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
-        # Insert tini install after yum block if not already present
+        # Install tini manually if not present
         if ! grep -q "/tini" Dockerfile; then
           sed -i '/yum clean all/a \
-        # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
+        # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_VERSION}-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
         fi
 
         # Robustly convert ENV lines to key=value format
@@ -116,6 +132,7 @@ jobs:
         cp -r shared-components-upstream shared-components
 
     - name: Configure AWS credentials
+      if: steps.compare.outputs.changed == 'true'
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
@@ -130,17 +147,25 @@ jobs:
     - name: Build Docker image
       if: steps.compare.outputs.changed == 'true'
       run: |
-        docker build -t vitech-bamboodr-repo .
+        docker build -t vitech-bamboodr-repo . || {
+          echo "Docker build failed"
+          exit 1
+        }
 
     - name: Tag Docker image
       if: steps.compare.outputs.changed == 'true'
       run: |
-        docker tag vitech-bamboodr-repo:latest $ECR_REPO:latest-test
+        TAG=$(date +%Y%m%d-%H%M%S)
+        docker tag vitech-bamboodr-repo:latest $ECR_REPO:$TAG
 
     - name: Push Docker image to ECR
       if: steps.compare.outputs.changed == 'true'
       run: |
-        docker push $ECR_REPO:latest-test
+        TAG=$(date +%Y%m%d-%H%M%S)
+        docker push $ECR_REPO:$TAG || {
+          echo "Docker push failed"
+          exit 1
+        }
 
     - name: Update Dockerfile.last in repo for future comparison
       if: steps.compare.outputs.changed == 'true'
@@ -153,7 +178,7 @@ jobs:
         git config --global user.email "actions@github.com"
         git config --global user.name "GitHub Actions"
         git add Dockerfile.last
-        git commit -m "Update last known Bamboo Dockerfile [skip ci]" || echo "No changes to commit"
+        git diff --staged --quiet || git commit -m "Update last known Bamboo Dockerfile [skip ci]"
         git push
       env:
         GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
