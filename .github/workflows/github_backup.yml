@@ -1,4 +1,4 @@
-name: TEST_Mirror GitHub Repos to AWS CodeCommit
+name: Mirror GitHub Repositories to AWS CodeCommit
  
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
  
       - name: Run Ansible Playbook
         run: |
-          sudo ansible-playbook Ansible/github_backup_1.yml -i Ansible/inventory -e "github_username=github-bamboo_vitech github_password_1=${{ secrets.PROD_FINE_GRAINED_PAT }} organization_1=vitechsystems github_password_2=${{ secrets.INFRA_FINE_GRAINED_PAT }} organization_2=vitechinfra codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }}"
+          sudo ansible-playbook Ansible/github_backup.yml -i Ansible/inventory -e "github_username=github-bamboo_vitech github_password_1=${{ secrets.PROD_FINE_GRAINED_PAT }} organization_1=vitechsystems github_password_2=${{ secrets.INFRA_FINE_GRAINED_PAT }} organization_2=vitechinfra codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }}"
 
   stop-runner:
     needs: GitHub_Backup
