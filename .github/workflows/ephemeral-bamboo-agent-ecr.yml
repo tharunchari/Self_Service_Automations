@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '30 5 1 * *'
-  push:
-    branches: [main]
+    # 11:00 IST on the 1st of every month
 
 jobs:
   check-and-build:
@@ -52,7 +51,6 @@ jobs:
     #       --subject "Bamboo Dockerfile: No changes detected" \
     #       --message "No changes detected in the upstream Dockerfile. No build executed."
 
-    # Only build/push if changes
     # - name: Notify via SNS if changes detected
     #   if: steps.compare.outputs.changed == 'true'
     #   run: |
@@ -95,7 +93,7 @@ jobs:
               echo "RUN yum update -y && yum install -y$yum_pkgs java-17-amazon-corretto-devel tar && yum clean all" >> "$out"
               ;;
             *apt-get*update*|*apt-get*upgrade*|*apt-get*clean*|*apt-get*autoremove*|*rm -rf*|*--no-install-recommends*)
-              # skip (all apt-get maintenance and cleanup commands)
+              # skip
               ;;
             *tini*|*Tini*|*tini-0.19.0-amd64*)
               tini_installed=1
