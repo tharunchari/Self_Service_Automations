@@ -49,8 +49,6 @@ jobs:
 
         awk '
         BEGIN {install=0}
-        /apt-get update/ {next}
-        /apt-get upgrade/ {next}
         /apt-get install -y/ {install=1; print "RUN yum update -y && yum upgrade -y && yum install -y \\"; next}
         install && /^         / {
           pkg=$0
@@ -59,7 +57,7 @@ jobs:
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
-          if(length(pkg) > 0) print "    " pkg " \\"
+          if(pkg != "" && pkg != "\\") print "    " pkg " \\"
           next
         }
         install && !/^         / {
@@ -67,6 +65,8 @@ jobs:
           print "    java-17-amazon-corretto-devel tar && yum clean all"
           print "RUN pip3 install jinja2"
         }
+        /apt-get update/ {next}
+        /apt-get upgrade/ {next}
         /apt-get clean/ {next}
         /apt-get autoclean/ {next}
         /apt-get autoremove/ {next}
