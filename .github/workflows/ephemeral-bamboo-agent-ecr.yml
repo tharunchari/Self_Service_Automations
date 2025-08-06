@@ -79,34 +79,25 @@ jobs:
         }
 
         while IFS= read -r line; do
-          case "$line" in
-            FROM* | "ARG BASE_IMAGE="*)
-              echo "FROM amazonlinux:latest" >> "$out"
-              ;;
-            *apt-get*install*)
-              pkgs=$(echo "$line" | sed -n 's/.*apt-get install[^ ]* \([^&|;]*\).*/\1/p')
-              yum_pkgs=""
-              for pkg in $pkgs; do
-                ypkg=$(swap_pkg "$pkg")
-                [ "$ypkg" ] && yum_pkgs="$yum_pkgs $ypkg"
-              done
-              echo "RUN yum update -y && yum install -y$yum_pkgs java-17-amazon-corretto-devel tar && yum clean all" >> "$out"
-              ;;
-            *apt-get*update*|\
-            *apt-get*upgrade*|\
-            *apt-get*clean*|\
-            *apt-get*autoremove*|\
-            *rm -rf*|\
-            *--no-install-recommends*)
-              # skip
-              ;;
-            *tini*|*Tini*|*tini-0.19.0-amd64*)
-              tini_installed=1
-              ;;
-            *)
-              echo "$line" >> "$out"
-              ;;
-          esac
+          # Use grep to filter patterns, simplifying logic and avoiding shell case wildcards
+          if echo "$line" | grep -qE 'apt-get.*update|apt-get.*upgrade|apt-get.*clean|apt-get.*autoremove|rm -rf|--no-install-recommends'; then
+            # skip
+            continue
+          elif echo "$line" | grep -qE 'FROM|ARG BASE_IMAGE='; then
+            echo "FROM amazonlinux:latest" >> "$out"
+          elif echo "$line" | grep -q 'apt-get.*install'; then
+            pkgs=$(echo "$line" | sed -n 's/.*apt-get install[^ ]* \([^&|;]*\).*/\1/p')
+            yum_pkgs=""
+            for pkg in $pkgs; do
+              ypkg=$(swap_pkg "$pkg")
+              [ "$ypkg" ] && yum_pkgs="$yum_pkgs $ypkg"
+            done
+            echo "RUN yum update -y && yum install -y$yum_pkgs java-17-amazon-corretto-devel tar && yum clean all" >> "$out"
+          elif echo "$line" | grep -qE 'tini|Tini|tini-0.19.0-amd64'; then
+            tini_installed=1
+          else
+            echo "$line" >> "$out"
+          fi
         done < Dockerfile
 
         if [ "$tini_installed" -eq 1 ]; then
