@@ -40,29 +40,47 @@ jobs:
       if: steps.compare.outputs.changed == 'true'
       run: |
         cp agent-base/Dockerfile Dockerfile
-        # Replace base image and package manager
+
+        # Replace base image
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
-        # Remove apt-get lines and replace with yum
-        sed -i '/apt-get.*update/d' Dockerfile
-        sed -i '/apt-get.*upgrade/d' Dockerfile
-        sed -i '/apt-get.*clean/d' Dockerfile
-        sed -i '/apt-get.*autoremove/d' Dockerfile
-        sed -i '/rm -rf \/var\/lib\/apt\/lists\/*/d' Dockerfile
-        sed -i 's/apt-get install -y --no-install-recommends /yum install -y /g' Dockerfile
-        sed -i 's/apt-get install -y /yum install -y /g' Dockerfile
-        # Replace Ubuntu package names with Amazon Linux equivalents
-        sed -i 's/openssh-client/openssh/g' Dockerfile
-        sed -i 's/python-is-python3/python3/g' Dockerfile
-        # Remove tini from yum install, we'll add it manually after
-        sed -i '/tini/d' Dockerfile
-        # Ensure Java and tar are included
-        sed -i '/yum install -y/ s/$/ java-17-amazon-corretto-devel tar/' Dockerfile
-        # After the yum install block, insert tini install
-        awk '/yum install -y/ && !x {print;print "# Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini";x=1;next}1' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
-        # Robustly convert ENV lines to key=value format for Docker compatibility
+
+        # Remove old debian/ubuntu commands and apt blocks entirely
+        awk '
+        BEGIN {install=0}
+        /apt-get update/ {next}
+        /apt-get upgrade/ {next}
+        /apt-get install -y/ {install=1; print "RUN yum update -y && yum upgrade -y && yum install -y \\"; next}
+        install && /^         / {
+          pkg=$0
+          gsub("^ *", "", pkg)
+          gsub("openssh-client", "openssh", pkg)
+          gsub("python-is-python3", "python3", pkg)
+          gsub("tini", "", pkg)
+          if(length(pkg) > 0) print "    " pkg " \\"
+          next
+        }
+        install && !/^         / {
+          install=0
+          print "    java-17-amazon-corretto-devel tar && yum clean all"
+        }
+        /apt-get clean/ {next}
+        /apt-get autoclean/ {next}
+        /apt-get autoremove/ {next}
+        /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
+        {print}
+        ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+
+        # Insert tini install after the yum block if not already present
+        if ! grep -q "/tini" Dockerfile; then
+          sed -i '/yum clean all/a \
+# Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' Dockerfile
+        fi
+
+        # Robustly convert ENV lines to key=value format
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
+
         # Remove any accidental lines starting with &&
         sed -i '/^&&/d' Dockerfile
         # Remove empty continuation lines
