@@ -67,6 +67,8 @@ jobs:
         out="Dockerfile.aws"
         : > "$out"
         tini_installed=0
+        in_install_block=0
+        install_pkgs=""
 
         swap_pkg() {
           case "$1" in
@@ -78,27 +80,59 @@ jobs:
           esac
         }
 
-        while IFS= read -r line; do
-          # Use grep to filter patterns, simplifying logic and avoiding shell case wildcards
-          if echo "$line" | grep -qE 'apt-get.*update|apt-get.*upgrade|apt-get.*clean|apt-get.*autoremove|rm -rf|--no-install-recommends'; then
-            # skip
+        while IFS= read -r line || [ -n "$line" ]; do
+          # Start of apt-get install (could be multiline)
+          if echo "$line" | grep -q 'apt-get install'; then
+            in_install_block=1
+            pkgs=$(echo "$line" | sed -n 's/.*apt-get install[^ ]* \(.*\)/\1/p' | sed 's/\\$//')
+            install_pkgs="$pkgs"
             continue
-          elif echo "$line" | grep -qE 'FROM|ARG BASE_IMAGE='; then
+          fi
+
+          # Continuation of apt-get install block
+          if [ $in_install_block -eq 1 ]; then
+            # If the line is just a continuation or ends with '\'
+            if echo "$line" | grep -q '^\s*\\\s*$'; then
+              continue
+            # Likely a package line
+            elif echo "$line" | grep -q '^[[:space:]]*[a-zA-Z0-9\-]\+'; then
+              pkg=$(echo "$line" | sed 's/\\$//;s/^[[:space:]]*//')
+              install_pkgs="$install_pkgs $pkg"
+              continue
+            else
+              # End of install block, flush the RUN yum line
+              in_install_block=0
+              yum_pkgs=""
+              for pkg in $install_pkgs; do
+                ypkg=$(swap_pkg "$pkg")
+                [ "$ypkg" ] && yum_pkgs="$yum_pkgs $ypkg"
+              done
+              echo "RUN yum update -y && yum install -y$yum_pkgs java-17-amazon-corretto-devel tar && yum clean all" >> "$out"
+              install_pkgs=""
+            fi
+          fi
+
+          # Skip unwanted commands
+          if echo "$line" | grep -qE 'apt-get.*update|apt-get.*upgrade|apt-get.*clean|apt-get.*autoremove|rm -rf|--no-install-recommends'; then
+            continue
+          elif echo "$line" | grep -qE '^FROM|^ARG BASE_IMAGE='; then
             echo "FROM amazonlinux:latest" >> "$out"
-          elif echo "$line" | grep -q 'apt-get.*install'; then
-            pkgs=$(echo "$line" | sed -n 's/.*apt-get install[^ ]* \([^&|;]*\).*/\1/p')
-            yum_pkgs=""
-            for pkg in $pkgs; do
-              ypkg=$(swap_pkg "$pkg")
-              [ "$ypkg" ] && yum_pkgs="$yum_pkgs $ypkg"
-            done
-            echo "RUN yum update -y && yum install -y$yum_pkgs java-17-amazon-corretto-devel tar && yum clean all" >> "$out"
           elif echo "$line" | grep -qE 'tini|Tini|tini-0.19.0-amd64'; then
             tini_installed=1
           else
             echo "$line" >> "$out"
           fi
         done < Dockerfile
+
+        # Flush any remaining install block at EOF
+        if [ -n "$install_pkgs" ]; then
+          yum_pkgs=""
+          for pkg in $install_pkgs; do
+            ypkg=$(swap_pkg "$pkg")
+            [ "$ypkg" ] && yum_pkgs="$yum_pkgs $ypkg"
+          done
+          echo "RUN yum update -y && yum install -y$yum_pkgs java-17-amazon-corretto-devel tar && yum clean all" >> "$out"
+        fi
 
         if [ "$tini_installed" -eq 1 ]; then
           cat <<EOF >> "$out"
