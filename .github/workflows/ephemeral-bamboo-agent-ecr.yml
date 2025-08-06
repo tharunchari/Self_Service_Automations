@@ -57,6 +57,7 @@ jobs:
           gsub("^ *", "", pkg)
           gsub("openssh-client", "openssh", pkg)
           gsub("python-is-python3", "python3", pkg)
+          gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
           if(length(pkg) > 0) print "    " pkg " \\"
           next
@@ -64,6 +65,7 @@ jobs:
         install && !/^         / {
           install=0
           print "    java-17-amazon-corretto-devel tar && yum clean all"
+          print "RUN pip3 install jinja2"
         }
         /apt-get clean/ {next}
         /apt-get autoclean/ {next}
@@ -75,7 +77,7 @@ jobs:
         # Insert tini install after yum block if not already present
         if ! grep -q "/tini" Dockerfile; then
           sed -i '/yum clean all/a \
-        # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' Dockerfile
+# Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 \\\n    && chmod +x /tini \\\n    && mv /tini /usr/local/bin/tini' Dockerfile
         fi
 
         # Robustly convert ENV lines to key=value format
@@ -95,8 +97,6 @@ jobs:
     - name: Copy shared-components from upstream to workspace
       if: steps.compare.outputs.changed == 'true'
       run: |
-        # This copies the shared-components directory from the upstream clone into the workspace root,
-        # so Docker build context is correct for COPY shared-components/* instructions.
         rm -rf shared-components
         cp -r shared-components-upstream shared-components
 
