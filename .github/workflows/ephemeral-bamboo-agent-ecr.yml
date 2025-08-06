@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '30 5 1 * *'  #This will run on the 1st of every month at 11:00 IST.
-  push:
-    branches: [main]
 
 jobs:
   check-and-build:
@@ -40,8 +38,8 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
         aws-region: us-west-2
 
     - name: Notify via SNS if no changes
