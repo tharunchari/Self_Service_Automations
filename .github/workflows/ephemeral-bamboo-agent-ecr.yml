@@ -63,6 +63,7 @@ jobs:
           # Convert Dockerfile from Ubuntu/Debian to Amazon Linux
           sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
           sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
+          # Remove all lines that start with && to clean up any malformed commands
           sed -i '/^\s*&&/d' Dockerfile
 
           # Process package installations
@@ -73,39 +74,49 @@ jobs:
             seen["python3"]=0; seen["python3-pip"]=0
           }
           /apt-get install -y/ {install=1; next}
-          install && /^[ \t]+/ {
-            pkg=$0
-            gsub("^ *", "", pkg)
-            gsub("openssh-client", "openssh-clients", pkg)
-            gsub("python-is-python3", "python3", pkg)
-            gsub("python3-jinja2", "python3-pip", pkg)
-            gsub("tini", "", pkg)
-            gsub("git-lfs", "", pkg)
-            gsub(/[ \t\\]+$/, "", pkg)
-            if(pkg != "" && pkg !~ /^[\\]+$/) {
-              if(pkg == "git" && seen["git"]==1) next
-              if(pkg == "openssh-clients" && seen["openssh-clients"]==1) next
-              if(pkg == "python3" && seen["python3"]==1) next
-              if(pkg == "python3-pip" && seen["python3-pip"]==1) next
-              if(pkg == "git") seen["git"]=1
-              if(pkg == "openssh-clients") seen["openssh-clients"]=1
-              if(pkg == "python3") seen["python3"]=1
-              if(pkg == "python3-pip") seen["python3-pip"]=1
-              pkg_list[pkg_count]=pkg
+          install && /^[ \t]+[a-zA-Z]/ {
+            # Extract package name from line
+            line = $0
+            gsub("^ *", "", line)
+            gsub(/[ \t\\]+$/, "", line)
+            
+            # Split line by spaces to handle multiple packages on one line
+            n = split(line, packages, " ")
+            for(j=1; j<=n; j++) {
+              pkg = packages[j]
+              if(pkg == "") continue
+              
+              # Convert package names
+              if(pkg == "openssh-client") pkg = "openssh-clients"
+              else if(pkg == "python-is-python3") pkg = "python3"
+              else if(pkg == "python3-jinja2") pkg = "python3-pip"
+              else if(pkg == "tini" || pkg == "git-lfs") continue
+              
+              # Avoid duplicates
+              if((pkg == "git" && seen["git"]==1) ||
+                 (pkg == "openssh-clients" && seen["openssh-clients"]==1) ||
+                 (pkg == "python3" && seen["python3"]==1) ||
+                 (pkg == "python3-pip" && seen["python3-pip"]==1)) {
+                continue
+              }
+              
+              # Mark as seen and add to list
+              seen[pkg] = 1
+              pkg_list[pkg_count] = pkg
               pkg_count++
             }
             next
           }
-          install && !/^         / {
+          install && (/^[ \t]*&&/ || /^[ \t]*$/ || !/^[ \t]+/) {
             if(pkg_count > 0) {
               print "RUN yum update -y && yum upgrade -y && yum install -y \\"
               for(i=0; i<pkg_count; i++) {
                 if(i < pkg_count-1)
                   print "    " pkg_list[i] " \\"
                 else
-                  print "    " pkg_list[i]
+                  print "    " pkg_list[i] " \\"
               }
-              print " && yum clean all"
+              print "    && yum clean all"
               print "RUN pip3 install jinja2"
               print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
               print "    && tar -xzf git-lfs.tar.gz \\"
@@ -115,19 +126,31 @@ jobs:
             install=0
             pkg_count=0
             delete pkg_list
+            # Skip all apt-get related commands
+            if(/apt-get/ || /rm -rf \/var\/lib\/apt/) next
+            # Skip empty lines and continuation lines that were part of apt-get
+            if(/^[ \t]*&&/ || /^[ \t]*$/) next
           }
-          /apt-get update/ {next}
-          /apt-get upgrade/ {next}
-          /apt-get clean/ {next}
-          /apt-get autoclean/ {next}
-          /apt-get autoremove/ {next}
-          /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
+          /apt-get/ {next}
+          /rm -rf \/var\/lib\/apt/ {next}
           {print}
           ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
           # Debug: Log the generated Dockerfile
           echo "Generated Dockerfile:"
           cat Dockerfile
+
+          # Validate Dockerfile syntax
+          echo "Validating Dockerfile syntax..."
+          if ! docker run --rm -i hadolint/hadolint < Dockerfile 2>/dev/null; then
+            echo "Warning: Dockerfile has style issues, but proceeding with build"
+          fi
+          
+          # Basic validation - check for lines that start with package names
+          if grep -E '^[ \t]*[a-z][a-z0-9_-]*[ \t]*\\?[ \t]*$' Dockerfile; then
+            echo "ERROR: Found malformed package lines in Dockerfile"
+            exit 1
+          fi
 
           # Install tini manually if not present
           if ! grep -q "/tini" Dockerfile; then
@@ -147,6 +170,10 @@ jobs:
           sed -i '/^&&/d' Dockerfile
           # Remove empty continuation lines
           sed -i '/^\\$/d' Dockerfile
+          # Remove lines that are just package names without RUN
+          sed -i '/^[ \t]*[a-zA-Z][a-zA-Z0-9_-]*[ \t]*\\*$/d' Dockerfile
+          # Remove any remaining apt-get references
+          sed -i '/apt-get/d' Dockerfile
 
           # Validate package availability
           echo "Checking package availability..."
