@@ -64,102 +64,11 @@ jobs:
           sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
           sed -i 's|^FROM .*ubuntu.*|FROM amazonlinux:2023|' Dockerfile
 
-          # Process package installations
-          awk '
-          BEGIN {
-            install=0; pkg_count=0; in_install_block=0;
-            seen["git"]=0; seen["openssh-clients"]=0;
-            seen["python3"]=0; seen["python3-pip"]=0; seen["tar"]=0; seen["java-17-openjdk"]=0
-          }
-          /apt-get.*install.*-y/ {
-            install=1; in_install_block=1;
-            # Add essential packages first
-            if(!seen["tar"]) {
-              seen["tar"] = 1
-              pkg_list[pkg_count] = "tar"
-              pkg_count++
-            }
-            if(!seen["java-17-openjdk"]) {
-              seen["java-17-openjdk"] = 1
-              pkg_list[pkg_count] = "java-17-openjdk"
-              pkg_count++
-            }
-            next
-          }
-          # Handle package lines - they can be indented or not, and may contain multiple packages
-          install && ((/^[ \t]*[a-zA-Z]/) || (/^[a-zA-Z]/)) && !(/^RUN/) && !(/^FROM/) && !(/^ARG/) && !(/^ENV/) && !(/^COPY/) && !(/^WORKDIR/) && !(/^CMD/) && !(/^ENTRYPOINT/) {
-            line = $0
-            # Remove leading/trailing whitespace and continuation characters
-            gsub(/^[ \t]*/, "", line)
-            gsub(/[ \t\\]*$/, "", line)
-            
-            # Skip empty lines or lines with just continuation characters
-            if(line == "" || line == "\\") {
-              next
-            }
-            
-            # Split line by spaces to handle multiple packages on one line
-            n = split(line, packages, " ")
-            for(j=1; j<=n; j++) {
-              pkg = packages[j]
-              if(pkg == "" || pkg == "\\") continue
-              
-              # Convert package names from Ubuntu/Debian to Amazon Linux
-              if(pkg == "openssh-client") pkg = "openssh-clients"
-              else if(pkg == "python-is-python3") continue  # Skip this, we already have python3
-              else if(pkg == "python3-jinja2") pkg = "python3-pip"
-              else if(pkg == "tini" || pkg == "git-lfs") continue  # Handle these separately
-              
-              # Avoid duplicates
-              if((pkg == "git" && seen["git"]==1) ||
-                 (pkg == "openssh-clients" && seen["openssh-clients"]==1) ||
-                 (pkg == "python3" && seen["python3"]==1) ||
-                 (pkg == "python3-pip" && seen["python3-pip"]==1) ||
-                 (pkg == "tar" && seen["tar"]==1) ||
-                 (pkg == "java-17-openjdk" && seen["java-17-openjdk"]==1)) {
-                continue
-              }
-              
-              # Mark as seen and add to list
-              seen[pkg] = 1
-              pkg_list[pkg_count] = pkg
-              pkg_count++
-            }
-            next
-          }
-          # End of install block when we hit && or empty line or non-indented non-package line
-          install && ((/^[ \t]*&&/) || (/^[ \t]*$/) || (/^[^a-zA-Z \t]/) || (!/^[ \t]*[a-zA-Z]/ && !/^[a-zA-Z]/)) {
-            if(pkg_count > 0) {
-              print "RUN yum update -y && yum upgrade -y && yum install -y \\"
-              for(i=0; i<pkg_count-1; i++) {
-                print "    " pkg_list[i] " \\"
-              }
-              print "    " pkg_list[pkg_count-1] " \\"
-              print "    && yum clean all"
-              print ""
-              print "RUN pip3 install jinja2"
-              print ""
-              print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
-              print "    && tar -xzf git-lfs.tar.gz \\"
-              print "    && mv git-lfs-*/git-lfs /usr/local/bin/ \\"
-              print "    && rm -rf git-lfs.tar.gz git-lfs-*"
-              print ""
-            }
-            install=0
-            in_install_block=0
-            pkg_count=0
-            delete pkg_list
-            # Skip all apt-get related commands and cleanup
-            if(/apt-get/ || /rm -rf \/var\/lib\/apt/) next
-            # Skip empty lines and continuation lines that were part of apt-get
-            if(/^[ \t]*&&/ || /^[ \t]*$/) next
-          }
-          # Skip any remaining apt-get lines
-          /apt-get/ {next}
-          /rm -rf \/var\/lib\/apt/ {next}
-          # Only print lines that are not part of install blocks
-          !install {print}
-          ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+          # Replace Ubuntu-based package installations with Amazon Linux equivalents
+          sed -i '/^RUN.*apt-get.*update/,/^[[:space:]]*&&[[:space:]]*rm.*apt/d' Dockerfile
+          
+          # Add Amazon Linux package installation after FROM statement
+          sed -i '/^FROM amazonlinux:2023/a\\nRUN yum update -y && yum upgrade -y && yum install -y \\\n    tar \\\n    java-17-amazon-corretto \\\n    git \\\n    openssh-clients \\\n    python3 \\\n    python3-pip \\\n    && yum clean all\n\nRUN pip3 install jinja2\n\nRUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\\n    && tar -xzf git-lfs.tar.gz \\\n    && mv git-lfs-*/git-lfs /usr/local/bin/ \\\n    && rm -rf git-lfs.tar.gz git-lfs-*' Dockerfile
 
           # Debug: Log the generated Dockerfile
           echo "Generated Dockerfile:"
@@ -172,9 +81,9 @@ jobs:
           fi
           
           # Install tini manually if not present
-          if ! grep -q "/tini" Dockerfile; then
-            sed -i '/yum clean all/a \
-          # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_VERSION}-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
+          if ! grep -q "tini" Dockerfile; then
+            # Add tini installation after yum install section
+            sed -i '/yum clean all/a\\nRUN curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_VERSION}-amd64 \\\n    && chmod +x /usr/local/bin/tini' Dockerfile
           fi
 
           # Remove sensitive ARG or ENV instructions
@@ -199,29 +108,37 @@ jobs:
           # Check for orphaned package lines (lines that look like standalone package names, not indented)
           orphaned_lines=$(grep -E '^[a-z][a-z0-9_+-]*[ \t]*\\?[ \t]*$' Dockerfile || true)
           if [ -n "$orphaned_lines" ]; then
-            echo "ERROR: Found orphaned package lines that look like invalid Dockerfile instructions:"
+            echo "ERROR: Found malformed package lines in Dockerfile"
             echo "$orphaned_lines" | head -10
-            echo "Full Dockerfile content:"
-            cat Dockerfile
             exit 1
           fi
           
           # Check for lines that start with invalid Dockerfile instructions
-          invalid_instructions=$(grep -E '^[a-z][a-z0-9_-]*[ \t]*$' Dockerfile | grep -v -E '^(FROM|RUN|COPY|ADD|WORKDIR|USER|EXPOSE|ENV|ARG|CMD|ENTRYPOINT|VOLUME|LABEL|MAINTAINER|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)' || true)
+          invalid_instructions=$(grep -E '^[a-z][a-z0-9_-]*[ \t]*$' Dockerfile | grep -v -E '^(from|run|copy|add|workdir|user|expose|env|arg|cmd|entrypoint|volume|label|maintainer|onbuild|stopsignal|healthcheck|shell)' -i || true)
           if [ -n "$invalid_instructions" ]; then
             echo "ERROR: Found invalid Dockerfile instructions:"
             echo "$invalid_instructions" | head -10
-            echo "Full Dockerfile content:"
-            cat Dockerfile
             exit 1
           fi
 
-          # Validate package availability
-          echo "Checking package availability..."
-          docker run --rm amazonlinux:2023 yum list available git openssh-clients python3 python3-pip tar || {
-            echo "One or more packages not found in Amazon Linux 2023 repository"
+          # Final validation and cleanup
+          echo "Performing final Dockerfile validation..."
+          
+          # Ensure we have required FROM, RUN instructions
+          if ! grep -q '^FROM' Dockerfile; then
+            echo "ERROR: No FROM instruction found in Dockerfile"
             exit 1
-          }
+          fi
+          
+          if ! grep -q '^RUN.*yum.*install' Dockerfile; then
+            echo "ERROR: No yum install instruction found in Dockerfile"
+            exit 1
+          fi
+          
+          # Show a sample of the Dockerfile for debugging
+          echo "=== Dockerfile Preview (first 20 lines) ==="
+          head -20 Dockerfile
+          echo "=========================================="
       - name: Copy everything from agent-base to workspace
         if: steps.compare.outputs.changed == 'true'
         run: |
