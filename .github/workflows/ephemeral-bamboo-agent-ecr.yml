@@ -121,11 +121,24 @@ jobs:
             exit 1
           fi
 
-          # Basic syntax validation with docker
-          echo "Validating Dockerfile can be parsed..."
-          if ! docker build --no-cache -f Dockerfile --target $(grep '^FROM' Dockerfile | tail -1 | awk '{print $2}' | cut -d: -f1 | tr '/' '_') . --dry-run 2>/dev/null; then
-            echo "Warning: Dockerfile syntax check failed, but proceeding"
+          # Final validation and cleanup
+          echo "Performing final Dockerfile validation..."
+          
+          # Ensure we have required FROM, RUN instructions
+          if ! grep -q '^FROM' Dockerfile; then
+            echo "ERROR: No FROM instruction found in Dockerfile"
+            exit 1
           fi
+          
+          if ! grep -q '^RUN.*yum.*install' Dockerfile; then
+            echo "ERROR: No yum install instruction found in Dockerfile"
+            exit 1
+          fi
+          
+          # Show a sample of the Dockerfile for debugging
+          echo "=== Dockerfile Preview (first 20 lines) ==="
+          head -20 Dockerfile
+          echo "=========================================="
       - name: Copy everything from agent-base to workspace
         if: steps.compare.outputs.changed == 'true'
         run: |
