@@ -64,11 +64,50 @@ jobs:
           sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
           sed -i 's|^FROM .*ubuntu.*|FROM amazonlinux:2023|' Dockerfile
 
-          # Replace Ubuntu-based package installations with Amazon Linux equivalents
-          sed -i '/^RUN.*apt-get.*update/,/^[[:space:]]*&&[[:space:]]*rm.*apt/d' Dockerfile
+          # Remove all apt-get related RUN statements more reliably
+          # Use awk to remove complete RUN blocks that contain apt-get
+          awk '
+          BEGIN { in_apt_run = 0 }
+          /^RUN.*apt-get/ { in_apt_run = 1; next }
+          in_apt_run && /^[[:space:]]/ { next }
+          in_apt_run && /^[^[:space:]]/ { in_apt_run = 0 }
+          !in_apt_run { print }
+          ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
           
-          # Add Amazon Linux package installation after FROM statement
-          sed -i '/^FROM amazonlinux:2023/a\\nRUN yum update -y && yum upgrade -y && yum install -y \\\n    tar \\\n    java-17-amazon-corretto \\\n    git \\\n    openssh-clients \\\n    python3 \\\n    python3-pip \\\n    && yum clean all\n\nRUN pip3 install jinja2\n\nRUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\\n    && tar -xzf git-lfs.tar.gz \\\n    && mv git-lfs-*/git-lfs /usr/local/bin/ \\\n    && rm -rf git-lfs.tar.gz git-lfs-*' Dockerfile
+          # Remove any remaining individual apt-get lines
+          sed -i '/apt-get/d' Dockerfile
+          # Remove any orphaned package name lines  
+          sed -i '/^[[:space:]]*[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
+          # Remove lines that are just backslashes or empty with backslashes
+          sed -i '/^[[:space:]]*\\[[:space:]]*$/d' Dockerfile
+          
+          # Create Amazon Linux package installation block
+          cat > amazon_packages.txt << 'EOF'
+          
+          RUN yum update -y && yum upgrade -y && yum install -y \
+              tar \
+              java-17-amazon-corretto \
+              java-17-amazon-corretto-devel \
+              git \
+              openssh-clients \
+              python3 \
+              python3-pip \
+              curl \
+              wget \
+              && yum clean all
+          
+          RUN pip3 install jinja2
+          
+          RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \
+              && tar -xzf git-lfs.tar.gz \
+              && mv git-lfs-*/git-lfs /usr/local/bin/ \
+              && rm -rf git-lfs.tar.gz git-lfs-*
+          
+          EOF
+          
+          # Insert the new package installation after the FROM statement
+          sed -i '/^FROM amazonlinux:2023/r amazon_packages.txt' Dockerfile
+          rm amazon_packages.txt
 
           # Debug: Log the generated Dockerfile
           echo "Generated Dockerfile:"
@@ -83,7 +122,14 @@ jobs:
           # Install tini manually if not present
           if ! grep -q "tini" Dockerfile; then
             # Add tini installation after yum install section
-            sed -i '/yum clean all/a\\nRUN curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_VERSION}-amd64 \\\n    && chmod +x /usr/local/bin/tini' Dockerfile
+            cat > tini_install.txt << 'EOF'
+            
+            RUN curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64 \
+                && chmod +x /usr/local/bin/tini
+            
+            EOF
+            sed -i '/yum clean all/r tini_install.txt' Dockerfile
+            rm tini_install.txt
           fi
 
           # Remove sensitive ARG or ENV instructions
@@ -94,13 +140,15 @@ jobs:
           sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
           sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
 
-          # Clean up any remaining issues
-          # Remove empty lines with just backslashes
-          sed -i '/^[ \t]*\\[ \t]*$/d' Dockerfile
+          # Final cleanup - remove any remaining problematic content
           # Remove any remaining apt-get references that might have been missed
           sed -i '/apt-get/d' Dockerfile
           # Remove any lines that start with &&
           sed -i '/^&&/d' Dockerfile
+          # Remove empty lines with just backslashes or spaces
+          sed -i '/^[[:space:]]*\\[[:space:]]*$/d' Dockerfile
+          # Remove any orphaned package name lines (standalone package names)
+          sed -i '/^[[:space:]]*[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
 
           # Enhanced validation - check for common Dockerfile errors
           echo "Running enhanced Dockerfile validation..."
