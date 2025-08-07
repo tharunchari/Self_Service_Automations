@@ -178,12 +178,17 @@ jobs:
         aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
 
     - name: Build Docker image
-      if: steps.compare.outputs.changed == 'true'
       run: |
-        docker build -t vitech-bamboodr-repo . || {
-          echo "Docker build failed"
-          exit 1
-        }
+        docker build -t vitech-bamboodr-repo .
+      shell: /usr/bin/bash -e {0}
+      env:
+        SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
+        ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
+        TINI_VERSION: v0.19.0
+        AWS_DEFAULT_REGION: us-west-2
+        AWS_REGION: us-west-2
+        AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
 
     - name: Tag Docker image
       if: steps.compare.outputs.changed == 'true'
