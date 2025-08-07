@@ -1,7 +1,11 @@
 import boto3
+import os
+import requests
 from datetime import datetime, timezone
 import subprocess  # For calling your existing curl + jq
- 
+
+GITHUB_TOKEN = os.environ["CLASSIC_PAT"]
+
 def send_sns_notification(subject, message):
     sns_client = boto3.client('sns')
     topic_arn = 'arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd'
@@ -103,7 +107,7 @@ def check_running_ec2_instances():
             "bash", "-lc",
             '''curl -s -L \
   -H "Accept: application/vnd.github+json" \
-  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Authorization: Bearer {GITHUB_TOKEN}" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
   "https://api.github.com/orgs/vitechsystems/actions/runners?per_page=100" \
 | jq -r '
