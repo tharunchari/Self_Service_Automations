@@ -62,9 +62,7 @@ jobs:
         run: |
           # Convert Dockerfile from Ubuntu/Debian to Amazon Linux
           sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
-          sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
-          # Remove all lines that start with && to clean up any malformed commands
-          sed -i '/^\s*&&/d' Dockerfile
+          sed -i 's|^FROM .*ubuntu.*|FROM amazonlinux:2023|' Dockerfile
 
           # Process package installations
           awk '
