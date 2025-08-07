@@ -46,7 +46,7 @@ def check_running_ec2_instances():
             launch_time = instance['LaunchTime']
             running_time = current_time - launch_time
             notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
-            if running_time.total_seconds() > 7200 and not notified_tag:
+            if running_time.total_seconds() > 900 and not notified_tag:
                 self_hosted_instances.append({
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
@@ -110,7 +110,6 @@ def check_running_ec2_instances():
   .runners[]
   | select(
       .status == "online" and .busy == false
-      and (.name | startswith("Internal_Tools_Automation_Server") | not)
     )
   | .name
 '''            ]
