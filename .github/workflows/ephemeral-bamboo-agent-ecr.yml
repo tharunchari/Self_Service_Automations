@@ -68,22 +68,40 @@ jobs:
           # Use awk to remove complete RUN blocks that contain apt-get
           awk '
           BEGIN { in_apt_run = 0 }
-          /^RUN.*apt-get/ { in_apt_run = 1; next }
-          in_apt_run && /^[[:space:]]/ { next }
-          in_apt_run && /^[^[:space:]]/ { in_apt_run = 0 }
+          /^RUN.*apt-get/ { 
+            in_apt_run = 1
+            next 
+          }
+          in_apt_run && /\\[[:space:]]*$/ { 
+            next 
+          }
+          in_apt_run && /^[[:space:]]/ && !/\\[[:space:]]*$/ { 
+            next 
+          }
+          in_apt_run && /^[[:space:]]/ && /\\[[:space:]]*$/ { 
+            next 
+          }
+          in_apt_run && !/^[[:space:]]/ { 
+            in_apt_run = 0 
+          }
           !in_apt_run { print }
           ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
           
-          # Remove any remaining individual apt-get lines
+          # Remove any remaining individual apt-get lines and problematic content
           sed -i '/apt-get/d' Dockerfile
-          # Remove any orphaned package name lines  
-          sed -i '/^[a-z][a-z0-9_+-]*$/d' Dockerfile
+          sed -i '/apt /d' Dockerfile
+          sed -i '/dpkg/d' Dockerfile
+          # Remove any orphaned package name lines (must be at start of line, not indented)
+          sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
+          sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*$/d' Dockerfile
           # Remove lines that are just backslashes or empty with backslashes
           sed -i '/^[[:space:]]*\\[[:space:]]*$/d' Dockerfile
+          # Remove standalone && lines
+          sed -i '/^[[:space:]]*&&[[:space:]]*$/d' Dockerfile
           
           # Create Amazon Linux package installation block
           cat > amazon_packages.txt << 'EOF'
-          
+
           RUN yum update -y && yum upgrade -y && yum install -y \
               tar \
               java-17-amazon-corretto \
@@ -95,14 +113,14 @@ jobs:
               curl \
               wget \
               && yum clean all
-          
+
           RUN pip3 install jinja2
-          
+
           RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \
               && tar -xzf git-lfs.tar.gz \
               && mv git-lfs-*/git-lfs /usr/local/bin/ \
               && rm -rf git-lfs.tar.gz git-lfs-*
-          
+
           EOF
           
           # Insert the new package installation after the FROM statement
@@ -122,12 +140,12 @@ jobs:
           # Install tini manually if not present
           if ! grep -q "tini" Dockerfile; then
             # Add tini installation after yum install section
-            cat > tini_install.txt << 'EOF'
-            
-            RUN curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64 \
-                && chmod +x /usr/local/bin/tini
-            
-            EOF
+            cat > tini_install.txt << 'TINI_EOF'
+
+          RUN curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64 \
+              && chmod +x /usr/local/bin/tini
+
+          TINI_EOF
             sed -i '/yum clean all/r tini_install.txt' Dockerfile
             rm tini_install.txt
           fi
@@ -141,28 +159,42 @@ jobs:
           sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
 
           # Final cleanup - remove any remaining problematic content
-          # Remove any remaining apt-get references that might have been missed
+          # Remove any remaining apt-get/dpkg references that might have been missed
           sed -i '/apt-get/d' Dockerfile
+          sed -i '/apt /d' Dockerfile  
+          sed -i '/dpkg/d' Dockerfile
           # Remove any lines that start with &&
           sed -i '/^&&/d' Dockerfile
+          sed -i '/^[[:space:]]*&&/d' Dockerfile
           # Remove empty lines with just backslashes or spaces
           sed -i '/^[[:space:]]*\\[[:space:]]*$/d' Dockerfile
-          # Remove any orphaned package name lines (standalone package names)
-          sed -i '/^[a-z][a-z0-9_+-]*$/d' Dockerfile
+          # Remove any orphaned package name lines (standalone at column 1, not part of valid instructions)
+          sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
+          sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*$/d' Dockerfile
+          # Remove incomplete RUN statements that end with backslash but have no continuation
+          sed -i '/^RUN.*\\[[:space:]]*$/N;s/^RUN.*\\[[:space:]]*\n[[:space:]]*$//' Dockerfile
 
           # Enhanced validation - check for common Dockerfile errors
           echo "Running enhanced Dockerfile validation..."
           
-          # Check for orphaned package lines (lines that look like standalone package names, not indented)
-          orphaned_lines=$(grep -E '^[a-z][a-z0-9_+-]*[ \t]*\\?[ \t]*$' Dockerfile || true)
+          # Check for and remove incomplete RUN statements
+          incomplete_runs=$(grep -E '^RUN.*\\[[:space:]]*$' Dockerfile || true)
+          if [ -n "$incomplete_runs" ]; then
+            echo "Warning: Found incomplete RUN statements, removing them"
+            sed -i '/^RUN.*\\[[:space:]]*$/d' Dockerfile
+          fi
+          
+          # Check for orphaned package lines (standalone package names not part of RUN instruction)
+          # Look for lines that start at column 1 with lowercase letters that could be package names
+          orphaned_lines=$(grep -E '^[a-z][a-z0-9_+-]*[[:space:]]*\\?[[:space:]]*$' Dockerfile || true)
           if [ -n "$orphaned_lines" ]; then
-            echo "ERROR: Found malformed package lines in Dockerfile"
+            echo "ERROR: Found malformed standalone package lines in Dockerfile"
             echo "$orphaned_lines" | head -10
             exit 1
           fi
           
-          # Check for lines that start with invalid Dockerfile instructions
-          invalid_instructions=$(grep -E '^[a-z][a-z0-9_-]*[ \t]*$' Dockerfile | grep -v -E '^(from|run|copy|add|workdir|user|expose|env|arg|cmd|entrypoint|volume|label|maintainer|onbuild|stopsignal|healthcheck|shell)' -i || true)
+          # Check for lines that start with invalid Dockerfile instructions (not indented, not valid commands)
+          invalid_instructions=$(grep -E '^[a-z][a-z0-9_-]*[[:space:]]*$' Dockerfile | grep -v -E '^(from|run|copy|add|workdir|user|expose|env|arg|cmd|entrypoint|volume|label|maintainer|onbuild|stopsignal|healthcheck|shell)[[:space:]]*$' -i || true)
           if [ -n "$invalid_instructions" ]; then
             echo "ERROR: Found invalid Dockerfile instructions:"
             echo "$invalid_instructions" | head -10
