@@ -109,10 +109,7 @@ jobs:
             if(pkg_count > 0) {
               print "RUN yum update -y && yum upgrade -y && yum install -y \\"
               for(i=0; i<pkg_count; i++) {
-                if(i < pkg_count-1)
-                  print "    " pkg_list[i] " \\"
-                else
-                  print "    " pkg_list[i] " \\"
+                print "    " pkg_list[i] " \\"
               }
               print "    && yum clean all"
               print "RUN pip3 install jinja2"
@@ -144,12 +141,6 @@ jobs:
             echo "Warning: Dockerfile has style issues, but proceeding with build"
           fi
           
-          # Basic validation - check for lines that start with package names
-          if grep -E '^[ \t]*[a-z][a-z0-9_-]*[ \t]*\\?[ \t]*$' Dockerfile; then
-            echo "ERROR: Found malformed package lines in Dockerfile"
-            exit 1
-          fi
-
           # Install tini manually if not present
           if ! grep -q "/tini" Dockerfile; then
             sed -i '/yum clean all/a \
@@ -168,10 +159,61 @@ jobs:
           sed -i '/^&&/d' Dockerfile
           # Remove empty continuation lines
           sed -i '/^\\$/d' Dockerfile
-          # Remove lines that are just package names without RUN
-          sed -i '/^[ \t]*[a-zA-Z][a-zA-Z0-9_-]*[ \t]*\\*$/d' Dockerfile
           # Remove any remaining apt-get references
           sed -i '/apt-get/d' Dockerfile
+          
+          # Remove orphaned package lines (not part of RUN commands) more carefully
+          # First pass: mark lines that are part of RUN commands
+          awk '
+          {
+            # If this is a RUN line with continuation, mark it
+            if (/^RUN.*\\$/) {
+              print $0
+              in_run = 1
+              next
+            }
+            
+            # If we are in a RUN command and this is a continuation line
+            if (in_run && /^[ \t]+.*\\$/) {
+              print $0
+              next
+            }
+            
+            # If we are in a RUN command and this line ends it
+            if (in_run && (/^[ \t]+.*[^\\]$/ || /^[ \t]*&&/)) {
+              print $0
+              in_run = 0
+              next
+            }
+            
+            # If this looks like an orphaned package line, skip it
+            if (/^[ \t]*[a-zA-Z][a-zA-Z0-9_-]*[ \t]*\\*[ \t]*$/ && !in_run) {
+              next
+            }
+            
+            # Reset in_run for any other line
+            in_run = 0
+            print $0
+          }
+          ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+
+          # Basic validation - check for orphaned package lines not in RUN commands
+          awk '
+          BEGIN { in_run = 0 }
+          /^RUN.*\\$/ { in_run = 1 }
+          in_run && /^[ \t]+.*\\$/ { next }
+          in_run && (/^[ \t]+.*[^\\]$/ || /^[ \t]*&&/) { in_run = 0; next }
+          /^[ \t]*[a-z][a-z0-9_-]*[ \t]*\\?[ \t]*$/ && !in_run {
+            print "Found orphaned package line not in RUN command: " $0
+            exit 1
+          }
+          { if (!/^[ \t]+/ && !/^RUN/) in_run = 0 }
+          ' Dockerfile
+          if [ $? -ne 0 ]; then
+            echo "ERROR: Found malformed package lines in Dockerfile after cleanup"
+            cat Dockerfile
+            exit 1
+          fi
 
           # Validate package availability
           echo "Checking package availability..."
