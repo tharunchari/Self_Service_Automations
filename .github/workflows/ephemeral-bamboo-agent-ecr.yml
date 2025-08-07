@@ -77,7 +77,7 @@ jobs:
           # Remove any remaining individual apt-get lines
           sed -i '/apt-get/d' Dockerfile
           # Remove any orphaned package name lines  
-          sed -i '/^[[:space:]]*[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
+          sed -i '/^[a-z][a-z0-9_+-]*$/d' Dockerfile
           # Remove lines that are just backslashes or empty with backslashes
           sed -i '/^[[:space:]]*\\[[:space:]]*$/d' Dockerfile
           
@@ -148,7 +148,7 @@ jobs:
           # Remove empty lines with just backslashes or spaces
           sed -i '/^[[:space:]]*\\[[:space:]]*$/d' Dockerfile
           # Remove any orphaned package name lines (standalone package names)
-          sed -i '/^[[:space:]]*[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
+          sed -i '/^[a-z][a-z0-9_+-]*$/d' Dockerfile
 
           # Enhanced validation - check for common Dockerfile errors
           echo "Running enhanced Dockerfile validation..."
