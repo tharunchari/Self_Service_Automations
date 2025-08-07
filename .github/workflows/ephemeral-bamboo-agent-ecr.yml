@@ -79,7 +79,8 @@ jobs:
           gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
           gsub("git-lfs", "", pkg)
-          if(pkg != "" && pkg != "\\") {
+          gsub(/[ \t\\]+$/, "", pkg)
+          if(pkg != "" && pkg !~ /^[\\]+$/) {
             if(pkg == "git" && seen["git"]==1) next
             if(pkg == "openssh-clients" && seen["openssh-clients"]==1) next
             if(pkg == "python3" && seen["python3"]==1) next
