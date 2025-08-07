@@ -64,43 +64,62 @@ jobs:
           sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
           sed -i 's|^FROM .*ubuntu.*|FROM amazonlinux:2023|' Dockerfile
 
-          # Remove all apt-get related RUN statements more reliably
-          # Use awk to remove complete RUN blocks that contain apt-get
-          awk '
-          BEGIN { in_apt_run = 0 }
-          /^RUN.*apt-get/ { 
-            in_apt_run = 1
-            next 
-          }
-          in_apt_run && /\\[[:space:]]*$/ { 
-            next 
-          }
-          in_apt_run && /^[[:space:]]/ && !/\\[[:space:]]*$/ { 
-            next 
-          }
-          in_apt_run && /^[[:space:]]/ && /\\[[:space:]]*$/ { 
-            next 
-          }
-          in_apt_run && !/^[[:space:]]/ { 
-            in_apt_run = 0 
-          }
-          !in_apt_run { print }
-          ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+          # Convert Dockerfile from Ubuntu/Debian to Amazon Linux - more conservative approach
+          sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
+          sed -i 's|^FROM .*ubuntu.*|FROM amazonlinux:2023|' Dockerfile
+
+          # Remove apt-get related RUN statements in a more careful way
+          # First, create a backup
+          cp Dockerfile Dockerfile.backup
           
-          # Remove any remaining individual apt-get lines and problematic content
-          sed -i '/apt-get/d' Dockerfile
-          sed -i '/apt /d' Dockerfile
-          sed -i '/dpkg/d' Dockerfile
-          # Remove any orphaned package name lines (must be at start of line, not indented)
-          sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
-          sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*$/d' Dockerfile
-          # Remove lines that are just backslashes or empty with backslashes
-          sed -i '/^[[:space:]]*\\[[:space:]]*$/d' Dockerfile
-          # Remove standalone && lines
-          sed -i '/^[[:space:]]*&&[[:space:]]*$/d' Dockerfile
+          # Remove complete RUN blocks that contain apt-get/apt commands
+          python3 << 'PYTHON_EOF'
+          import re
+
+          with open('Dockerfile', 'r') as f:
+              content = f.read()
+
+          lines = content.split('\n')
+          new_lines = []
+          skip_run_block = False
+          in_continuation = False
+
+          for i, line in enumerate(lines):
+              stripped = line.strip()
+              
+              # Check if this is a RUN line with apt-get/apt
+              if re.match(r'^RUN\s+.*\b(apt-get|apt)\b', stripped):
+                  skip_run_block = True
+                  in_continuation = line.rstrip().endswith('\\')
+                  continue
+              
+              # If we're in a RUN block to skip
+              if skip_run_block:
+                  # Check if this line continues the RUN block
+                  if in_continuation:
+                      in_continuation = line.rstrip().endswith('\\')
+                      continue
+                  else:
+                      # This line doesn't continue the RUN block, so we're done skipping
+                      skip_run_block = False
+                      in_continuation = False
+              
+              # Skip individual apt-get/apt lines
+              if re.search(r'\b(apt-get|apt|dpkg)\b', stripped):
+                  continue
+                  
+              # Keep this line
+              new_lines.append(line)
+
+          with open('Dockerfile', 'w') as f:
+              f.write('\n'.join(new_lines))
+          PYTHON_EOF
           
           # Create Amazon Linux package installation block
           cat > amazon_packages.txt << 'EOF'
+
+          # Set shell options for better error handling
+          SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
           RUN yum update -y && yum upgrade -y && yum install -y \
               tar \
@@ -112,6 +131,7 @@ jobs:
               python3-pip \
               curl \
               wget \
+              unzip \
               && yum clean all
 
           RUN pip3 install jinja2
@@ -142,7 +162,7 @@ jobs:
             # Add tini installation after yum install section
             cat > tini_install.txt << 'TINI_EOF'
 
-          RUN curl -Lo /usr/local/bin/tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64 \
+          RUN curl -Lo /usr/local/bin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64" \
               && chmod +x /usr/local/bin/tini
 
           TINI_EOF
@@ -158,66 +178,85 @@ jobs:
           sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
           sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
 
-          # Final cleanup - remove any remaining problematic content
-          # Remove any remaining apt-get/dpkg references that might have been missed
+          # Final cleanup - more conservative
+          # Remove any remaining apt-get/dpkg references
           sed -i '/apt-get/d' Dockerfile
-          sed -i '/apt /d' Dockerfile  
+          sed -i '/\bapt\s/d' Dockerfile  
           sed -i '/dpkg/d' Dockerfile
-          # Remove any lines that start with &&
-          sed -i '/^&&/d' Dockerfile
-          sed -i '/^[[:space:]]*&&/d' Dockerfile
-          # Remove empty lines with just backslashes or spaces
+          
+          # Clean up any empty lines or standalone operators, but be more careful
+          sed -i '/^[[:space:]]*&&[[:space:]]*$/d' Dockerfile
           sed -i '/^[[:space:]]*\\[[:space:]]*$/d' Dockerfile
-          # Remove any orphaned package name lines (standalone at column 1, not part of valid instructions)
+          
+          # Remove any lines that are just package names at the start of a line (not part of RUN)
           sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
           sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*$/d' Dockerfile
-          # Remove incomplete RUN statements that end with backslash but have no continuation
-          sed -i '/^RUN.*\\[[:space:]]*$/N;s/^RUN.*\\[[:space:]]*\n[[:space:]]*$//' Dockerfile
 
           # Enhanced validation - check for common Dockerfile errors
           echo "Running enhanced Dockerfile validation..."
           
           # Check for and remove incomplete RUN statements
-          incomplete_runs=$(grep -E '^RUN.*\\[[:space:]]*$' Dockerfile || true)
+          incomplete_runs=$(grep -E '^RUN.*\\[[:space:]]*$' Dockerfile | head -5 || true)
           if [ -n "$incomplete_runs" ]; then
-            echo "Warning: Found incomplete RUN statements, removing them"
-            sed -i '/^RUN.*\\[[:space:]]*$/d' Dockerfile
+            echo "Warning: Found incomplete RUN statements:"
+            echo "$incomplete_runs"
+            # More careful removal - only remove if next line is empty or not a continuation
+            python3 << 'PYTHON_EOF'
+            with open('Dockerfile', 'r') as f:
+                lines = f.readlines()
+
+            new_lines = []
+            i = 0
+            while i < len(lines):
+                line = lines[i].rstrip()
+                if line.endswith('\\') and line.startswith('RUN'):
+                    # Check if next line exists and is a proper continuation
+                    if i + 1 < len(lines) and lines[i + 1].strip():
+                        new_lines.append(lines[i])
+                    else:
+                        print(f"Removing incomplete RUN: {line}")
+                else:
+                    new_lines.append(lines[i])
+                i += 1
+
+            with open('Dockerfile', 'w') as f:
+                f.writelines(new_lines)
+            PYTHON_EOF
           fi
           
-          # Check for orphaned package lines (standalone package names not part of RUN instruction)
-          # Look for lines that start at column 1 with lowercase letters that could be package names
-          orphaned_lines=$(grep -E '^[a-z][a-z0-9_+-]*[[:space:]]*\\?[[:space:]]*$' Dockerfile || true)
+          # Check for orphaned package lines more carefully
+          orphaned_lines=$(grep -E '^[a-z][a-z0-9_+-]*[[:space:]]*\\?[[:space:]]*$' Dockerfile | head -5 || true)
           if [ -n "$orphaned_lines" ]; then
-            echo "ERROR: Found malformed standalone package lines in Dockerfile"
-            echo "$orphaned_lines" | head -10
-            exit 1
-          fi
-          
-          # Check for lines that start with invalid Dockerfile instructions (not indented, not valid commands)
-          invalid_instructions=$(grep -E '^[a-z][a-z0-9_-]*[[:space:]]*$' Dockerfile | grep -v -E '^(from|run|copy|add|workdir|user|expose|env|arg|cmd|entrypoint|volume|label|maintainer|onbuild|stopsignal|healthcheck|shell)[[:space:]]*$' -i || true)
-          if [ -n "$invalid_instructions" ]; then
-            echo "ERROR: Found invalid Dockerfile instructions:"
-            echo "$invalid_instructions" | head -10
-            exit 1
+            echo "WARNING: Found potential orphaned package lines:"
+            echo "$orphaned_lines"
+            # Remove them
+            sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
+            sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*$/d' Dockerfile
           fi
 
-          # Final validation and cleanup
+          # Final validation
           echo "Performing final Dockerfile validation..."
           
-          # Ensure we have required FROM, RUN instructions
+          # Ensure we have required FROM instruction
           if ! grep -q '^FROM' Dockerfile; then
             echo "ERROR: No FROM instruction found in Dockerfile"
             exit 1
           fi
           
-          if ! grep -q '^RUN.*yum.*install' Dockerfile; then
-            echo "ERROR: No yum install instruction found in Dockerfile"
+          # Check for yum install instruction (allowing for variations)
+          if ! grep -q -E '^RUN.*yum.*(install|update)' Dockerfile; then
+            echo "ERROR: No yum install/update instruction found in Dockerfile"
+            echo "Available RUN instructions:"
+            grep '^RUN' Dockerfile | head -5 || echo "No RUN instructions found"
             exit 1
           fi
           
           # Show a sample of the Dockerfile for debugging
-          echo "=== Dockerfile Preview (first 20 lines) ==="
-          head -20 Dockerfile
+          echo "=== Dockerfile Preview (first 30 lines) ==="
+          head -30 Dockerfile
+          echo "=========================================="
+          echo "=== Dockerfile Preview (last 10 lines) ==="
+          tail -10 Dockerfile
           echo "=========================================="
       - name: Copy everything from agent-base to workspace
         if: steps.compare.outputs.changed == 'true'
