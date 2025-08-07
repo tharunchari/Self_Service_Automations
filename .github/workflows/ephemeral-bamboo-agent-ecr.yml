@@ -62,6 +62,7 @@ jobs:
         # Convert Dockerfile from Ubuntu/Debian to Amazon Linux
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
+        sed -i '/^\s*&&/d' Dockerfile
     
         # Process package installations
         awk '
