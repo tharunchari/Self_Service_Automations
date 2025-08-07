@@ -130,7 +130,7 @@ def check_running_ec2_instances():
 
             notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
 
-            if running_time.total_seconds() > 500 and not notified_tag:
+            if running_time.total_seconds() > 7200 and not notified_tag:
 
                 self_hosted_instances.append({
 
