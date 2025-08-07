@@ -9,7 +9,9 @@ on:
 jobs:
   check_instances:
     runs-on: ubuntu-latest
- 
+    
+    env:
+      CLASSIC_PAT: ${{ secrets.CLASSIC_PAT }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
