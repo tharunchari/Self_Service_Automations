@@ -33,5 +33,5 @@ jobs:
       - name: Capture Pythonrunner.py output
         # Capture and print the output of the Python script
         run: |
-          python3 PYTHON_Script/Pythonrunner1.py 2>&1 | tee output.log
+          python3 PYTHON_Script/Pythonrunner2.py 2>&1 | tee output.log
           echo "::set-output name=output::$(cat output.log)"
