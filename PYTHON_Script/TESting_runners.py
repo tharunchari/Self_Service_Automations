@@ -1,72 +1,61 @@
 import boto3
-from datetime import datetime, timezone
+import os
+import requests
  
-def send_sns_notification(subject, message):
-    sns_client = boto3.client('sns')
-    topic_arn = 'arn:aws:sns:us-east-1:389180911583:Testing'
-    try:
-        sns_client.publish(
-            TopicArn=topic_arn,
-            Message=message,
-            Subject=subject
-        )
-        print("SNS notification sent successfully")
-    except Exception as e:
-        print("Failed to send SNS notification:", str(e))
+# === Config ===
+AWS_REGION = "us-east-1"
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")  # Or hardcode for testing
+ORG_NAME = "vitechsystems"
  
-def mark_instance_as_notified(instance_id):
-    ec2_client = boto3.client('ec2')
-    try:
-        ec2_client.create_tags(Resources=[instance_id], Tags=[{'Key': 'Notified', 'Value': 'True'}])
-        print(f"Instance {instance_id} marked as notified")
-    except Exception as e:
-        print(f"Failed to tag instance {instance_id}: {str(e)}")
+if not GITHUB_TOKEN:
+    raise ValueError("Please set the GITHUB_TOKEN environment variable")
  
-def check_self_hosted_runners():
-    ec2_client = boto3.client('ec2')
-    tag_key = 'Name'
-    self_hosted_runner_value = 'Github_Self_Hosted_Runner'
-    current_time = datetime.now(timezone.utc)
-    self_hosted_instances = []
+# 1️⃣ Get list of EC2 instance IDs
+ec2_client = boto3.client("ec2", region_name=AWS_REGION)
+instances = ec2_client.describe_instances()
+instance_ids = [
+    inst["InstanceId"]
+    for res in instances["Reservations"]
+    for inst in res["Instances"]
+]
+print("EC2 Instances found:")
+for iid in instance_ids:
+    print(iid)
+print("====================")
  
-    response = ec2_client.describe_instances(Filters=[
-        {'Name': f'tag:{tag_key}', 'Values': [self_hosted_runner_value]},
-        {'Name': 'instance-state-name', 'Values': ['running']}
-    ])
+# 2️⃣ Get runners from GitHub
+url = f"https://api.github.com/orgs/{ORG_NAME}/actions/runners?per_page=100"
+headers = {
+    "Accept": "application/vnd.github+json",
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "X-GitHub-Api-Version": "2022-11-28"
+}
  
-    for reservation in response['Reservations']:
-        for instance in reservation['Instances']:
-            instance_id = instance['InstanceId']
-            launch_time = instance['LaunchTime']
-            running_time = current_time - launch_time
-            notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
+response = requests.get(url, headers=headers)
+response.raise_for_status()
+runners = response.json().get("runners", [])
  
-            if running_time.total_seconds() > 1000:  # > 2 hours
-                self_hosted_instances.append({
-                    'Instance ID': instance_id,
-                    'Launch Time': launch_time,
-                    'Running Time': running_time
-                })
-                if not notified_tag:
-                    mark_instance_as_notified(instance_id)
+# 3️⃣ Filter runners
+matching_ids = []
+for runner in runners:
+    name = runner.get("name", "")
+    status = runner.get("status")
+    busy = runner.get("busy", True)
  
-    if self_hosted_instances:
-        subject = "Self-Hosted Github Runners Running for More Than 2 Hours"
-        message = ""
-        for inst in self_hosted_instances:
-            message += f"Instance ID: {inst['Instance ID']}\n"
-            message += f"Launch Time: {inst['Launch Time']}\n"
-            message += f"Running Time: {inst['Running Time']}\n\n"
-        send_sns_notification(subject, message)
- 
-        # ✅ Extract and print just the instance IDs
-        instance_ids = [inst['Instance ID'] for inst in self_hosted_instances]
-        print("\nAll matching Instance IDs:")
+    # Filter conditions
+    if (
+        status == "online"
+        and busy is False
+        and not name.startswith("Internal_Tools_Automation_Server")
+    ):
+        # Match against EC2 instance IDs
         for iid in instance_ids:
-            print(iid)
+            if name.startswith(iid):
+                # Extract first two parts of name (split by "-")
+                short_id = "-".join(name.split("-")[0:2])
+                matching_ids.append(short_id)
  
-    else:
-        print("No self-hosted runners running for more than 2 hours.")
- 
-if __name__ == "__main__":
-    check_self_hosted_runners()
+# 4️⃣ Print matching instance IDs
+print("Matching EC2 Instance IDs with GitHub runners:")
+for mid in matching_ids:
+    print(mid)
