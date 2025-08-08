@@ -32,6 +32,8 @@ env:
 jobs:
   start-runner:
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
   
   execute-job:
@@ -206,8 +208,8 @@ jobs:
           --extra-vars "app_component=${{ github.event.inputs.APP_COMPONENT }}"
           
   stop-runner:
-    needs: execute-job
-    if: always()  # Ensures this job runs even if execute-job fails
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
 
