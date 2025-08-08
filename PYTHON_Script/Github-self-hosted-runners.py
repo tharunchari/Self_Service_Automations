@@ -42,7 +42,7 @@ def check_self_hosted_runners():
             running_time = current_time - launch_time
             notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
  
-            if running_time.total_seconds() > 10:  # > 2 hours
+            if running_time.total_seconds() > 7200:  # > 2 hours
                 self_hosted_instances.append({
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
