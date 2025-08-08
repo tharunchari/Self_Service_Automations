@@ -14,20 +14,13 @@ def send_sns_notification(subject, message):
     except Exception as e:
         print("Failed to send SNS notification:", str(e))
  
-def mark_instance_as_notified(instance_id):
-    ec2_client = boto3.client('ec2')
-    try:
-        ec2_client.create_tags(Resources=[instance_id], Tags=[{'Key': 'Notified', 'Value': 'True'}])
-        print(f"Instance {instance_id} marked as notified")
-    except Exception as e:
-        print(f"Failed to tag instance {instance_id}: {str(e)}")
- 
 def check_bamboo_instances():
     ec2_client = boto3.client('ec2')
     tag_key = 'Name'
     bam_ip_value = 'bam::ip*'
     current_time = datetime.now(timezone.utc)
  
+    notified_instances = set()  # To avoid duplicate emails in same run
     bam_ip_instances = []
  
     response = ec2_client.describe_instances(Filters=[
@@ -40,16 +33,15 @@ def check_bamboo_instances():
             instance_id = instance['InstanceId']
             launch_time = instance['LaunchTime']
             running_time = current_time - launch_time
-            notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
  
             if running_time.total_seconds() > 10800:  # > 3 hours
-                bam_ip_instances.append({
-                    'Instance ID': instance_id,
-                    'Launch Time': launch_time,
-                    'Running Time': running_time
-                })
-                if not notified_tag:
-                    mark_instance_as_notified(instance_id)
+                if instance_id not in notified_instances:
+                    notified_instances.add(instance_id)
+                    bam_ip_instances.append({
+                        'Instance ID': instance_id,
+                        'Launch Time': launch_time,
+                        'Running Time': running_time
+                    })
  
     if bam_ip_instances:
         subject = "Bamboo Elastic Instances Running for More Than 3 Hours"
