@@ -20,6 +20,8 @@ env:
 jobs:
   start-runner:
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
 
   execute-job:
@@ -60,8 +62,7 @@ jobs:
           ansible-playbook Bamboo.agents/bamboo_stop.yml -i Bamboo.agents/inventory --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no" --check
 
   stop-runner:
-    name: Stop Self-Hosted Runner
-    needs: execute-job
-    if: always()
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
