@@ -1,0 +1,34 @@
+name: "Testing_Runners_Status"
+
+on:
+  schedule:
+    # This will run the workflow every 2 hours
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  check_instances:
+    runs-on: ubuntu-latest
+    
+    env:
+      CLASSIC_PAT: ${{ secrets.CLASSIC_PAT }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+ 
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+ 
+      - name: Install dependencies
+        run: pip install boto3 requests
+
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - run: python3 PYTHON_Script/TESting_runners.py
