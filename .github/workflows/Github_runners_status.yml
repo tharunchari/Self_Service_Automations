@@ -1,4 +1,4 @@
-name: "Runners Status"
+name: "GiTHub_Runners_Status"
 
 on:
   schedule:
