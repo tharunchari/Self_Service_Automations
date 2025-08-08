@@ -1,10 +1,10 @@
 name: "Testing_Runners_Status"
 
-on:
-  schedule:
+#on:
+#  schedule:
     # This will run the workflow every 2 hours
-    - cron: "0 */2 * * *"
-  workflow_dispatch:
+#    - cron: "0 */2 * * *"
+#  workflow_dispatch:
 
 jobs:
   check_instances:
