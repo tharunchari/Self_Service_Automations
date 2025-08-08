@@ -3,8 +3,8 @@ from datetime import datetime, timezone
  
 def send_sns_notification(subject, message):
     sns_client = boto3.client('sns')
-   # topic_arn = 'arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd'
-    topic_arn = 'arn:aws:sns:us-east-1:389180911583:Testing'
+    topic_arn = 'arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd'
+  #  topic_arn = 'arn:aws:sns:us-east-1:389180911583:Testing'
     try:
         sns_client.publish(
             TopicArn=topic_arn,
