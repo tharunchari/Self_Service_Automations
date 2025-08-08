@@ -4,7 +4,7 @@ import requests
  
 # === Config ===
 AWS_REGION = "us-east-1"
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")  # Or hardcode for testing
+GITHUB_TOKEN = os.environ["CLASSIC_PAT"])  # Or hardcode for testing
 ORG_NAME = "vitechsystems"
  
 if not GITHUB_TOKEN:
