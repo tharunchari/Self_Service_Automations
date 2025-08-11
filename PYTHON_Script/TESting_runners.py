@@ -3,105 +3,203 @@ import boto3
 import os
 
 import requests
+
+from datetime import datetime, timezone
  
 # === Config ===
 
 AWS_REGION = "us-east-1"
 
-GITHUB_TOKEN = os.environ.get("CLASSIC_PAT")  # Or hardcode for testing
+GITHUB_TOKEN = os.environ["CLASSIC_PAT"]  # GitHub Personal Access Token
 
-ORG_NAME = "vitechsystems"
+ORG_NAME = "vitechsystems"  # Your GitHub Org Name
+
+SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:Testing"
  
-if not GITHUB_TOKEN:
+# === SNS Notification ===
 
-    raise ValueError("Please set the CLASSIC_PAT environment variable")
+def send_sns_notification(subject, message):
+
+    sns_client = boto3.client('sns', region_name=AWS_REGION)
+
+    try:
+
+        sns_client.publish(
+
+            TopicArn=SNS_TOPIC_ARN,
+
+            Message=message,
+
+            Subject=subject
+
+        )
+
+        print("SNS notification sent successfully")
+
+    except Exception as e:
+
+        print("Failed to send SNS notification:", str(e))
  
-# 1️⃣ Get list of EC2 instance IDs
+# === EC2 Tagging ===
 
-ec2_client = boto3.client("ec2", region_name=AWS_REGION)
+def mark_instance_as_notified(instance_id):
 
-instances = ec2_client.describe_instances()
+    ec2_client = boto3.client('ec2', region_name=AWS_REGION)
 
-instance_ids = [
+    try:
 
-    inst["InstanceId"]
+        ec2_client.create_tags(Resources=[instance_id], Tags=[{'Key': 'Notified', 'Value': 'True'}])
 
-    for res in instances["Reservations"]
+        print(f"Instance {instance_id} marked as notified")
 
-    for inst in res["Instances"]
+    except Exception as e:
 
-]
-
-print("EC2 Instances found:")
-
-for iid in instance_ids:
-
-    print(iid)
-
-print("====================")
+        print(f"Failed to tag instance {instance_id}: {str(e)}")
  
-# 2️⃣ Get runners from GitHub
+# === EC2 Self-Hosted Runner Check ===
 
-url = f"https://api.github.com/orgs/{ORG_NAME}/actions/runners?per_page=100"
+def check_self_hosted_runners():
 
-headers = {
+    ec2_client = boto3.client('ec2', region_name=AWS_REGION)
 
-    "Accept": "application/vnd.github+json",
+    tag_key = 'Name'
 
-    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    self_hosted_runner_value = 'Github_Self_Hosted_Runner'
 
-    "X-GitHub-Api-Version": "2022-11-28"
+    current_time = datetime.now(timezone.utc)
 
-}
-
-response = requests.get(url, headers=headers)
-
-response.raise_for_status()
-
-runners = response.json().get("runners", [])
+    self_hosted_instances = []
  
-# 3️⃣ Filter runners
+    response = ec2_client.describe_instances(Filters=[
 
-matching_ids = []
+        {'Name': f'tag:{tag_key}', 'Values': [self_hosted_runner_value]},
 
-for runner in runners:
+        {'Name': 'instance-state-name', 'Values': ['running']}
 
-    name = runner.get("name", "")
-
-    status = runner.get("status")
-
-    busy = runner.get("busy", True)
-
-    # Filter conditions
-
-    if (
-
-        status == "online"
-
-        and busy is False
-
-        and not name.startswith("Internal_Tools_Automation_Server")
-
-    ):
-
-        # Match against EC2 instance IDs
-
-        for iid in instance_ids:
-
-            if name.startswith(iid):
-
-                # Extract first two parts of name (split by "-")
-
-                short_id = "-".join(name.split("-")[0:2])
-
-                matching_ids.append(short_id)
+    ])
  
-# 4️⃣ Print matching instance IDs
+    for reservation in response['Reservations']:
 
-print("Matching EC2 Instance IDs with GitHub runners:")
+        for instance in reservation['Instances']:
 
-for mid in matching_ids:
+            instance_id = instance['InstanceId']
 
-    print(mid)
+            launch_time = instance['LaunchTime']
+
+            running_time = current_time - launch_time
+
+            notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
+ 
+            if running_time.total_seconds() > 7200:  # > 2 hours
+
+                self_hosted_instances.append({
+
+                    'Instance ID': instance_id,
+
+                    'Launch Time': launch_time,
+
+                    'Running Time': running_time
+
+                })
+
+                if not notified_tag:
+
+                    mark_instance_as_notified(instance_id)
+ 
+    return self_hosted_instances
+ 
+# === GitHub Runner API Check ===
+
+def get_online_idle_github_runners():
+
+    url = f"https://api.github.com/orgs/{ORG_NAME}/actions/runners?per_page=100"
+
+    headers = {
+
+        "Accept": "application/vnd.github+json",
+
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+
+        "X-GitHub-Api-Version": "2022-11-28"
+
+    }
+
+    runners_list = []
+ 
+    try:
+
+        response = requests.get(url, headers=headers)
+
+        response.raise_for_status()
+
+        data = response.json()
+ 
+        for runner in data.get("runners", []):
+
+            if runner.get("status") == "online" and runner.get("busy") == True:
+
+                runners_list.append(runner["name"])
+
+    except Exception as e:
+
+        print("Error fetching GitHub runners:", str(e))
+ 
+    return runners_list
+ 
+# === Main Function ===
+
+if __name__ == "__main__":
+
+    # 1. Check EC2 Runners > 2 Hours
+
+    ec2_runners = check_self_hosted_runners()
+ 
+    # 2. Get GitHub Runners (Online & Idle)
+
+    github_runners = get_online_idle_github_runners()
+ 
+    # 3. Build Notification Message
+
+    message_parts = []
+ 
+    if ec2_runners:
+
+        message_parts.append("=== EC2 Self-Hosted Runners > 2 Hours ===")
+
+        for inst in ec2_runners:
+
+            message_parts.append(f"Instance ID: {inst['Instance ID']}")
+
+            message_parts.append(f"Launch Time: {inst['Launch Time']}")
+
+            message_parts.append(f"Running Time: {inst['Running Time']}")
+
+            message_parts.append("")
+
+    else:
+
+        message_parts.append("No EC2 self-hosted runners running > 2 hours.")
+ 
+    if github_runners:
+
+        message_parts.append("=== GitHub Runners (Online & Idle) ===")
+
+        for runner in github_runners:
+
+            message_parts.append(runner)
+
+    else:
+
+        message_parts.append("No GitHub runners online & idle.")
+ 
+    # 4. Send SNS Notification
+
+    send_sns_notification(
+
+        "Self-Hosted Runner Report",
+
+        "\n".join(message_parts)
+
+    )
 
  
