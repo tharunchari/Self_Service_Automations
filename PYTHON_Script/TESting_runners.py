@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
             })
 
-            if running_time.total_seconds() > 500:  # > 2 hours
+            if running_time.total_seconds() > 1000:  # > 2 hours
 
                 ec2_runners_over_2h.append(instance_id)
  
