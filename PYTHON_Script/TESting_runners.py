@@ -252,7 +252,7 @@ def get_online_idle_github_runners():
  
         for runner in data.get("runners", []):
 
-            if runner.get("status") == "online" and runner.get("busy") == False:
+            if runner.get("status") == "online" and runner.get("busy") == True:
 
                 runners_list.append(runner["name"])
 
@@ -304,7 +304,7 @@ if __name__ == "__main__":
 
             })
 
-            if running_time.total_seconds() > 7200:  # > 2 hours
+            if running_time.total_seconds() > 500:  # > 2 hours
 
                 ec2_runners_over_2h.append(instance_id)
  
