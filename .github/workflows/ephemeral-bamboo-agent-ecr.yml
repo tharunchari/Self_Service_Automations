@@ -63,6 +63,10 @@ jobs:
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
     
+        # Log upstream apt-get install lines for debugging
+        echo "Upstream apt-get install lines:"
+        grep "apt-get install" Dockerfile || echo "No apt-get install found"
+    
         # Process package installations
         awk '
         BEGIN {
@@ -96,7 +100,8 @@ jobs:
         }
         install && !/^         / {
           if(pkg_count > 0) {
-            print "RUN yum update -y && yum upgrade -y && yum install -y \\"
+            print "RUN yum install -y epel-release \\"
+            print " && yum update -y && yum upgrade -y && yum install -y \\"
             for(i=0; i<pkg_count; i++) {
               if(i < pkg_count-1) {
                 print "    " pkg_list[i] " \\"
@@ -134,6 +139,16 @@ jobs:
           exit 1
         fi
     
+        # Validate package availability
+        echo "Checking package availability..."
+        if ! docker run --rm amazonlinux:2023 /bin/sh -c "yum install -y epel-release && yum list available git openssh-clients python3 python3-pip tini"; then
+          echo "One or more packages not found in Amazon Linux 2023 or EPEL repository"
+          echo "Falling back to manual tini installation"
+          sed -i '/yum clean all/a \
+          # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_VERSION}-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
+          sed -i 's/tini//g' Dockerfile
+        fi
+    
         # Remove sensitive ARG or ENV instructions
         sed -i '/ARG.*PASSWORD/d' Dockerfile
         sed -i '/ENV.*PASSWORD/d' Dockerfile
@@ -147,12 +162,10 @@ jobs:
         # Remove empty continuation lines
         sed -i '/^\\$/d' Dockerfile
     
-        # Validate package availability
-        echo "Checking package availability..."
-        docker run --rm amazonlinux:2023 yum list available git openssh-clients python3 python3-pip tini || {
-          echo "One or more packages not found in Amazon Linux 2023 repository"
-          exit 1
-        }
+        # Debug: Log yum install command
+        echo "Generated yum install command:"
+        grep "yum install" Dockerfile
+        
     - name: Copy everything from agent-base to workspace
       if: steps.compare.outputs.changed == 'true'
       run: |
