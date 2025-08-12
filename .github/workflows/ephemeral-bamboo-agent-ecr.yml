@@ -37,7 +37,7 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
+        - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
@@ -51,7 +51,8 @@ jobs:
           pkg=$0
           gsub("^ *", "", pkg)
           gsub("\\\\$", "", pkg)      # remove trailing backslashes
-          if (pkg == "" || pkg == "\\r") next
+          pkg=gensub(/[[:space:]]+$/, "", "g", pkg)  # trim trailing spaces
+          if (pkg == "" || pkg == "\\r") next  # skip empty lines
           gsub("openssh-client", "openssh-clients", pkg)
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
@@ -91,6 +92,7 @@ jobs:
 
         echo "Generated Dockerfile:"
         cat Dockerfile
+
 
     - name: Copy everything from agent-base to workspace
       if: steps.compare.outputs.changed == 'true'
