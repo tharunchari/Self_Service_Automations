@@ -1,9 +1,5 @@
 name: "Testing_Runners_Status"
 
-on:
-  schedule:
-    - cron: '30,40,50 14 12 8 *'   # 14:30, 14:40, 14:50 UTC
-    - cron: '*/10 15 12 8 *' 
   workflow_dispatch:
 
 jobs:
