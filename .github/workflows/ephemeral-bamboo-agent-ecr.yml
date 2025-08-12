@@ -50,9 +50,9 @@ jobs:
         install && /^         / {
           pkg=$0
           gsub("^ *", "", pkg)
-          gsub("\\\\$", "", pkg)      # remove trailing backslashes
-          pkg=gensub(/[[:space:]]+$/, "", "g", pkg)  # trim trailing spaces
-          if (pkg == "" || pkg == "\\r") next  # skip empty lines
+          gsub("\\\\$", "", pkg)
+          pkg=gensub(/[[:space:]]+$/, "", "g", pkg)
+          if (pkg == "" || pkg == "\\r") next
           gsub("openssh-client", "openssh-clients", pkg)
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
@@ -66,6 +66,8 @@ jobs:
         install && !/^         / {
           print "RUN yum clean all"
           print "RUN pip3 install jinja2"
+          # Install tar and gzip before Git LFS
+          print "RUN yum install -y tar gzip"
           print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
           print "    && tar -xzf git-lfs.tar.gz \\"
           print "    && mv git-lfs-*/git-lfs /usr/local/bin/ \\"
@@ -145,8 +147,3 @@ jobs:
         git push
       env:
         GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-
-    # SNS notification step is intentionally disabled for now
-    # - name: Notify via SNS
-    #   if: success()
-    #   run: aws sns publish --topic-arn ${{ secrets.SNS_TOPIC_ARN }} --message "Bamboo Agent ECR build completed successfully."
