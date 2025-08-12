@@ -19,9 +19,11 @@ jobs:
         token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
 
     - name: Clone Bitbucket Bamboo Agent Base
+      shell: bash
       run: git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base
 
     - name: Clone Atlassian Docker Shared Components
+      shell: bash
       run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
 
     - name: Compare Dockerfiles
@@ -44,9 +46,11 @@ jobs:
       working-directory: agent-base
       shell: bash
       run: |
+        # Set Amazon Linux base image
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*|FROM $BASE_IMAGE|' Dockerfile
 
+        # Remove apt-get blocks and insert correct yum-based install blocks
         awk '
         BEGIN {in_apt=0}
         /RUN apt-get update/ {
@@ -63,8 +67,8 @@ jobs:
           gsub("openssh-client", "openssh", pkg)
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
-          # Remove tini here, will add manually later
-          if(pkg=="tini" || pkg=="") next
+          # Remove tini and git-lfs here, will add manually later
+          if(pkg=="tini" || pkg=="" || pkg=="git-lfs") next
           print "RUN yum install -y " pkg
           next
         }
