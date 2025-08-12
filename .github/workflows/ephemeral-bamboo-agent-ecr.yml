@@ -48,21 +48,17 @@ jobs:
         aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
         aws-region: us-west-2
 
-    - name: Send SNS notification if no changes
+    - name: Send SNS notification and exit if no changes
       if: steps.compare.outputs.changed == 'false'
       run: |
         aws sns publish \
           --topic-arn "${SNS_TOPIC_ARN}" \
           --message "[Bamboo Docker Build] No changes detected in upstream Dockerfile. No build or push required. Image remains unchanged." \
           --region us-west-2
-      env:
-        SNS_TOPIC_ARN: ${{ env.SNS_TOPIC_ARN }}
-
-    - name: Exit gracefully if no changes
-      if: steps.compare.outputs.changed == 'false'
-      run: |
         echo "Nothing changed from previous build. Exiting workflow."
         exit 0
+      env:
+        SNS_TOPIC_ARN: ${{ env.SNS_TOPIC_ARN }}
 
     # Proceed only if changes detected
     - name: Replace upstream Dockerfile with Amazon Linux version
@@ -156,6 +152,10 @@ jobs:
       run: |
         rm -rf shared-components
         cp -r shared-components-upstream shared-components
+
+    - name: Login to Amazon ECR
+      if: steps.compare.outputs.changed == 'true'
+      run: aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
 
     - name: Build Docker image
       if: steps.compare.outputs.changed == 'true'
