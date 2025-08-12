@@ -3,7 +3,7 @@ name: Trigger Sync GHAS to JIRA
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 2 * *'  # every day at 3 AM UTC
+    - cron: '0 0 2 * *'  # every month on 2nd at 00:00 AM UTC
  
 jobs:
   Trigger-Sync_GHAS_to_JIRA:
