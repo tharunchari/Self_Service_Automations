@@ -1,83 +1,72 @@
 import boto3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
  
-def send_sns_notification(subject, message):
-    sns_client = boto3.client('sns')
-   # topic_arn = 'arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd'
-    topic_arn = 'arn:aws:sns:us-east-1:389180911583:Testing'
-    try:
-        sns_client.publish(
-            TopicArn=topic_arn,
-            Message=message,
-            Subject=subject
-        )
-        print("SNS notification sent successfully")
-    except Exception as e:
-        print("Failed to send SNS notification:", str(e))
+# SNS topic ARN
+SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:389180911583:Testing'
  
-def mark_instance_as_notified(instance_id):
-    ec2_client = boto3.client('ec2')
-    try:
-        ec2_client.create_tags(Resources=[instance_id], Tags=[{'Key': 'Notified', 'Value': 'True'}])
-        print(f"Instance {instance_id} marked as notified")
-    except Exception as e:
-        print(f"Failed to tag instance {instance_id}: {str(e)}")
+# AWS clients
+ec2_client = boto3.client('ec2')
+sns_client = boto3.client('sns')
  
-def check_self_hosted_runners():
-    ec2_client = boto3.client('ec2')
-    tag_key = 'Name'
-    self_hosted_runner_value = 'Github_Self_Hosted_Runner'
-    current_time = datetime.now(timezone.utc)
-    self_hosted_instances = []
+def get_github_self_hosted_runners():
+    """Fetch EC2 instances tagged as Github_Self_Hosted_Runner and running > 2 hours."""
+    instances_info = []
+    two_hours = timedelta(hours=2)
  
-    # Fetch only running self-hosted runner instances
-    response = ec2_client.describe_instances(Filters=[
-        {'Name': f'tag:{tag_key}', 'Values': [self_hosted_runner_value]},
-        {'Name': 'instance-state-name', 'Values': ['running']}
-    ])
+    response = ec2_client.describe_instances(
+        Filters=[
+            {'Name': 'tag:Name', 'Values': ['Github_Self_Hosted_Runner']},
+            {'Name': 'instance-state-name', 'Values': ['running']}
+        ]
+    )
  
-    # Process instances
     for reservation in response['Reservations']:
         for instance in reservation['Instances']:
-            instance_id = instance['InstanceId']
             launch_time = instance['LaunchTime']
-            running_time = current_time - launch_time
+            running_time = datetime.now(timezone.utc) - launch_time
  
-            notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
- 
-            if running_time.total_seconds() > 500:  # > 2 hours
-                self_hosted_instances.append({
-                    'Instance ID': instance_id,
-                    'Launch Time': launch_time,
-                    'Running Time': running_time
+            if running_time > two_hours:
+                instances_info.append({
+                    "id": instance['InstanceId'],
+                    "launch_time": launch_time,
+                    "running_time": running_time
                 })
-                if not notified_tag:
-                    mark_instance_as_notified(instance_id)
  
-    # Output and notification
-    if self_hosted_instances:
-        subject = "Self-Hosted Github Runners Running for More Than 2 Hours"
+    return instances_info
  
-        # Detailed section
-        message = ""
-        for inst in self_hosted_instances:
-            message += f"Instance ID: {inst['Instance ID']}\n"
-            message += f"Launch Time: {inst['Launch Time']}\n"
-            message += f"Running Time: {inst['Running Time']}\n\n"
+def send_sns_notification(subject, message):
+    """Send SNS notification."""
+    sns_client.publish(
+        TopicArn=SNS_TOPIC_ARN,
+        Message=message,
+        Subject=subject
+    )
  
-        # Print detailed info
-        print(subject)
-        print(message)
+def main():
+    instances = get_github_self_hosted_runners()
  
-        # Print short ID list
-        print(subject)
-        for inst in self_hosted_instances:
-            print(inst['Instance ID'])
+    if not instances:
+        print("No self-hosted runners running more than 2 hours found.")
+        return
  
-        # Send SNS with detailed info
-        send_sns_notification(subject, message)
-    else:
-        print("No self-hosted runners running for more than 2 hours.")
+    # Print detailed list
+    print("=== EC2 Self-Hosted Runners ===")
+    for inst in instances:
+        print(f"Instance ID: {inst['id']}")
+        print(f"Launch Time: {inst['launch_time']}")
+        print(f"Running Time: {inst['running_time']}")
+ 
+    # Print just IDs
+    print("\nEC2 Self-Hosted Runners ids")
+    ids_list = [inst['id'] for inst in instances]
+    for iid in ids_list:
+        print(iid)
+ 
+    # Send SNS with only IDs
+    send_sns_notification(
+        "EC2 Self-Hosted Runners Running > 2 Hours",
+        "\n".join(ids_list)
+    )
  
 if __name__ == "__main__":
-    check_self_hosted_runners()
+    main()
