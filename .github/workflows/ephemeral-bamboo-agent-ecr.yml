@@ -9,9 +9,9 @@ jobs:
   check-and-build:
     runs-on: ubuntu-latest
     env:
+      SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
       TINI_VERSION: v0.19.0
-
     steps:
     - name: Checkout this repo
       uses: actions/checkout@v4
@@ -38,6 +38,7 @@ jobs:
         if [ -f agent-base/Dockerfile ] && [ -f Dockerfile.last ]; then
           diff -q agent-base/Dockerfile Dockerfile.last > diff.log || true
         else
+          echo "No previous Dockerfile to compare, treating as changes present"
           echo "DIFF" > diff.log
         fi
         if [ -s diff.log ]; then
@@ -46,7 +47,7 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
-        - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
+    - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
@@ -107,22 +108,20 @@ jobs:
         /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
         {print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
-
+    
+        # Install tini manually
         sed -i '/yum clean all/a \
         # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
-
+    
         sed -i '/ARG.*PASSWORD/d' Dockerfile
         sed -i '/ENV.*PASSWORD/d' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
         sed -i '/^&&/d' Dockerfile
         sed -i '/^\\$/d' Dockerfile
-
-        echo "Generated Dockerfile:"
-        cat Dockerfile
-
+    
         docker run --rm amazonlinux:2023 yum list available git openssh-clients python3 python3-pip || {
-          echo "One or more packages not found in Amazon Linux 2023 repo"
+          echo "One or more packages not found in Amazon Linux 2023 repository"
           exit 1
         }
 
@@ -179,3 +178,8 @@ jobs:
         git push
       env:
         GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+
+    # - name: Notify via SNS
+    #   if: success()
+    #   run: |
+    #     aws sns publish --topic-arn $SNS_TOPIC_ARN --message "Bamboo Agent build completed successfully"
