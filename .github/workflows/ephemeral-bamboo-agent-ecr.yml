@@ -58,16 +58,17 @@ jobs:
           gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
           gsub("git-lfs", "", pkg)
-          # Replace openjdk JRE with full JDK to ensure jar is available
-          gsub("openjdk-17-jre", "java-17-openjdk-devel", pkg)
+          # Replace openjdk JRE with Amazon Corretto JDK 17 package
+          gsub("openjdk-17-jre", "java-17-amazon-corretto-devel", pkg)
           if (pkg != "") {
             print "RUN yum install -y " pkg
           }
           next
         }
         install && !/^         / {
-          # After finishing package list, ensure full JDK is installed explicitly
-          print "RUN yum install -y java-17-openjdk-devel"
+          # After finishing package list, install Corretto repo and JDK 17
+          print "RUN curl -L -o /etc/yum.repos.d/corretto.repo https://yum.corretto.aws/corretto.repo"
+          print "RUN yum install -y java-17-amazon-corretto-devel"
           print "RUN yum clean all"
           print "RUN pip3 install jinja2"
           print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
