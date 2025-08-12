@@ -51,79 +51,79 @@ jobs:
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
-        # 1. Switch base image to Amazon Linux 2023
+        # Switch to Amazon Linux base
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
 
-        # 2. Create mapping file if missing
-        if [ ! -f ../package-map.txt ]; then
-          echo "Mapping file not found — creating default one..."
-          cat <<'EOF' > ../package-map.txt
-        # DebianName AmazonName
+        # Create package mapping
+        cat > ../package-map.txt <<'EOF'
         openssh-client openssh-clients
-        python-is-python3 python3
-        python3-jinja2 python3-pip
-        # Drop these (no Amazon Linux equivalent, handled separately)
+        python-is-python3 __REMOVE__
         tini __REMOVE__
         git-lfs __REMOVE__
+        python3-jinja2 python3-pip
         EOF
-        fi
 
-        # 3. Convert apt-get packages to yum packages using mapping file
-        awk -v map_file="../package-map.txt" '
+        # Convert apt-get to yum, skip duplicates and skip base image python3
+        awk '
         BEGIN {
-          while ((getline < map_file) > 0) {
-            if ($0 ~ /^#/ || NF < 2) continue
-            deb=$1; amz=$2
-            pkgmap[deb] = amz
+          install=0; pkg_count=0;
+          while ((getline < "../package-map.txt") > 0) {
+            if ($0 ~ /^#/ || NF == 0) continue
+            map[$1] = $2
           }
-          install=0; pkg_count=0
         }
         /apt-get install -y/ {install=1; next}
         install && /^         / {
           pkg=$0
           gsub("^ *", "", pkg)
           gsub("\\\\", "", pkg)
-          if (pkg != "") {
-            if (pkgmap[pkg] == "__REMOVE__") next
-            if (pkgmap[pkg] != "") pkg = pkgmap[pkg]
-            seen[pkg]++
-            if (seen[pkg] == 1) pkg_list[pkg_count++] = pkg
+          if (pkg in map) {
+            if (map[pkg] == "__REMOVE__") next
+            pkg = map[pkg]
           }
+          if (pkg == "" || pkg == "python3" || seen[pkg]++) next
+          pkg_list[pkg_count++] = pkg
           next
         }
         install && !/^         / {
           if (pkg_count > 0) {
-            print "RUN yum update -y && yum upgrade -y && yum install -y \\"
+            printf "RUN yum update -y && yum upgrade -y && yum install -y \\\\\n"
             for (i=0; i<pkg_count; i++) {
               if (i < pkg_count-1) {
-                print "    " pkg_list[i] " \\"
+                printf "    %s \\\\\n", pkg_list[i]
               } else {
-                print "    " pkg_list[i]
+                printf "    %s && yum clean all\n", pkg_list[i]
               }
             }
-            print " && yum clean all"
           }
-          install=0; pkg_count=0; delete pkg_list
+          install=0; pkg_count=0; delete pkg_list; delete seen
         }
+        /apt-get update/ {next}
+        /apt-get upgrade/ {next}
+        /apt-get clean/ {next}
+        /apt-get autoclean/ {next}
+        /apt-get autoremove/ {next}
+        /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
         {print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
-        # 4. Install tini manually
+        # Install tini manually
         sed -i '/yum clean all/a \
         # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
 
-        # 5. Remove sensitive ARG/ENV lines
+        # Remove sensitive ARG or ENV
         sed -i '/ARG.*PASSWORD/d' Dockerfile
         sed -i '/ENV.*PASSWORD/d' Dockerfile
 
-        # 6. Convert ENV to key=value format
+        # Ensure ENV format is key=value
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
 
-        # 7. Debug
-        echo "Generated Dockerfile:"
-        cat Dockerfile
+        # Remove accidental lines starting with &&
+        sed -i '/^&&/d' Dockerfile
+        # Remove empty continuation lines
+        sed -i '/^\\$/d' Dockerfile
 
     - name: Copy everything from agent-base to workspace
       if: steps.compare.outputs.changed == 'true'
