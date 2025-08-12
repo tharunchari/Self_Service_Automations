@@ -11,7 +11,7 @@ jobs:
     env:
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
       TINI_VERSION: v0.19.0
-      BAMBOO_VERSION: 8.2.4 # <-- Set a valid Bamboo version here!
+      BAMBOO_VERSION: 10.2.5 # <-- Set a valid Bamboo version here!
 
     steps:
     - name: Checkout repository
