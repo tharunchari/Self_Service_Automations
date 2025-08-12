@@ -11,7 +11,6 @@ jobs:
     env:
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
       TINI_VERSION: v0.19.0
-
     steps:
     - name: Checkout this repo
       uses: actions/checkout@v4
@@ -51,12 +50,14 @@ jobs:
         install && /^         / {
           pkg=$0
           gsub("^ *", "", pkg)
+          gsub("\\\\$", "", pkg)      # remove trailing backslashes
+          if (pkg == "" || pkg == "\\r") next
           gsub("openssh-client", "openssh-clients", pkg)
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
           gsub("git-lfs", "", pkg)
-          if(pkg != "" && pkg != "\\" && pkg != "\r") {
+          if (pkg != "") {
             print "RUN yum install -y " pkg
           }
           next
@@ -143,3 +144,8 @@ jobs:
         git push
       env:
         GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+
+    # SNS notification step intentionally disabled for now
+    # - name: Send SNS notification
+    #   if: steps.compare.outputs.changed == 'true'
+    #   run: aws sns publish --topic-arn ${{ secrets.SNS_TOPIC_ARN }} --message "Bamboo Agent ECR image updated successfully."
