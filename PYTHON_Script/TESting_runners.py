@@ -84,7 +84,7 @@ def main():
 
         message_lines.append(f"Launch Time: {inst['launch_time']}")
 
-        message_lines.append(f"Running Time: {inst['running_time']}")
+        message_lines.append(f"Running Time: {inst['running_time']}\n")
 
     message_lines.append("\nSNS notification sent with these IDs:")
 
