@@ -58,16 +58,15 @@ jobs:
           gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
           gsub("git-lfs", "", pkg)
-          # Replace openjdk JRE with full JDK to ensure jar is available
-          gsub("openjdk-17-jre", "java-17-openjdk-devel", pkg)
+          # Removed replacing openjdk JRE with openjdk-devel
+          # Do NOT print java-17-openjdk-devel anymore
           if (pkg != "") {
             print "RUN yum install -y " pkg
           }
           next
         }
         install && !/^         / {
-          # After finishing package list, ensure full JDK is installed explicitly
-          print "RUN yum install -y java-17-openjdk-devel"
+          # After finishing package list, do NOT install java-17-openjdk-devel anymore
           print "RUN yum clean all"
           print "RUN pip3 install jinja2"
           print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
@@ -86,6 +85,9 @@ jobs:
         { print }
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
+        # Explicitly install amazon corretto JDK after yum clean
+        sed -i '/^RUN yum clean all/a RUN yum install -y java-17-amazon-corretto-devel' Dockerfile
+
         sed -i '/yum clean all/a \
         # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
 
@@ -94,7 +96,7 @@ jobs:
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
 
-        # Add verification that java and jar exist after installation - replace which with command -v
+        # Use 'command -v' instead of 'which' to check for jar executable
         sed -i '/^RUN yum clean all/a RUN java -version && command -v jar && jar --version' Dockerfile
 
         echo "Generated Dockerfile:"
