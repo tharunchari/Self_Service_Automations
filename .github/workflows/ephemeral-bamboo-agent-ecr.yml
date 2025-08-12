@@ -50,33 +50,33 @@ jobs:
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*|FROM $BASE_IMAGE|' Dockerfile
 
-        # Remove all apt-get and Ubuntu stuff, and install packages individually
+        # Transform apt-get block to valid yum install lines, remove all apt-get/ubuntu/yum install -y && lines
         awk '
-        BEGIN {in_block=0; pkgs=""}
-        # Start of apt-get update block
+        BEGIN {in_apt=0; pkgs=[]}
+        # Detect start of apt-get update block
         /RUN apt-get update/ {
-          in_block=1
+          in_apt=1
           print "RUN yum update -y"
           print "RUN yum upgrade -y"
           next
         }
-        # Inside apt-get install block: ignore apt, collect package lines
-        in_block==1 && /apt-get install -y/ {next}
-        in_block==1 && /^\s+/ {
+        # Skip apt-get install line
+        in_apt==1 && /apt-get install -y/ {next}
+        # Collect package lines inside the apt block
+        in_apt==1 && /^\s+/ {
           pkg=$0
           gsub("^\\s+", "", pkg)
           gsub("\\\\", "", pkg)
           gsub("openssh-client", "openssh", pkg)
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
+          # skip tini and git-lfs here, will add manually later
           if(pkg=="tini" || pkg=="git-lfs" || pkg=="") next
-          pkgs=pkgs pkg " "
+          print "RUN yum install -y " pkg
           next
         }
-        # End of apt-get install block, emit yum install lines
-        in_block==1 && !/^\s+/ {
-          n=split(pkgs, arr, " ")
-          for(i=1;i<=n;i++) if(length(arr[i])>0) print "RUN yum install -y " arr[i]
+        # End of apt-get install block, emit extra package installs
+        in_apt==1 && !/^\s+/ {
           print "RUN yum install -y java-17-amazon-corretto-devel"
           print "RUN yum install -y tar"
           print "RUN yum install -y git-lfs"
@@ -85,21 +85,27 @@ jobs:
           print "RUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64"
           print "RUN chmod +x /tini"
           print "RUN mv /tini /usr/local/bin/tini"
-          in_block=0
-          pkgs=""
+          in_apt=0
           next
         }
-        # Remove all apt-get/ubuntu/yum install -y && apt-get upgrade lines
+        # Remove all apt-get/ubuntu/yum install -y && lines
         /apt-get upgrade/ {next}
         /apt-get clean/ {next}
         /apt-get autoclean/ {next}
         /apt-get autoremove/ {next}
         /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
-        /yum install -y && apt-get upgrade -y/ {next}
-        # Remove broken yum install lines with no package
-        /^RUN yum install -y *$/ {next}
-        # Print everything else
-        {if(in_block==0) print}
+        /yum install -y &&/ {next}
+        /yum install -y apt-get/ {next}
+        /yum install -y upgrade/ {next}
+        /yum install -y clean/ {next}
+        /yum install -y autoclean/ {next}
+        /yum install -y autoremove/ {next}
+        /yum install -y rm/ {next}
+        /yum install -y -rf/ {next}
+        /yum install -y \/var\/lib\/apt\/lists\/*/ {next}
+        /yum install -y -y/ {next}
+        # Print everything else as-is
+        {if(in_apt==0) print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
         echo "Transformed Dockerfile:"
