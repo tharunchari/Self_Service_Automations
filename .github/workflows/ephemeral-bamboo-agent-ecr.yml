@@ -11,7 +11,8 @@ jobs:
     env:
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
       TINI_VERSION: v0.19.0
-      BAMBOO_VERSION: 10.2.5 # <-- Set a valid Bamboo version here!
+      BAMBOO_VERSION: 8.2.4
+      SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
 
     steps:
     - name: Checkout repository
@@ -25,30 +26,64 @@ jobs:
     - name: Clone Atlassian Docker Shared Components
       run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
 
-    # Overwrite upstream Dockerfile with fixed Amazon Linux version
+    - name: Compare Dockerfiles
+      id: compare
+      shell: bash
+      run: |
+        if [ -f agent-base/Dockerfile ] && [ -f Dockerfile.last ]; then
+          diff -q agent-base/Dockerfile Dockerfile.last > diff.log || true
+        else
+          echo "DIFF" > diff.log
+        fi
+        if [ -s diff.log ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Send SNS notification if no changes
+      if: steps.compare.outputs.changed == 'false'
+      run: |
+        aws sns publish \
+          --topic-arn "${SNS_TOPIC_ARN}" \
+          --message "[Bamboo Docker Build] No changes detected in upstream Dockerfile. No build or push required. Image remains unchanged." \
+          --region us-west-2
+      env:
+        SNS_TOPIC_ARN: ${{ env.SNS_TOPIC_ARN }}
+
+    - name: Exit gracefully if no changes
+      if: steps.compare.outputs.changed == 'false'
+      run: |
+        echo "Nothing changed from previous build. Exiting workflow."
+        exit 0
+
+    # Proceed only if changes detected
     - name: Replace upstream Dockerfile with Amazon Linux version
+      if: steps.compare.outputs.changed == 'true'
       run: |
         cat > agent-base/Dockerfile <<'EOF'
         ARG BASE_IMAGE=amazonlinux:2023
         FROM $BASE_IMAGE
-
         LABEL maintainer="dc-deployments@atlassian.com"
         LABEL securitytxt="https://www.atlassian.com/.well-known/security.txt"
-
         ENV APP_NAME=bamboo_agent
         ENV RUN_USER=bamboo
         ENV RUN_GROUP=bamboo
         ENV RUN_UID=2005
         ENV RUN_GID=2005
-
         ENV BAMBOO_AGENT_HOME=/var/atlassian/application-data/bamboo-agent
         ENV BAMBOO_AGENT_INSTALL_DIR=/opt/atlassian/bamboo
         ENV KUBE_NUM_EXTRA_CONTAINERS=0
         ENV EXTRA_CONTAINERS_REGISTRATION_DIRECTORY=/pbc/kube
         ENV DISABLE_AGENT_AUTO_CAPABILITY_DETECTION=false
-
         WORKDIR $BAMBOO_AGENT_HOME
-
         COPY entrypoint.py \
              probe-common.sh \
              probe-startup.sh \
@@ -57,7 +92,6 @@ jobs:
              shared-components/image/entrypoint_helpers.py  /
         COPY shared-components/support                      /opt/atlassian/support
         COPY config/*                                       /opt/atlassian/etc/
-
         RUN yum update -y && \
             yum upgrade -y && \
             yum install -y \
@@ -70,25 +104,20 @@ jobs:
                 tar \
                 java-17-amazon-corretto-devel && \
             yum clean all
-
         RUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 && \
             chmod +x /tini && \
             mv /tini /usr/local/bin/tini
-
         ARG MAVEN_VERSION=3.9.9
         ENV MAVEN_HOME=/opt/maven
         RUN mkdir -p ${MAVEN_HOME} \
             && curl -L --silent https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar -xz --strip-components=1 -C "${MAVEN_HOME}" \
             && ln -s ${MAVEN_HOME}/bin/mvn /usr/local/bin/mvn
-
         ARG BAMBOO_VERSION
         ENV BAMBOO_VERSION=${BAMBOO_VERSION}
         ARG DOWNLOAD_URL=https://packages.atlassian.com/mvn/maven-atlassian-external/com/atlassian/bamboo/atlassian-bamboo-agent-installer/${BAMBOO_VERSION}/atlassian-bamboo-agent-installer-${BAMBOO_VERSION}.jar
         ARG DOWNLOAD_USERNAME
         ARG DOWNLOAD_PASSWORD
-
         COPY bamboo-update-capability.sh /
-
         RUN groupadd --gid ${RUN_GID} ${RUN_GROUP} \
             && useradd --uid ${RUN_UID} --gid ${RUN_GID} --home-dir ${BAMBOO_AGENT_HOME} --shell /bin/bash ${RUN_USER} \
             && echo PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin > /etc/environment \
@@ -114,46 +143,39 @@ jobs:
             && chmod -R 770 ${BAMBOO_AGENT_HOME} \
             && for file in "/opt/atlassian/support /entrypoint.py /entrypoint_helpers.py /probe-common.sh /probe-startup.sh /probe-readiness.sh /pre-launch.sh /bamboo-update-capability.sh"; do \
                chmod -R "u=rwX,g=rX,o=rX" ${file} && chown -R root ${file}; done
-
         CMD ["/usr/bin/tini", "--", "/entrypoint.py"]
         ENTRYPOINT ["/pre-launch.sh"]
         EOF
 
     - name: Copy everything from agent-base to workspace
+      if: steps.compare.outputs.changed == 'true'
       run: cp -r agent-base/* .
 
     - name: Copy shared-components from upstream to workspace
+      if: steps.compare.outputs.changed == 'true'
       run: |
         rm -rf shared-components
         cp -r shared-components-upstream shared-components
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-west-2
-
-    - name: Login to Amazon ECR
-      run: aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
-
     - name: Build Docker image
-      run: docker build --build-arg BAMBOO_VERSION=${{ env.BAMBOO_VERSION }} -t vitech-bamboodr-repo .
-
-    - name: Tag Docker image
+      if: steps.compare.outputs.changed == 'true'
       run: |
+        docker build --build-arg BAMBOO_VERSION=${{ env.BAMBOO_VERSION }} -t vitech-bamboodr-repo .
         TAG=$(date +%Y%m%d-%H%M%S)
+        echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
         docker tag vitech-bamboodr-repo:latest $ECR_REPO:$TAG
 
     - name: Push Docker image to ECR
+      if: steps.compare.outputs.changed == 'true'
       run: |
-        TAG=$(date +%Y%m%d-%H%M%S)
-        docker push $ECR_REPO:$TAG
+        docker push $ECR_REPO:${{ env.IMAGE_TAG }}
 
     - name: Update Dockerfile.last in repo for future comparison
+      if: steps.compare.outputs.changed == 'true'
       run: cp agent-base/Dockerfile Dockerfile.last
 
     - name: Commit and push Dockerfile.last
+      if: steps.compare.outputs.changed == 'true'
       run: |
         git config --global user.email "actions@github.com"
         git config --global user.name "GitHub Actions"
@@ -162,3 +184,16 @@ jobs:
         git push
       env:
         GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+
+    - name: Send SNS notification with new Docker image tag
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        aws sns publish \
+          --topic-arn "${SNS_TOPIC_ARN}" \
+          --message "[Bamboo Docker Build] Update completed. New Docker image pushed: ${ECR_REPO}:${IMAGE_TAG}. Bamboo version: ${BAMBOO_VERSION}" \
+          --region us-west-2
+      env:
+        SNS_TOPIC_ARN: ${{ env.SNS_TOPIC_ARN }}
+        ECR_REPO: ${{ env.ECR_REPO }}
+        IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        BAMBOO_VERSION: ${{ env.BAMBOO_VERSION }}
