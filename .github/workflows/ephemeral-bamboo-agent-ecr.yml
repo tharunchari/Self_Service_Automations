@@ -1,10 +1,9 @@
----
 name: ephemeral-Bamboo-Agent-build
 
-'on':
+on:
   workflow_dispatch:
   schedule:
-    - cron: '30 5 1 * *'  # 11:00 IST on the 1st of every month
+    - cron: '30 5 1 * *' # 11:00 IST on the 1st of every month
 
 jobs:
   check-and-build:
@@ -14,310 +13,203 @@ jobs:
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
       TINI_VERSION: v0.19.0
     steps:
-      - name: Checkout this repo
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+    - name: Checkout this repo
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
 
-      - name: Clone Bitbucket Bamboo Agent Base
-        run: |
-          git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base || {
-            echo "Failed to clone docker-bamboo-agent-base repository"
-            exit 1
+    - name: Clone Bitbucket Bamboo Agent Base
+      run: |
+        git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base || {
+          echo "Failed to clone docker-bamboo-agent-base repository"
+          exit 1
+        }
+
+    - name: Clone Atlassian Docker Shared Components
+      run: |
+        git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream || {
+          echo "Failed to clone docker-shared-components repository"
+          exit 1
+        }
+
+    - name: Compare Dockerfiles
+      id: compare
+      run: |
+        if [ -f agent-base/Dockerfile ] && [ -f Dockerfile.last ]; then
+          diff -q agent-base/Dockerfile Dockerfile.last > diff.log || true
+        else
+          echo "No previous Dockerfile to compare, treating as changes present"
+          echo "DIFF" > diff.log
+        fi
+        if [ -s diff.log ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Validate Upstream Dockerfile
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        if ! grep -q "FROM.*ubuntu" agent-base/Dockerfile; then
+          echo "Upstream Dockerfile does not use Ubuntu base, conversion may fail"
+          #exit 1
+        fi
+
+    - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
+      if: steps.compare.outputs.changed == 'true'
+      working-directory: agent-base
+      run: |
+        # Convert Dockerfile from Ubuntu/Debian to Amazon Linux
+        sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
+        sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
+    
+        # Process package installations
+        awk '
+        BEGIN {
+          install=0; pkg_count=0;
+          seen["git"]=0; seen["openssh-clients"]=0;
+          seen["python3"]=0; seen["python3-pip"]=0
+        }
+        /apt-get install -y/ {install=1; next}
+        install && /^         / {
+          pkg=$0
+          gsub("^ *", "", pkg)
+          gsub("openssh-client", "openssh-clients", pkg)
+          gsub("python-is-python3", "python3", pkg)
+          gsub("python3-jinja2", "python3-pip", pkg)
+          gsub("tini", "", pkg)
+          gsub("git-lfs", "", pkg)
+          if(pkg != "" && pkg != "\\") {
+            if(pkg == "git" && seen["git"]==1) next
+            if(pkg == "openssh-clients" && seen["openssh-clients"]==1) next
+            if(pkg == "python3" && seen["python3"]==1) next
+            if(pkg == "python3-pip" && seen["python3-pip"]==1) next
+            if(pkg == "git") seen["git"]=1
+            if(pkg == "openssh-clients") seen["openssh-clients"]=1
+            if(pkg == "python3") seen["python3"]=1
+            if(pkg == "python3-pip") seen["python3-pip"]=1
+            pkg_list[pkg_count]=pkg
+            pkg_count++
           }
-
-      - name: Clone Atlassian Docker Shared Components
-        run: |
-          git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream || {
-            echo "Failed to clone docker-shared-components repository"
-            exit 1
+          next
+        }
+        install && !/^         / {
+          if(pkg_count > 0) {
+            print "RUN yum update -y && yum upgrade -y && yum install -y \\"
+            for(i=0; i<pkg_count; i++) {
+              if(i < pkg_count-1)
+                print "    " pkg_list[i] " \\"
+              else
+                print "    " pkg_list[i]
+            }
+            print " && yum clean all"
+            print "RUN pip3 install jinja2"
+            print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
+            print "    && tar -xzf git-lfs.tar.gz \\"
+            print "    && mv git-lfs-*/git-lfs /usr/local/bin/ \\"
+            print "    && rm -rf git-lfs.tar.gz git-lfs-*"
           }
+          install=0
+          pkg_count=0
+          delete pkg_list
+        }
+        /apt-get update/ {next}
+        /apt-get upgrade/ {next}
+        /apt-get clean/ {next}
+        /apt-get autoclean/ {next}
+        /apt-get autoremove/ {next}
+        /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
+        {print}
+        ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+    
+        # Debug: Log the generated Dockerfile
+        echo "Generated Dockerfile:"
+        cat Dockerfile
+    
+        # Install tini manually if not present
+        if ! grep -q "/tini" Dockerfile; then
+          sed -i '/yum clean all/a \
+        # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-${TINI_VERSION}-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
+        fi
+    
+        # Remove sensitive ARG or ENV instructions
+        sed -i '/ARG.*PASSWORD/d' Dockerfile
+        sed -i '/ENV.*PASSWORD/d' Dockerfile
+    
+        # Robustly convert ENV lines to key=value format
+        sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
+        sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
+    
+        # Remove accidental lines starting with &&
+        sed -i '/^&&/d' Dockerfile
+        # Remove empty continuation lines
+        sed -i '/^\\$/d' Dockerfile
+    
+        # Validate package availability
+        echo "Checking package availability..."
+        docker run --rm amazonlinux:2023 yum list available git openssh-clients python3 python3-pip || {
+          echo "One or more packages not found in Amazon Linux 2023 repository"
+          exit 1
+        }
+    - name: Copy everything from agent-base to workspace
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        cp -r agent-base/* .
 
-      - name: Compare Dockerfiles
-        id: compare
-        run: |
-          if [ -f agent-base/Dockerfile ] && [ -f Dockerfile.last ]; then
-            diff -q agent-base/Dockerfile Dockerfile.last > diff.log || true
-          else
-            echo "No previous Dockerfile to compare, treating as changes present"
-            echo "DIFF" > diff.log
-          fi
-          if [ -s diff.log ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-          fi
+    - name: Copy shared-components from upstream to workspace
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        rm -rf shared-components
+        cp -r shared-components-upstream shared-components
 
-      - name: Validate Upstream Dockerfile
-        if: steps.compare.outputs.changed == 'true'
-        run: |
-          if ! grep -q "FROM.*ubuntu" agent-base/Dockerfile; then
-            echo "Upstream Dockerfile does not use Ubuntu base, conversion may fail"
-            #exit 1
-          fi
+    - name: Configure AWS credentials
+      if: steps.compare.outputs.changed == 'true'
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
 
-      - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
-        if: steps.compare.outputs.changed == 'true'
-        working-directory: agent-base
-        run: |
-          # Convert Dockerfile from Ubuntu/Debian to Amazon Linux
-          sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
-          sed -i 's|^FROM .*ubuntu.*|FROM amazonlinux:2023|' Dockerfile
+    - name: Login to Amazon ECR
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
 
-          # Convert Dockerfile from Ubuntu/Debian to Amazon Linux - more conservative approach
-          sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
-          sed -i 's|^FROM .*ubuntu.*|FROM amazonlinux:2023|' Dockerfile
+    - name: Build Docker image
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        docker build -t vitech-bamboodr-repo . || {
+          echo "Docker build failed"
+          exit 1
+        }
 
-          # Remove apt-get related RUN statements in a more careful way
-          # First, create a backup
-          cp Dockerfile Dockerfile.backup
-          
-          # Remove complete RUN blocks that contain apt-get/apt commands
-          python3 << 'PYTHON_EOF'
-          import re
+    - name: Tag Docker image
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        TAG=$(date +%Y%m%d-%H%M%S)
+        docker tag vitech-bamboodr-repo:latest $ECR_REPO:$TAG
 
-          with open('Dockerfile', 'r') as f:
-              content = f.read()
+    - name: Push Docker image to ECR
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        TAG=$(date +%Y%m%d-%H%M%S)
+        docker push $ECR_REPO:$TAG || {
+          echo "Docker push failed"
+          exit 1
+        }
 
-          lines = content.split('\n')
-          new_lines = []
-          skip_run_block = False
-          in_continuation = False
+    - name: Update Dockerfile.last in repo for future comparison
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        cp agent-base/Dockerfile Dockerfile.last
 
-          for i, line in enumerate(lines):
-              stripped = line.strip()
-              
-              # Check if this is a RUN line with apt-get/apt
-              if re.match(r'^RUN\s+.*\b(apt-get|apt)\b', stripped):
-                  skip_run_block = True
-                  in_continuation = line.rstrip().endswith('\\')
-                  continue
-              
-              # If we're in a RUN block to skip
-              if skip_run_block:
-                  # Check if this line continues the RUN block
-                  if in_continuation:
-                      in_continuation = line.rstrip().endswith('\\')
-                      continue
-                  else:
-                      # This line doesn't continue the RUN block, so we're done skipping
-                      skip_run_block = False
-                      in_continuation = False
-              
-              # Skip individual apt-get/apt lines
-              if re.search(r'\b(apt-get|apt|dpkg)\b', stripped):
-                  continue
-                  
-              # Keep this line
-              new_lines.append(line)
-
-          with open('Dockerfile', 'w') as f:
-              f.write('\n'.join(new_lines))
-          PYTHON_EOF
-          
-          # Create Amazon Linux package installation block
-          cat > amazon_packages.txt << 'EOF'
-
-          # Set shell options for better error handling
-          SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-
-          RUN yum update -y && yum upgrade -y && yum install -y \
-              tar \
-              java-17-amazon-corretto \
-              java-17-amazon-corretto-devel \
-              git \
-              openssh-clients \
-              python3 \
-              python3-pip \
-              curl \
-              wget \
-              unzip \
-              && yum clean all
-
-          RUN pip3 install jinja2
-
-          RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \
-              && tar -xzf git-lfs.tar.gz \
-              && mv git-lfs-*/git-lfs /usr/local/bin/ \
-              && rm -rf git-lfs.tar.gz git-lfs-*
-
-          EOF
-          
-          # Insert the new package installation after the FROM statement
-          sed -i '/^FROM amazonlinux:2023/r amazon_packages.txt' Dockerfile
-          rm amazon_packages.txt
-
-          # Debug: Log the generated Dockerfile
-          echo "Generated Dockerfile:"
-          cat Dockerfile
-
-          # Validate Dockerfile syntax
-          echo "Validating Dockerfile syntax..."
-          if ! docker run --rm -i hadolint/hadolint < Dockerfile 2>/dev/null; then
-            echo "Warning: Dockerfile has style issues, but proceeding with build"
-          fi
-          
-          # Install tini manually if not present
-          if ! grep -q "tini" Dockerfile; then
-            # Add tini installation after yum install section
-            cat > tini_install.txt << 'TINI_EOF'
-
-          RUN curl -Lo /usr/local/bin/tini "https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64" \
-              && chmod +x /usr/local/bin/tini
-
-          TINI_EOF
-            sed -i '/yum clean all/r tini_install.txt' Dockerfile
-            rm tini_install.txt
-          fi
-
-          # Remove sensitive ARG or ENV instructions
-          sed -i '/ARG.*PASSWORD/d' Dockerfile
-          sed -i '/ENV.*PASSWORD/d' Dockerfile
-
-          # Robustly convert ENV lines to key=value format
-          sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
-          sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
-
-          # Final cleanup - more conservative
-          # Remove any remaining apt-get/dpkg references
-          sed -i '/apt-get/d' Dockerfile
-          sed -i '/\bapt\s/d' Dockerfile  
-          sed -i '/dpkg/d' Dockerfile
-          
-          # Clean up any empty lines or standalone operators, but be more careful
-          sed -i '/^[[:space:]]*&&[[:space:]]*$/d' Dockerfile
-          sed -i '/^[[:space:]]*\\[[:space:]]*$/d' Dockerfile
-          
-          # Remove any lines that are just package names at the start of a line (not part of RUN)
-          sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
-          sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*$/d' Dockerfile
-
-          # Enhanced validation - check for common Dockerfile errors
-          echo "Running enhanced Dockerfile validation..."
-          
-          # Check for and remove incomplete RUN statements
-          incomplete_runs=$(grep -E '^RUN.*\\[[:space:]]*$' Dockerfile | head -5 || true)
-          if [ -n "$incomplete_runs" ]; then
-            echo "Warning: Found incomplete RUN statements:"
-            echo "$incomplete_runs"
-            # More careful removal - only remove if next line is empty or not a continuation
-            python3 << 'PYTHON_EOF'
-            with open('Dockerfile', 'r') as f:
-                lines = f.readlines()
-
-            new_lines = []
-            i = 0
-            while i < len(lines):
-                line = lines[i].rstrip()
-                if line.endswith('\\') and line.startswith('RUN'):
-                    # Check if next line exists and is a proper continuation
-                    if i + 1 < len(lines) and lines[i + 1].strip():
-                        new_lines.append(lines[i])
-                    else:
-                        print(f"Removing incomplete RUN: {line}")
-                else:
-                    new_lines.append(lines[i])
-                i += 1
-
-            with open('Dockerfile', 'w') as f:
-                f.writelines(new_lines)
-            PYTHON_EOF
-          fi
-          
-          # Check for orphaned package lines more carefully
-          orphaned_lines=$(grep -E '^[a-z][a-z0-9_+-]*[[:space:]]*\\?[[:space:]]*$' Dockerfile | head -5 || true)
-          if [ -n "$orphaned_lines" ]; then
-            echo "WARNING: Found potential orphaned package lines:"
-            echo "$orphaned_lines"
-            # Remove them
-            sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*\\[[:space:]]*$/d' Dockerfile
-            sed -i '/^[a-z][a-z0-9_+-]*[[:space:]]*$/d' Dockerfile
-          fi
-
-          # Final validation
-          echo "Performing final Dockerfile validation..."
-          
-          # Ensure we have required FROM instruction
-          if ! grep -q '^FROM' Dockerfile; then
-            echo "ERROR: No FROM instruction found in Dockerfile"
-            exit 1
-          fi
-          
-          # Check for yum install instruction (allowing for variations)
-          if ! grep -q -E '^RUN.*yum.*(install|update)' Dockerfile; then
-            echo "ERROR: No yum install/update instruction found in Dockerfile"
-            echo "Available RUN instructions:"
-            grep '^RUN' Dockerfile | head -5 || echo "No RUN instructions found"
-            exit 1
-          fi
-          
-          # Show a sample of the Dockerfile for debugging
-          echo "=== Dockerfile Preview (first 30 lines) ==="
-          head -30 Dockerfile
-          echo "=========================================="
-          echo "=== Dockerfile Preview (last 10 lines) ==="
-          tail -10 Dockerfile
-          echo "=========================================="
-      - name: Copy everything from agent-base to workspace
-        if: steps.compare.outputs.changed == 'true'
-        run: |
-          cp -r agent-base/* .
-
-      - name: Copy shared-components from upstream to workspace
-        if: steps.compare.outputs.changed == 'true'
-        run: |
-          rm -rf shared-components
-          cp -r shared-components-upstream shared-components
-
-      - name: Configure AWS credentials
-        if: steps.compare.outputs.changed == 'true'
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
-
-      - name: Login to Amazon ECR
-        if: steps.compare.outputs.changed == 'true'
-        run: |
-          aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
-
-      - name: Build Docker image
-        if: steps.compare.outputs.changed == 'true'
-        run: |
-          docker build -t vitech-bamboodr-repo .
-        shell: /usr/bin/bash -e {0}
-        env:
-          SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
-          ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
-          TINI_VERSION: v0.19.0
-          AWS_DEFAULT_REGION: us-west-2
-          AWS_REGION: us-west-2
-          AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-
-      - name: Tag and Push Docker image to ECR
-        if: steps.compare.outputs.changed == 'true'
-        run: |
-          TAG=$(date +%Y%m%d-%H%M%S)
-          docker tag vitech-bamboodr-repo:latest $ECR_REPO:$TAG
-          docker push $ECR_REPO:$TAG || {
-            echo "Docker push failed"
-            exit 1
-          }
-
-      - name: Update Dockerfile.last in repo for future comparison
-        if: steps.compare.outputs.changed == 'true'
-        run: |
-          cp agent-base/Dockerfile Dockerfile.last
-
-      - name: Commit and push Dockerfile.last
-        if: steps.compare.outputs.changed == 'true'
-        run: |
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          git add Dockerfile.last
-          git diff --staged --quiet || git commit -m "Update last known Bamboo Dockerfile [skip ci]"
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+    - name: Commit and push Dockerfile.last
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        git config --global user.email "actions@github.com"
+        git config --global user.name "GitHub Actions"
+        git add Dockerfile.last
+        git diff --staged --quiet || git commit -m "Update last known Bamboo Dockerfile [skip ci]"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
