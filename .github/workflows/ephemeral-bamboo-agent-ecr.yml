@@ -51,53 +51,59 @@ jobs:
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
-        # Switch to Amazon Linux base
+        # Switch base image to Amazon Linux 2023
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
 
-        # Create package mapping
-        cat > ../package-map.txt <<'EOF'
-        openssh-client openssh-clients
-        python-is-python3 __REMOVE__
-        tini __REMOVE__
-        git-lfs __REMOVE__
-        python3-jinja2 python3-pip
-        EOF
-
-        # Convert apt-get to yum, skip duplicates and skip base image python3
+        # Convert apt-get installs to yum with duplicate filtering
         awk '
         BEGIN {
           install=0; pkg_count=0;
-          while ((getline < "../package-map.txt") > 0) {
-            if ($0 ~ /^#/ || NF == 0) continue
-            map[$1] = $2
-          }
+          map["openssh-client"]="openssh-clients";
+          map["python-is-python3"]="python3";
+          map["python3-jinja2"]="python3-pip";
+          map["tini"]="__REMOVE__";
+          map["git-lfs"]="__REMOVE__";
         }
         /apt-get install -y/ {install=1; next}
         install && /^         / {
-          pkg=$0
-          gsub("^ *", "", pkg)
-          gsub("\\\\", "", pkg)
-          if (pkg in map) {
-            if (map[pkg] == "__REMOVE__") next
-            pkg = map[pkg]
+          pkg_line=$0
+          gsub("^ *", "", pkg_line)
+          gsub("\\\\", "", pkg_line)
+          n = split(pkg_line, pkg_arr, /[ \t]+/)
+          for (j=1; j<=n; j++) {
+            pkg=pkg_arr[j]
+            if (pkg in map) {
+              if (map[pkg] == "__REMOVE__") continue
+              pkg = map[pkg]
+            }
+            if (pkg == "" || seen[pkg]++) continue
+            pkg_list[pkg_count++] = pkg
           }
-          if (pkg == "" || pkg == "python3" || seen[pkg]++) next
-          pkg_list[pkg_count++] = pkg
           next
         }
         install && !/^         / {
           if (pkg_count > 0) {
-            printf "RUN yum update -y && yum upgrade -y && yum install -y \\\\\n"
-            for (i=0; i<pkg_count; i++) {
-              if (i < pkg_count-1) {
-                printf "    %s \\\\\n", pkg_list[i]
+            asort(pkg_list)
+            print "RUN yum update -y && yum upgrade -y && yum install -y \\"
+            for (i=1; i<=pkg_count; i++) {
+              if (i < pkg_count) {
+                print "    " pkg_list[i] " \\"
               } else {
-                printf "    %s && yum clean all\n", pkg_list[i]
+                print "    " pkg_list[i]
               }
             }
+            print " && yum clean all"
+            print "RUN pip3 install jinja2"
+            print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
+            print "    && tar -xzf git-lfs.tar.gz \\"
+            print "    && mv git-lfs-*/git-lfs /usr/local/bin/ \\"
+            print "    && rm -rf git-lfs.tar.gz git-lfs-*"
           }
-          install=0; pkg_count=0; delete pkg_list; delete seen
+          install=0
+          pkg_count=0
+          delete pkg_list
+          delete seen
         }
         /apt-get update/ {next}
         /apt-get upgrade/ {next}
@@ -112,22 +118,10 @@ jobs:
         sed -i '/yum clean all/a \
         # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
 
-        # Remove sensitive ARG or ENV
-        sed -i '/ARG.*PASSWORD/d' Dockerfile
-        sed -i '/ENV.*PASSWORD/d' Dockerfile
-
-        # Ensure ENV format is key=value
-        sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
-        sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
-
-        # Remove accidental lines starting with &&
-        sed -i '/^&&/d' Dockerfile
-        # Remove empty continuation lines
-        sed -i '/^\\$/d' Dockerfile
-
     - name: Copy everything from agent-base to workspace
       if: steps.compare.outputs.changed == 'true'
-      run: cp -r agent-base/* .
+      run: |
+        cp -r agent-base/* .
 
     - name: Copy shared-components from upstream to workspace
       if: steps.compare.outputs.changed == 'true'
@@ -150,7 +144,11 @@ jobs:
 
     - name: Build Docker image
       if: steps.compare.outputs.changed == 'true'
-      run: docker build -t vitech-bamboodr-repo .
+      run: |
+        docker build -t vitech-bamboodr-repo . || {
+          echo "Docker build failed"
+          exit 1
+        }
 
     - name: Tag Docker image
       if: steps.compare.outputs.changed == 'true'
@@ -162,11 +160,15 @@ jobs:
       if: steps.compare.outputs.changed == 'true'
       run: |
         TAG=$(date +%Y%m%d-%H%M%S)
-        docker push $ECR_REPO:$TAG
+        docker push $ECR_REPO:$TAG || {
+          echo "Docker push failed"
+          exit 1
+        }
 
     - name: Update Dockerfile.last in repo for future comparison
       if: steps.compare.outputs.changed == 'true'
-      run: cp agent-base/Dockerfile Dockerfile.last
+      run: |
+        cp agent-base/Dockerfile Dockerfile.last
 
     - name: Commit and push Dockerfile.last
       if: steps.compare.outputs.changed == 'true'
