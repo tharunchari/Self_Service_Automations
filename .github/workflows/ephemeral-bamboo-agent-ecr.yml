@@ -58,14 +58,14 @@ jobs:
           gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
           gsub("git-lfs", "", pkg)
-          gsub("openjdk-17-jre", "java-17-openjdk-devel", pkg)  # ensure jar command is available
+          gsub("openjdk-17-jre", "java-17", pkg)  # Amazon Linux 2023 package name
           if (pkg != "") {
             print "RUN yum install -y " pkg
           }
           next
         }
         install && !/^         / {
-          print "RUN yum install -y java-17-openjdk-devel"  # install full JDK for jar
+          print "RUN yum install -y java-17 tar"  # install full JDK and tar for Git LFS extraction
           print "RUN yum clean all"
           print "RUN pip3 install jinja2"
           print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
