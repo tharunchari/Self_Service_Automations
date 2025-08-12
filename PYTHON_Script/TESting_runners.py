@@ -10,13 +10,13 @@ ec2_client = boto3.client('ec2')
 
 sns_client = boto3.client('sns')
  
-# Threshold in seconds (7200 sec = 2 hours)
+# Condition: 7200 seconds = 2 hours
 
-RUNNING_TIME_THRESHOLD = 500
+MIN_RUNNING_SECONDS = 700
  
 def get_ec2_instances():
 
-    """Fetch running EC2 instances tagged as GitHub self-hosted runners."""
+    """Fetch running EC2 instances with tag 'Github_Self_Hosted_Runner'."""
 
     instances_info = []
 
@@ -26,7 +26,7 @@ def get_ec2_instances():
 
             {'Name': 'instance-state-name', 'Values': ['running']},
 
-            {'Name': 'tag:Name', 'Values': ['Github_Self_Hosted_Runner']}  # Filter by tag
+            {'Name': 'tag:Name', 'Values': ['Github_Self_Hosted_Runner']}
 
         ]
 
@@ -42,7 +42,7 @@ def get_ec2_instances():
 
             running_seconds = running_time.total_seconds()
  
-            if running_seconds > RUNNING_TIME_THRESHOLD:
+            if running_seconds > MIN_RUNNING_SECONDS:
 
                 instances_info.append({
 
@@ -74,39 +74,35 @@ def main():
 
     instances = get_ec2_instances()
  
-    print("=== EC2 Self-Hosted Runners (> 2 hours) ===")
+    # Prepare message text
+
+    message_lines = ["=== EC2 Self-Hosted Runners (> 2 hours) ==="]
 
     for inst in instances:
 
-        print(f"Instance ID: {inst['id']}")
+        message_lines.append(f"Instance ID: {inst['id']}")
 
-        print(f"Launch Time: {inst['launch_time']}")
+        message_lines.append(f"Launch Time: {inst['launch_time']}")
 
-        print(f"Running Time: {inst['running_time']}")
+        message_lines.append(f"Running Time: {inst['running_time']}")
+
+    message_lines.append("\nSNS notification sent with these IDs:")
+
+    for inst in instances:
+
+        message_lines.append(inst['id'])
  
-    # Collect IDs for SNS message
+    message_text = "\n".join(message_lines)
+ 
+    # Print locally
 
-    ids_list = [inst['id'] for inst in instances]
+    print(message_text)
+ 
+    # Send SNS
 
-    if ids_list:
+    if instances:
 
-        send_sns_notification(
-
-            "EC2 Self-Hosted Runners > 2 hours",
-
-            "\n".join(ids_list)
-
-        )
-
-        print("\nSNS notification sent with these IDs:")
-
-        for iid in ids_list:
-
-            print(iid)
-
-    else:
-
-        print("\nNo instances found running longer than 2 hours.")
+        send_sns_notification("EC2 Self-Hosted Runners (> 2 hours)", message_text)
  
 if __name__ == "__main__":
 
