@@ -46,17 +46,17 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
+        - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
-
+    
         awk '
         BEGIN {
-          install=0; pkg_count=0
-          seen["git"]=0; seen["openssh-clients"]=0
+          install=0; pkg_count=0;
+          seen["git"]=0; seen["openssh-clients"]=0;
           seen["python3"]=0; seen["python3-pip"]=0
         }
         /apt-get install -y/ {install=1; next}
@@ -68,8 +68,11 @@ jobs:
           gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
           gsub("git-lfs", "", pkg)
-          if (pkg != "" && pkg != "\\") {
-            if (seen[pkg]==1) next
+          if(pkg != "" && pkg != "\\") {
+            if(pkg == "git" && seen["git"]==1) next
+            if(pkg == "openssh-clients" && seen["openssh-clients"]==1) next
+            if(pkg == "python3" && seen["python3"]==1) next
+            if(pkg == "python3-pip" && seen["python3-pip"]==1) next
             seen[pkg]=1
             pkg_list[pkg_count]=pkg
             pkg_count++
@@ -77,11 +80,11 @@ jobs:
           next
         }
         install && !/^         / {
-          if (pkg_count > 0) {
+          if(pkg_count > 0) {
             printf "RUN yum update -y && yum upgrade -y && yum install -y \\\n"
-            for (i=0; i<pkg_count; i++) {
-              if (i < pkg_count-1) {
-                printf "    %s \\\\\n", pkg_list[i]
+            for(i=0; i<pkg_count; i++) {
+              if(i < pkg_count-1) {
+                printf "    %s \\\n", pkg_list[i]
               } else {
                 printf "    %s && yum clean all\n", pkg_list[i]
               }
@@ -92,8 +95,9 @@ jobs:
             print "    && mv git-lfs-*/git-lfs /usr/local/bin/ \\"
             print "    && rm -rf git-lfs.tar.gz git-lfs-*"
           }
-          install=0; pkg_count=0; delete pkg_list
-          next
+          install=0
+          pkg_count=0
+          delete pkg_list
         }
         /apt-get update/ {next}
         /apt-get upgrade/ {next}
