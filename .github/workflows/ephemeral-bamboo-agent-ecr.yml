@@ -37,11 +37,11 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
+        - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
-        # Update ARG BASE_IMAGE and FROM line
+        # Update ARG BASE_IMAGE and FROM line for Amazon Linux
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*|FROM $BASE_IMAGE|' Dockerfile
 
@@ -78,6 +78,9 @@ jobs:
         }
         # Remove apt-get clean block
         /apt-get clean/ {next}
+        /apt-get autoclean/ {next}
+        /apt-get autoremove/ {next}
+        /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
         # Default: print line
         {if(in_block==0) print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
