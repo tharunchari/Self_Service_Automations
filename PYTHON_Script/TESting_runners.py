@@ -96,7 +96,7 @@ def get_github_idle_runners():
 
         for runner in data.get("runners", []):
 
-            if runner.get("status") == "online" and not runner.get("busy"):
+            if runner.get("status") == "online" and runner.get("busy"):
 
                 runners_info.append(runner["name"])
 
