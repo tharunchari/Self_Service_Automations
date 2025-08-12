@@ -41,32 +41,31 @@ jobs:
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
+        # Update to Amazon Linux base
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
 
+        # Convert apt-get install blocks to yum blocks
         awk '
-        BEGIN { install=0 }
-        /apt-get install -y/ { install=1; next }
+        BEGIN {install=0}
+        /apt-get install -y/ {install=1; next}
         install && /^         / {
           pkg=$0
           gsub("^ *", "", pkg)
-          gsub("\\\\$", "", pkg)      # remove trailing backslashes
-          pkg=gensub(/[[:space:]]+$/, "", "g", pkg)  # trim trailing spaces
-          if (pkg == "" || pkg == "\\r") next  # skip empty lines
-          gsub("openssh-client", "openssh-clients", pkg)
+          gsub("\\\\$", "", pkg)
+          pkg=gensub(/[[:space:]]+$/, "", "g", pkg)
+          if (pkg == "" || pkg == "\\r") next
+          gsub("openssh-client", "openssh", pkg)
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
           gsub("tini", "", pkg)
           gsub("git-lfs", "", pkg)
-          # Removed replacing openjdk JRE with openjdk-devel
-          # Do NOT print java-17-openjdk-devel anymore
           if (pkg != "") {
             print "RUN yum install -y " pkg
           }
           next
         }
         install && !/^         / {
-          # After finishing package list, do NOT install java-17-openjdk-devel anymore
           print "RUN yum clean all"
           print "RUN pip3 install jinja2"
           print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
@@ -76,27 +75,31 @@ jobs:
           install=0
           next
         }
-        /apt-get update/ { next }
-        /apt-get upgrade/ { next }
-        /apt-get clean/ { next }
-        /apt-get autoclean/ { next }
-        /apt-get autoremove/ { next }
-        /rm -rf \/var\/lib\/apt\/lists\/*/ { next }
-        { print }
+        /apt-get update/ {next}
+        /apt-get upgrade/ {next}
+        /apt-get clean/ {next}
+        /apt-get autoclean/ {next}
+        /apt-get autoremove/ {next}
+        /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
+        {print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
-        # Explicitly install amazon corretto JDK after yum clean
+        # Install Corretto JDK after yum clean
         sed -i '/^RUN yum clean all/a RUN yum install -y java-17-amazon-corretto-devel' Dockerfile
 
-        sed -i '/yum clean all/a \
-        # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
+        # Install tini manually, step by step
+        sed -i "/yum clean all/a \
+        # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini" Dockerfile
 
+        # Remove password arguments and envs
         sed -i '/ARG.*PASSWORD/d' Dockerfile
         sed -i '/ENV.*PASSWORD/d' Dockerfile
+
+        # Normalize ENV lines
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
 
-        # Use 'command -v' instead of 'which' to check for jar executable
+        # Add java and jar version check
         sed -i '/^RUN yum clean all/a RUN java -version && command -v jar && jar --version' Dockerfile
 
         echo "Generated Dockerfile:"
