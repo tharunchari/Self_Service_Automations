@@ -47,19 +47,22 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
+    - name: Validate Upstream Dockerfile
+      if: steps.compare.outputs.changed == 'true'
+      run: |
+        if ! grep -q "FROM.*ubuntu" agent-base/Dockerfile; then
+          echo "Upstream Dockerfile does not use Ubuntu base, conversion may fail"
+        fi
+
     - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
-    
+
         awk '
-        BEGIN {
-          install=0; pkg_count=0;
-          seen["git"]=0; seen["openssh-clients"]=0;
-          seen["python3"]=0; seen["python3-pip"]=0
-        }
+        BEGIN { install=0 }
         /apt-get install -y/ {install=1; next}
         install && /^         / {
           pkg=$0
@@ -70,35 +73,19 @@ jobs:
           gsub("tini", "", pkg)
           gsub("git-lfs", "", pkg)
           if(pkg != "" && pkg != "\\") {
-            if(pkg == "git" && seen["git"]==1) next
-            if(pkg == "openssh-clients" && seen["openssh-clients"]==1) next
-            if(pkg == "python3" && seen["python3"]==1) next
-            if(pkg == "python3-pip" && seen["python3-pip"]==1) next
-            seen[pkg]=1
-            pkg_list[pkg_count]=pkg
-            pkg_count++
+            printf "RUN yum install -y %s\n", pkg
           }
           next
         }
         install && !/^         / {
-          if(pkg_count > 0) {
-            printf "RUN yum update -y && yum upgrade -y && yum install -y \\\n"
-            for(i=0; i<pkg_count; i++) {
-              if(i < pkg_count-1) {
-                printf "    %s \\\n", pkg_list[i]
-              } else {
-                printf "    %s && yum clean all\n", pkg_list[i]
-              }
-            }
-            print "RUN pip3 install jinja2"
-            print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
-            print "    && tar -xzf git-lfs.tar.gz \\"
-            print "    && mv git-lfs-*/git-lfs /usr/local/bin/ \\"
-            print "    && rm -rf git-lfs.tar.gz git-lfs-*"
-          }
+          print "RUN yum clean all"
+          print "RUN pip3 install jinja2"
+          print "RUN curl -Lo git-lfs.tar.gz https://github.com/git-lfs/git-lfs/releases/download/v3.5.1/git-lfs-linux-amd64-v3.5.1.tar.gz \\"
+          print "    && tar -xzf git-lfs.tar.gz \\"
+          print "    && mv git-lfs-*/git-lfs /usr/local/bin/ \\"
+          print "    && rm -rf git-lfs.tar.gz git-lfs-*"
           install=0
-          pkg_count=0
-          delete pkg_list
+          next
         }
         /apt-get update/ {next}
         /apt-get upgrade/ {next}
@@ -108,18 +95,20 @@ jobs:
         /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
         {print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
-    
-        # Install tini manually
+
         sed -i '/yum clean all/a \
         # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini' Dockerfile
-    
+
         sed -i '/ARG.*PASSWORD/d' Dockerfile
         sed -i '/ENV.*PASSWORD/d' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
         sed -i '/^&&/d' Dockerfile
         sed -i '/^\\$/d' Dockerfile
-    
+
+        echo "Generated Dockerfile:"
+        cat Dockerfile
+
         docker run --rm amazonlinux:2023 yum list available git openssh-clients python3 python3-pip || {
           echo "One or more packages not found in Amazon Linux 2023 repository"
           exit 1
@@ -179,7 +168,9 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
 
+    # SNS step disabled for now
     # - name: Notify via SNS
-    #   if: success()
+    #   if: steps.compare.outputs.changed == 'true'
     #   run: |
-    #     aws sns publish --topic-arn $SNS_TOPIC_ARN --message "Bamboo Agent build completed successfully"
+    #     aws sns publish --topic-arn "$SNS_TOPIC_ARN" \
+    #       --message "Bamboo Agent image successfully built and pushed to ECR."
