@@ -52,7 +52,7 @@ def get_long_running_ec2_runners():
 
             running_time = now - launch_time
 
-            if running_time.total_seconds() > 7200:  # > 2 hours
+            if running_time.total_seconds() > 500:  # > 2 hours
 
                 long_running.append({
 
@@ -96,7 +96,7 @@ def get_github_online_idle_runners():
  
         for runner in data.get("runners", []):
 
-            if runner["status"] == "online" and runner["busy"] is False:
+            if runner["status"] == "online" and runner["busy"] is True:
 
                 runners.append(runner["name"])
  
