@@ -5,72 +5,72 @@ import os
 import requests
 
 from datetime import datetime, timezone
+
+import re
  
-# AWS Config
+# === Config ===
 
-SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:389180911583:Testing'
+AWS_REGION = "us-east-1"
 
-ec2_client = boto3.client('ec2')
+SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:Testing"
 
-sns_client = boto3.client('sns')
- 
-# GitHub Config
-
-GITHUB_TOKEN = os.environ.get("CLASSIC_PAT")  # Set in env vars
+GITHUB_TOKEN = os.environ.get("CLASSIC_PAT")
 
 ORG_NAME = "vitechsystems"
-
-GITHUB_API_URL = f"https://api.github.com/orgs/{ORG_NAME}/actions/runners"
  
-# Condition: 7200 seconds = 2 hours
+if not GITHUB_TOKEN:
 
-MIN_RUNNING_SECONDS = 700
+    raise ValueError("Please set the CLASSIC_PAT environment variable")
  
-def get_ec2_instances():
+# === Get EC2 instances ===
 
-    """Fetch running EC2 instances with tag 'Github_Self_Hosted_Runner'."""
+def get_long_running_ec2_runners():
 
-    instances_info = []
+    ec2_client = boto3.client("ec2", region_name=AWS_REGION)
 
-    response = ec2_client.describe_instances(
+    now = datetime.now(timezone.utc)
+
+    long_running = []
+ 
+    instances = ec2_client.describe_instances(
 
         Filters=[
 
-            {'Name': 'instance-state-name', 'Values': ['running']},
+            {"Name": "tag:Name", "Values": ["*runner*"]},
 
-            {'Name': 'tag:Name', 'Values': ['Github_Self_Hosted_Runner']}
+            {"Name": "instance-state-name", "Values": ["running"]}
 
         ]
 
     )
+ 
+    for reservation in instances["Reservations"]:
 
-    for reservation in response['Reservations']:
+        for instance in reservation["Instances"]:
 
-        for instance in reservation['Instances']:
+            launch_time = instance["LaunchTime"]
 
-            launch_time = instance['LaunchTime']
+            running_time = now - launch_time
 
-            running_time = datetime.now(timezone.utc) - launch_time
+            if running_time.total_seconds() > 7200:  # > 2 hours
 
-            running_seconds = running_time.total_seconds()
+                long_running.append({
 
-            if running_seconds > MIN_RUNNING_SECONDS:
+                    "InstanceId": instance["InstanceId"],
 
-                instances_info.append({
+                    "LaunchTime": launch_time,
 
-                    "id": instance['InstanceId'],
-
-                    "launch_time": launch_time,
-
-                    "running_time": running_time
+                    "RunningTime": running_time
 
                 })
 
-    return instances_info
+    return long_running
  
-def get_github_idle_runners():
+# === Get GitHub online & idle runners ===
 
-    """Fetch GitHub runners that are online and idle."""
+def get_github_online_idle_runners():
+
+    url = f"https://api.github.com/orgs/{ORG_NAME}/actions/runners?per_page=100"
 
     headers = {
 
@@ -82,35 +82,37 @@ def get_github_idle_runners():
 
     }
 
-    runners_info = []
+    runners = []
 
     page = 1
-
+ 
     while True:
 
-        resp = requests.get(f"{GITHUB_API_URL}?per_page=100&page={page}", headers=headers)
+        resp = requests.get(f"{url}&page={page}", headers=headers)
 
         resp.raise_for_status()
 
         data = resp.json()
-
+ 
         for runner in data.get("runners", []):
 
-            if runner.get("status") == "online" and runner.get("busy"):
+            if runner["status"] == "online" and runner["busy"] is False:
 
-                runners_info.append(runner["name"])
-
+                runners.append(runner["name"])
+ 
         if "next" not in resp.links:
 
             break
 
         page += 1
-
-    return runners_info
  
+    return runners
+ 
+# === Send SNS notification ===
+
 def send_sns_notification(subject, message):
 
-    """Send SNS notification."""
+    sns_client = boto3.client("sns", region_name=AWS_REGION)
 
     sns_client.publish(
 
@@ -121,58 +123,82 @@ def send_sns_notification(subject, message):
         Subject=subject
 
     )
+
+    print("SNS notification sent successfully")
  
+# === Main ===
+
 def main():
 
-    instances = get_ec2_instances()
+    long_running_ec2 = get_long_running_ec2_runners()
 
-    github_idle_runners = get_github_idle_runners()
+    github_idle_runners = get_github_online_idle_runners()
  
-    # Prepare message text
+    # Extract EC2 IDs from GitHub runner names
 
-    message_lines = ["=== EC2 Self-Hosted Runners (> 2 hours) ==="]
+    github_idle_ids = {
 
-    for inst in instances:
+        re.match(r"(i-[0-9a-fA-F]+)", runner).group(1)
 
-        message_lines.append(f"Instance ID: {inst['id']}")
+        for runner in github_idle_runners
 
-        message_lines.append(f"Launch Time: {inst['launch_time']}")
+        if re.match(r"(i-[0-9a-fA-F]+)", runner)
 
-        message_lines.append(f"Running Time: {inst['running_time']}\n")
+    }
  
-    message_lines.append("\nSNS notification sent with these EC2 IDs:")
-
-    for inst in instances:
-
-        message_lines.append(inst['id'])
+    message_lines = []
  
+    # EC2 > 2 hours
+
+    message_lines.append("=== EC2 Self-Hosted Runners (> 2 hours) ===")
+
+    if long_running_ec2:
+
+        for inst in long_running_ec2:
+
+            message_lines.append(f"Instance ID: {inst['InstanceId']}")
+
+            message_lines.append(f"Launch Time: {inst['LaunchTime']}")
+
+            message_lines.append(f"Running Time: {inst['RunningTime']}")
+
+    else:
+
+        message_lines.append("No long-running EC2 runners found.")
+ 
+    # GitHub Online & Idle
+
     message_lines.append("\n=== GitHub Runners (Online & Idle) ===")
 
-    for runner in github_idle_runners:
+    if github_idle_runners:
 
-        message_lines.append(runner)
+        for runner in github_idle_runners:
+
+            message_lines.append(runner)
+
+    else:
+
+        message_lines.append("No online & idle GitHub runners found.")
  
-    # Extract just the EC2 instance IDs from GitHub runner names
+    # GitHub IDs only
 
-    github_idle_ids = [runner.split("-")[0] for runner in github_idle_runners]
+    message_lines.append("\nGitHub Runners (Online & Idle) id's")
+
+    if github_idle_ids:
+
+        for rid in sorted(github_idle_ids):
+
+            message_lines.append(rid)
+
+    else:
+
+        message_lines.append("No GitHub runner IDs extracted.")
  
-    message_lines.append("\nGitHub Runners (Online & Idle) id's ")
+    final_message = "\n".join(message_lines)
 
-    for rid in github_idle_ids:
+    print(final_message)
 
-        message_lines.append(rid)
- 
-    message_text = "\n".join(message_lines)
- 
-    # Print locally
-
-    print(message_text)
- 
-    # Send SNS
-
-    if instances or github_idle_runners:
-
-        send_sns_notification("EC2 & GitHub Runners Report", message_text)
+    send_sns_notification("Runner Status", final_message)
  
 if __name__ == "__main__":
 
