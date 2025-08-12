@@ -3,7 +3,7 @@ name: ephemeral-Bamboo-Agent-build
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 5 1 * *' # 11:00 IST on the 1st of every month
+    - cron: '30 5 1 * *'
 
 jobs:
   build-and-push:
@@ -11,6 +11,7 @@ jobs:
     env:
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
       TINI_VERSION: v0.19.0
+      BAMBOO_VERSION: 8.2.4 # <-- Set a valid Bamboo version here!
 
     steps:
     - name: Checkout repository
@@ -24,8 +25,8 @@ jobs:
     - name: Clone Atlassian Docker Shared Components
       run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
 
-    # Overwrite upstream Dockerfile with your Amazon Linux version
-    - name: Replace upstream Dockerfile with custom Amazon Linux version
+    # Overwrite upstream Dockerfile with fixed Amazon Linux version
+    - name: Replace upstream Dockerfile with Amazon Linux version
       run: |
         cat > agent-base/Dockerfile <<'EOF'
         ARG BASE_IMAGE=amazonlinux:2023
@@ -34,17 +35,17 @@ jobs:
         LABEL maintainer="dc-deployments@atlassian.com"
         LABEL securitytxt="https://www.atlassian.com/.well-known/security.txt"
 
-        ENV APP_NAME                                bamboo_agent
-        ENV RUN_USER                                bamboo
-        ENV RUN_GROUP                               bamboo
-        ENV RUN_UID                                 2005
-        ENV RUN_GID                                 2005
+        ENV APP_NAME=bamboo_agent
+        ENV RUN_USER=bamboo
+        ENV RUN_GROUP=bamboo
+        ENV RUN_UID=2005
+        ENV RUN_GID=2005
 
-        ENV BAMBOO_AGENT_HOME                       /var/atlassian/application-data/bamboo-agent
-        ENV BAMBOO_AGENT_INSTALL_DIR                /opt/atlassian/bamboo
-        ENV KUBE_NUM_EXTRA_CONTAINERS               0
-        ENV EXTRA_CONTAINERS_REGISTRATION_DIRECTORY /pbc/kube
-        ENV DISABLE_AGENT_AUTO_CAPABILITY_DETECTION false
+        ENV BAMBOO_AGENT_HOME=/var/atlassian/application-data/bamboo-agent
+        ENV BAMBOO_AGENT_INSTALL_DIR=/opt/atlassian/bamboo
+        ENV KUBE_NUM_EXTRA_CONTAINERS=0
+        ENV EXTRA_CONTAINERS_REGISTRATION_DIRECTORY=/pbc/kube
+        ENV DISABLE_AGENT_AUTO_CAPABILITY_DETECTION=false
 
         WORKDIR $BAMBOO_AGENT_HOME
 
@@ -75,13 +76,13 @@ jobs:
             mv /tini /usr/local/bin/tini
 
         ARG MAVEN_VERSION=3.9.9
-        ENV MAVEN_HOME                              /opt/maven
+        ENV MAVEN_HOME=/opt/maven
         RUN mkdir -p ${MAVEN_HOME} \
             && curl -L --silent https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar -xz --strip-components=1 -C "${MAVEN_HOME}" \
             && ln -s ${MAVEN_HOME}/bin/mvn /usr/local/bin/mvn
 
         ARG BAMBOO_VERSION
-        ENV BAMBOO_VERSION                          ${BAMBOO_VERSION}
+        ENV BAMBOO_VERSION=${BAMBOO_VERSION}
         ARG DOWNLOAD_URL=https://packages.atlassian.com/mvn/maven-atlassian-external/com/atlassian/bamboo/atlassian-bamboo-agent-installer/${BAMBOO_VERSION}/atlassian-bamboo-agent-installer-${BAMBOO_VERSION}.jar
         ARG DOWNLOAD_USERNAME
         ARG DOWNLOAD_PASSWORD
@@ -90,7 +91,7 @@ jobs:
 
         RUN groupadd --gid ${RUN_GID} ${RUN_GROUP} \
             && useradd --uid ${RUN_UID} --gid ${RUN_GID} --home-dir ${BAMBOO_AGENT_HOME} --shell /bin/bash ${RUN_USER} \
-            && echo PATH=$PATH > /etc/environment \
+            && echo PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin > /etc/environment \
             && mkdir -p ${BAMBOO_AGENT_INSTALL_DIR} \
             && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_INSTALL_DIR} \
             && if [ -n "${DOWNLOAD_USERNAME}" ] && [ -n "${DOWNLOAD_PASSWORD}" ]; then \
@@ -98,10 +99,9 @@ jobs:
             else \
                 curl -L --silent ${DOWNLOAD_URL} -o "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar"; \
             fi \
+            && test -s "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar" || (echo "Download failed or file empty!"; exit 2) \
             && jar -tf "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar" \
             && mkdir -p ${BAMBOO_AGENT_HOME}/conf ${BAMBOO_AGENT_HOME}/bin \
-            && export TEMP_VERSION=${JAVA_VERSION#*-} && export JAVA_MAJOR_VERSION=${TEMP_VERSION%%.*} \
-            && export TEMP_VERSION=${TEMP_VERSION#*.} && JAVA_MINOR_VERSION=${TEMP_VERSION%%.*} \
             && chmod +x /bamboo-update-capability.sh && \
                /bamboo-update-capability.sh "JDK" ${JAVA_HOME}/bin/java && \
                /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}" ${JAVA_HOME}/bin/java && \
@@ -138,7 +138,7 @@ jobs:
       run: aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
 
     - name: Build Docker image
-      run: docker build -t vitech-bamboodr-repo .
+      run: docker build --build-arg BAMBOO_VERSION=${{ env.BAMBOO_VERSION }} -t vitech-bamboodr-repo .
 
     - name: Tag Docker image
       run: |
