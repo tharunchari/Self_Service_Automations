@@ -37,7 +37,7 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
-        - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
+    - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
@@ -64,7 +64,7 @@ jobs:
           if(pkg!="") print "    " pkg " \\"
           next
         }
-        # End of apt-get install block, add required packages and clean
+        # End of apt-get install block: add required packages and clean
         in_block==1 && !/^\s+/ {
           print "    java-17-amazon-corretto-devel \\"
           print "    tar \\"
@@ -76,7 +76,7 @@ jobs:
           print "RUN mv /tini /usr/local/bin/tini"
           in_block=0
         }
-        # Remove apt-get clean block
+        # Remove apt-get clean/autoclean/autoremove/ubuntu cache lines
         /apt-get clean/ {next}
         /apt-get autoclean/ {next}
         /apt-get autoremove/ {next}
