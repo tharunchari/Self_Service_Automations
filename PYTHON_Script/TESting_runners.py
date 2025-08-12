@@ -1,7 +1,6 @@
 import boto3
 import os
 import requests
-import re
 from datetime import datetime, timezone
  
 # AWS Config
@@ -40,7 +39,7 @@ def get_ec2_instances():
     return instances_info
  
 def get_github_idle_runners():
-    """Fetch GitHub runners that are online and idle."""
+    """Fetch GitHub runners that are online and idle excluding Internal_Tools_Automation_Server runners."""
     headers = {
         "Accept": "application/vnd.github+json",
         "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -53,8 +52,9 @@ def get_github_idle_runners():
         resp.raise_for_status()
         data = resp.json()
         for runner in data.get("runners", []):
-            if runner.get("status") == "online" and runner.get("busy"):
-                runners_info.append(runner["name"])
+            name = runner.get("name", "")
+            if runner.get("status") == "online" and runner.get("busy") and not name.startswith("Internal_Tools_Automation_Server"):
+                runners_info.append(name)
         if "next" not in resp.links:
             break
         page += 1
@@ -72,6 +72,7 @@ def main():
     instances = get_ec2_instances()
     github_idle_runners = get_github_idle_runners()
  
+    # Prepare message text
     message_lines = ["=== EC2 Self-Hosted Runners (> 2 hours) ==="]
     for inst in instances:
         message_lines.append(f"Instance ID: {inst['id']}")
@@ -86,16 +87,8 @@ def main():
     for runner in github_idle_runners:
         message_lines.append(runner)
  
-    # Regex to extract instance id like i-xxxxxxxxxxxxxxx from runner name
-    instance_id_pattern = re.compile(r'i-[0-9a-fA-F]+')
- 
-    github_idle_ids = []
-    for runner in github_idle_runners:
-        match = instance_id_pattern.search(runner)
-        if match:
-            github_idle_ids.append(match.group(0))
-        else:
-            github_idle_ids.append(runner)  # fallback, if no match
+    # Extract just the EC2-like instance IDs from GitHub runner names
+    github_idle_ids = [runner.split("-")[0] for runner in github_idle_runners]
  
     message_lines.append("\nGitHub Runners (Online & Idle) IDs only:")
     for rid in github_idle_ids:
@@ -103,8 +96,10 @@ def main():
  
     message_text = "\n".join(message_lines)
  
+    # Print locally
     print(message_text)
  
+    # Send SNS
     if instances or github_idle_runners:
         send_sns_notification("EC2 & GitHub Runners Report", message_text)
  
