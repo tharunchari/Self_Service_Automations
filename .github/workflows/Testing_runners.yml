@@ -2,8 +2,9 @@ name: "Testing_Runners_Status"
 
 on:
   schedule:
-    # This will run the workflow every 2 hours
-    - cron: "0 */2 * * *"
+    - cron: '30,40,50 15 12 8 *'  # 15:30,15:40,15:50 UTC (10:30-10:50 AM EST)
+    - cron: '*/10 16 12 8 *'      # every 10 min from 16:00 to 16:50 UTC (11:00-11:30 AM EST)
+
   workflow_dispatch:
 
 jobs:
