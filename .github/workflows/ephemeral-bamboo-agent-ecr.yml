@@ -37,7 +37,7 @@ jobs:
           echo "changed=false" >> $GITHUB_OUTPUT
         fi
 
-        - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
+    - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
@@ -93,7 +93,6 @@ jobs:
         echo "Generated Dockerfile:"
         cat Dockerfile
 
-
     - name: Copy everything from agent-base to workspace
       if: steps.compare.outputs.changed == 'true'
       run: cp -r agent-base/* .
@@ -147,7 +146,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
 
-    # SNS notification step intentionally disabled for now
-    # - name: Send SNS notification
-    #   if: steps.compare.outputs.changed == 'true'
-    #   run: aws sns publish --topic-arn ${{ secrets.SNS_TOPIC_ARN }} --message "Bamboo Agent ECR image updated successfully."
+    # SNS notification step is intentionally disabled for now
+    # - name: Notify via SNS
+    #   if: success()
+    #   run: aws sns publish --topic-arn ${{ secrets.SNS_TOPIC_ARN }} --message "Bamboo Agent ECR build completed successfully."
