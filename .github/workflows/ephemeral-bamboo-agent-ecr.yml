@@ -50,7 +50,7 @@ jobs:
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*|FROM $BASE_IMAGE|' Dockerfile
 
-        # Remove apt-get blocks and insert correct yum-based install blocks
+        # Remove all apt-get and Ubuntu stuff, and install packages individually
         awk '
         BEGIN {in_apt=0}
         /RUN apt-get update/ {
@@ -68,7 +68,7 @@ jobs:
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
           # Remove tini and git-lfs here, will add manually later
-          if(pkg=="tini" || pkg=="" || pkg=="git-lfs") next
+          if(pkg=="tini" || pkg=="git-lfs" || pkg=="") next
           print "RUN yum install -y " pkg
           next
         }
@@ -85,11 +85,15 @@ jobs:
           in_apt=0
           next
         }
+        # Remove all apt-get/ubuntu lines
         /apt-get upgrade/ {next}
         /apt-get clean/ {next}
         /apt-get autoclean/ {next}
         /apt-get autoremove/ {next}
         /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
+        # Remove lines with yum install -y && apt-get upgrade -y
+        /yum install -y && apt-get upgrade -y/ {next}
+        # Print everything else
         {if(in_apt==0) print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
