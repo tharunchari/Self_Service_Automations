@@ -14,7 +14,7 @@ ORG_NAME = "vitechsystems"
 GITHUB_API_URL = f"https://api.github.com/orgs/{ORG_NAME}/actions/runners"
  
 # Condition: 7200 seconds = 2 hours
-MIN_RUNNING_SECONDS = 600
+MIN_RUNNING_SECONDS = 7200
  
 def get_ec2_instances():
     """Fetch running EC2 instances with tag 'Github_Self_Hosted_Runner'."""
