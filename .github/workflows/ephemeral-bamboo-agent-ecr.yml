@@ -9,7 +9,6 @@ jobs:
   check-and-build:
     runs-on: ubuntu-latest
     env:
-      SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
       TINI_VERSION: v0.19.0
     steps:
@@ -19,18 +18,10 @@ jobs:
         token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
 
     - name: Clone Bitbucket Bamboo Agent Base
-      run: |
-        git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base || {
-          echo "Failed to clone docker-bamboo-agent-base repository"
-          exit 1
-        }
+      run: git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base
 
     - name: Clone Atlassian Docker Shared Components
-      run: |
-        git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream || {
-          echo "Failed to clone docker-shared-components repository"
-          exit 1
-        }
+      run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
 
     - name: Compare Dockerfiles
       id: compare
@@ -38,20 +29,12 @@ jobs:
         if [ -f agent-base/Dockerfile ] && [ -f Dockerfile.last ]; then
           diff -q agent-base/Dockerfile Dockerfile.last > diff.log || true
         else
-          echo "No previous Dockerfile to compare, treating as changes present"
           echo "DIFF" > diff.log
         fi
         if [ -s diff.log ]; then
           echo "changed=true" >> $GITHUB_OUTPUT
         else
           echo "changed=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Validate Upstream Dockerfile
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        if ! grep -q "FROM.*ubuntu" agent-base/Dockerfile; then
-          echo "Upstream Dockerfile does not use Ubuntu base, conversion may fail"
         fi
 
     - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
@@ -63,7 +46,7 @@ jobs:
 
         awk '
         BEGIN { install=0 }
-        /apt-get install -y/ {install=1; next}
+        /apt-get install -y/ { install=1; next }
         install && /^         / {
           pkg=$0
           gsub("^ *", "", pkg)
@@ -73,7 +56,7 @@ jobs:
           gsub("tini", "", pkg)
           gsub("git-lfs", "", pkg)
           if(pkg != "" && pkg != "\\") {
-            printf "RUN yum install -y %s\n", pkg
+            print "RUN yum install -y " pkg
           }
           next
         }
@@ -87,13 +70,13 @@ jobs:
           install=0
           next
         }
-        /apt-get update/ {next}
-        /apt-get upgrade/ {next}
-        /apt-get clean/ {next}
-        /apt-get autoclean/ {next}
-        /apt-get autoremove/ {next}
-        /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
-        {print}
+        /apt-get update/ { next }
+        /apt-get upgrade/ { next }
+        /apt-get clean/ { next }
+        /apt-get autoclean/ { next }
+        /apt-get autoremove/ { next }
+        /rm -rf \/var\/lib\/apt\/lists\/*/ { next }
+        { print }
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
         sed -i '/yum clean all/a \
@@ -103,16 +86,9 @@ jobs:
         sed -i '/ENV.*PASSWORD/d' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
-        sed -i '/^&&/d' Dockerfile
-        sed -i '/^\\$/d' Dockerfile
 
         echo "Generated Dockerfile:"
         cat Dockerfile
-
-        docker run --rm amazonlinux:2023 yum list available git openssh-clients python3 python3-pip || {
-          echo "One or more packages not found in Amazon Linux 2023 repository"
-          exit 1
-        }
 
     - name: Copy everything from agent-base to workspace
       if: steps.compare.outputs.changed == 'true'
@@ -134,8 +110,7 @@ jobs:
 
     - name: Login to Amazon ECR
       if: steps.compare.outputs.changed == 'true'
-      run: |
-        aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
+      run: aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
 
     - name: Build Docker image
       if: steps.compare.outputs.changed == 'true'
@@ -167,10 +142,3 @@ jobs:
         git push
       env:
         GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-
-    # SNS step disabled for now
-    # - name: Notify via SNS
-    #   if: steps.compare.outputs.changed == 'true'
-    #   run: |
-    #     aws sns publish --topic-arn "$SNS_TOPIC_ARN" \
-    #       --message "Bamboo Agent image successfully built and pushed to ECR."
