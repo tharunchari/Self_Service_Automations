@@ -14,7 +14,7 @@ ORG_NAME = "vitechsystems"
 GITHUB_API_URL = f"https://api.github.com/orgs/{ORG_NAME}/actions/runners"
  
 # Condition: 7200 seconds = 2 hours
-MIN_RUNNING_SECONDS = 700
+MIN_RUNNING_SECONDS = 600
  
 def get_ec2_instances():
     """Fetch running EC2 instances with tag 'Github_Self_Hosted_Runner'."""
@@ -53,7 +53,7 @@ def get_github_idle_runners():
         data = resp.json()
         for runner in data.get("runners", []):
             name = runner.get("name", "")
-            if runner.get("status") == "online" and runner.get("busy") and not name.startswith("Internal_Tools_Automation_Server"):
+            if runner.get("status") == "online" and runner.get("busy") and not runner.get("busy") and not name.startswith("Internal_Tools_Automation_Server"):
                 runners_info.append(name)
         if "next" not in resp.links:
             break
