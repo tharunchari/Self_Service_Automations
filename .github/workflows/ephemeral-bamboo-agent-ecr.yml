@@ -52,28 +52,31 @@ jobs:
 
         # Remove all apt-get and Ubuntu stuff, and install packages individually
         awk '
-        BEGIN {in_apt=0}
+        BEGIN {in_block=0; pkgs=""}
+        # Start of apt-get update block
         /RUN apt-get update/ {
-          in_apt=1
+          in_block=1
           print "RUN yum update -y"
           print "RUN yum upgrade -y"
           next
         }
-        in_apt==1 && /apt-get install -y/ {next}
-        in_apt==1 && /^\s+/ {
+        # Inside apt-get install block: ignore apt, collect package lines
+        in_block==1 && /apt-get install -y/ {next}
+        in_block==1 && /^\s+/ {
           pkg=$0
           gsub("^\\s+", "", pkg)
           gsub("\\\\", "", pkg)
           gsub("openssh-client", "openssh", pkg)
           gsub("python-is-python3", "python3", pkg)
           gsub("python3-jinja2", "python3-pip", pkg)
-          # Remove tini and git-lfs here, will add manually later
           if(pkg=="tini" || pkg=="git-lfs" || pkg=="") next
-          print "RUN yum install -y " pkg
+          pkgs=pkgs pkg " "
           next
         }
-        # End of apt-get install block, add required packages as separate RUNs
-        in_apt==1 && !/^\s+/ {
+        # End of apt-get install block, emit yum install lines
+        in_block==1 && !/^\s+/ {
+          n=split(pkgs, arr, " ")
+          for(i=1;i<=n;i++) if(length(arr[i])>0) print "RUN yum install -y " arr[i]
           print "RUN yum install -y java-17-amazon-corretto-devel"
           print "RUN yum install -y tar"
           print "RUN yum install -y git-lfs"
@@ -82,19 +85,21 @@ jobs:
           print "RUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64"
           print "RUN chmod +x /tini"
           print "RUN mv /tini /usr/local/bin/tini"
-          in_apt=0
+          in_block=0
+          pkgs=""
           next
         }
-        # Remove all apt-get/ubuntu lines
+        # Remove all apt-get/ubuntu/yum install -y && apt-get upgrade lines
         /apt-get upgrade/ {next}
         /apt-get clean/ {next}
         /apt-get autoclean/ {next}
         /apt-get autoremove/ {next}
         /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
-        # Remove lines with yum install -y && apt-get upgrade -y
         /yum install -y && apt-get upgrade -y/ {next}
+        # Remove broken yum install lines with no package
+        /^RUN yum install -y *$/ {next}
         # Print everything else
-        {if(in_apt==0) print}
+        {if(in_block==0) print}
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
         echo "Transformed Dockerfile:"
