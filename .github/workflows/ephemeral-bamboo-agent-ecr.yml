@@ -38,57 +38,57 @@ jobs:
         fi
 
         - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
-      if: steps.compare.outputs.changed == 'true'
-      working-directory: agent-base
-      run: |
-        # Update base image lines
-        sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
-        sed -i 's|^FROM .*|FROM $BASE_IMAGE|' Dockerfile
-
-        # Remove ALL apt-get and Ubuntu-specific install/clean lines and replace with Amazon Linux/yum logic
-        awk '
-        BEGIN {in_apt=0}
-        # Start apt-get update block
-        /RUN apt-get update/ {in_apt=1; print "RUN yum update -y && yum upgrade -y && yum install -y \\"; next}
-        # Inside apt-get install block
-        in_apt==1 && /apt-get install -y/ {next}
-        in_apt==1 && /^\s+/ {
-          pkg=$0
-          gsub("^\\s+", "", pkg)
-          gsub("\\\\", "", pkg)
-          gsub("openssh-client", "openssh", pkg)
-          gsub("python-is-python3", "python3", pkg)
-          gsub("python3-jinja2", "python3-pip", pkg)
-          gsub("tini", "", pkg)
-          gsub("git-lfs", "", pkg)
-          if(pkg!="") print "    " pkg " \\"
-          next
-        }
-        # End of apt-get install block: add required packages and finish block
-        in_apt==1 && !/^\s+/ {
-          print "    java-17-amazon-corretto-devel \\"
-          print "    tar \\"
-          print "    git-lfs \\"
-          print "    && yum clean all"
-          print "RUN pip3 install jinja2"
-          print "RUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64"
-          print "RUN chmod +x /tini"
-          print "RUN mv /tini /usr/local/bin/tini"
-          in_apt=0
-          next
-        }
-        # Remove any apt-get/ubuntu clean/autoremove/autoclean/cache lines
-        /apt-get upgrade/ {next}
-        /apt-get clean/ {next}
-        /apt-get autoclean/ {next}
-        /apt-get autoremove/ {next}
-        /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
-        # Print everything else as-is
-        {if(in_apt==0) print}
-        ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
-
-        echo "Transformed Dockerfile:"
-        cat Dockerfile
+          if: steps.compare.outputs.changed == 'true'
+          working-directory: agent-base
+          run: |
+            # Update base image lines
+            sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
+            sed -i 's|^FROM .*|FROM $BASE_IMAGE|' Dockerfile
+    
+            # Remove ALL apt-get and Ubuntu-specific install/clean lines and replace with Amazon Linux/yum logic
+            awk '
+            BEGIN {in_apt=0}
+            # Start apt-get update block
+            /RUN apt-get update/ {in_apt=1; print "RUN yum update -y && yum upgrade -y && yum install -y \\"; next}
+            # Inside apt-get install block
+            in_apt==1 && /apt-get install -y/ {next}
+            in_apt==1 && /^\s+/ {
+              pkg=$0
+              gsub("^\\s+", "", pkg)
+              gsub("\\\\", "", pkg)
+              gsub("openssh-client", "openssh", pkg)
+              gsub("python-is-python3", "python3", pkg)
+              gsub("python3-jinja2", "python3-pip", pkg)
+              gsub("tini", "", pkg)
+              gsub("git-lfs", "", pkg)
+              if(pkg!="") print "    " pkg " \\"
+              next
+            }
+            # End of apt-get install block: add required packages and finish block
+            in_apt==1 && !/^\s+/ {
+              print "    java-17-amazon-corretto-devel \\"
+              print "    tar \\"
+              print "    git-lfs \\"
+              print "    && yum clean all"
+              print "RUN pip3 install jinja2"
+              print "RUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64"
+              print "RUN chmod +x /tini"
+              print "RUN mv /tini /usr/local/bin/tini"
+              in_apt=0
+              next
+            }
+            # Remove any apt-get/ubuntu clean/autoremove/autoclean/cache lines
+            /apt-get upgrade/ {next}
+            /apt-get clean/ {next}
+            /apt-get autoclean/ {next}
+            /apt-get autoremove/ {next}
+            /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
+            # Print everything else as-is
+            {if(in_apt==0) print}
+            ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+    
+            echo "Transformed Dockerfile:"
+            cat Dockerfile
 
     - name: Copy everything from agent-base to workspace
       if: steps.compare.outputs.changed == 'true'
