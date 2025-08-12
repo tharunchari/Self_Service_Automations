@@ -20,9 +20,6 @@ jobs:
     - name: Clone Bitbucket Bamboo Agent Base
       run: git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base
 
-    - name: Clone Atlassian Docker Shared Components
-      run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
-
     - name: Compare Dockerfiles
       id: compare
       run: |
@@ -41,14 +38,12 @@ jobs:
       if: steps.compare.outputs.changed == 'true'
       working-directory: agent-base
       run: |
-        # Update to Amazon Linux base
         sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
         sed -i 's|^FROM .*$|FROM $BASE_IMAGE|' Dockerfile
 
-        # Convert apt-get install blocks to yum blocks
         awk '
-        BEGIN {install=0}
-        /apt-get install -y/ {install=1; next}
+        BEGIN { install=0 }
+        /apt-get install -y/ { install=1; next }
         install && /^         / {
           pkg=$0
           gsub("^ *", "", pkg)
@@ -75,31 +70,26 @@ jobs:
           install=0
           next
         }
-        /apt-get update/ {next}
-        /apt-get upgrade/ {next}
-        /apt-get clean/ {next}
-        /apt-get autoclean/ {next}
-        /apt-get autoremove/ {next}
-        /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
-        {print}
+        /apt-get update/ { next }
+        /apt-get upgrade/ { next }
+        /apt-get clean/ { next }
+        /apt-get autoclean/ { next }
+        /apt-get autoremove/ { next }
+        /rm -rf \/var\/lib\/apt\/lists\/*/ { next }
+        { print }
         ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
 
-        # Install Corretto JDK after yum clean
         sed -i '/^RUN yum clean all/a RUN yum install -y java-17-amazon-corretto-devel' Dockerfile
 
-        # Install tini manually, step by step
         sed -i "/yum clean all/a \
         # Install tini manually\nRUN curl -Lo /tini https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini-amd64\nRUN chmod +x /tini\nRUN mv /tini /usr/local/bin/tini" Dockerfile
 
-        # Remove password arguments and envs
         sed -i '/ARG.*PASSWORD/d' Dockerfile
         sed -i '/ENV.*PASSWORD/d' Dockerfile
 
-        # Normalize ENV lines
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*(.*)$/ENV \1=\2/' Dockerfile
         sed -i -E 's/^ENV[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]+(.*)$/ENV \1=\2/' Dockerfile
 
-        # Add java and jar version check
         sed -i '/^RUN yum clean all/a RUN java -version && command -v jar && jar --version' Dockerfile
 
         echo "Generated Dockerfile:"
@@ -108,6 +98,9 @@ jobs:
     - name: Copy everything from agent-base to workspace
       if: steps.compare.outputs.changed == 'true'
       run: cp -r agent-base/* .
+
+    - name: Clone Atlassian Docker Shared Components
+      run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
 
     - name: Copy shared-components from upstream to workspace
       if: steps.compare.outputs.changed == 'true'
