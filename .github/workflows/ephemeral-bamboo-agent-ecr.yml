@@ -6,125 +6,128 @@ on:
     - cron: '30 5 1 * *' # 11:00 IST on the 1st of every month
 
 jobs:
-  check-and-build:
+  build-and-push:
     runs-on: ubuntu-latest
     env:
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
       TINI_VERSION: v0.19.0
 
     steps:
-    - name: Checkout this repo
+    - name: Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
 
-    - name: Clone Bitbucket Bamboo Agent Base
-      shell: bash
+    - name: Clone Atlassian Docker Bamboo Agent Base
       run: git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base
 
     - name: Clone Atlassian Docker Shared Components
-      shell: bash
       run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
 
-    - name: Compare Dockerfiles
-      id: compare
-      shell: bash
+    # Overwrite upstream Dockerfile with your Amazon Linux version
+    - name: Replace upstream Dockerfile with custom Amazon Linux version
       run: |
-        if [ -f agent-base/Dockerfile ] && [ -f Dockerfile.last ]; then
-          diff -q agent-base/Dockerfile Dockerfile.last > diff.log || true
-        else
-          echo "DIFF" > diff.log
-        fi
-        if [ -s diff.log ]; then
-          echo "changed=true" >> $GITHUB_OUTPUT
-        else
-          echo "changed=false" >> $GITHUB_OUTPUT
-        fi
+        cat > agent-base/Dockerfile <<'EOF'
+        ARG BASE_IMAGE=amazonlinux:2023
+        FROM $BASE_IMAGE
 
-    - name: Prepare AWS Linux Dockerfile from Atlassian Upstream
-      if: steps.compare.outputs.changed == 'true'
-      working-directory: agent-base
-      shell: bash
-      run: |
-        # Set Amazon Linux base image
-        sed -i 's|^ARG BASE_IMAGE=.*|ARG BASE_IMAGE=amazonlinux:2023|' Dockerfile
-        sed -i 's|^FROM .*|FROM $BASE_IMAGE|' Dockerfile
+        LABEL maintainer="dc-deployments@atlassian.com"
+        LABEL securitytxt="https://www.atlassian.com/.well-known/security.txt"
 
-        # Transform apt-get block to valid yum install lines, remove all apt-get/ubuntu/yum install -y && lines
-        awk '
-        BEGIN {in_apt=0; pkgs=[]}
-        # Detect start of apt-get update block
-        /RUN apt-get update/ {
-          in_apt=1
-          print "RUN yum update -y"
-          print "RUN yum upgrade -y"
-          next
-        }
-        # Skip apt-get install line
-        in_apt==1 && /apt-get install -y/ {next}
-        # Collect package lines inside the apt block
-        in_apt==1 && /^\s+/ {
-          pkg=$0
-          gsub("^\\s+", "", pkg)
-          gsub("\\\\", "", pkg)
-          gsub("openssh-client", "openssh", pkg)
-          gsub("python-is-python3", "python3", pkg)
-          gsub("python3-jinja2", "python3-pip", pkg)
-          # skip tini and git-lfs here, will add manually later
-          if(pkg=="tini" || pkg=="git-lfs" || pkg=="") next
-          print "RUN yum install -y " pkg
-          next
-        }
-        # End of apt-get install block, emit extra package installs
-        in_apt==1 && !/^\s+/ {
-          print "RUN yum install -y java-17-amazon-corretto-devel"
-          print "RUN yum install -y tar"
-          print "RUN yum install -y git-lfs"
-          print "RUN yum clean all"
-          print "RUN pip3 install jinja2"
-          print "RUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64"
-          print "RUN chmod +x /tini"
-          print "RUN mv /tini /usr/local/bin/tini"
-          in_apt=0
-          next
-        }
-        # Remove all apt-get/ubuntu/yum install -y && lines
-        /apt-get upgrade/ {next}
-        /apt-get clean/ {next}
-        /apt-get autoclean/ {next}
-        /apt-get autoremove/ {next}
-        /rm -rf \/var\/lib\/apt\/lists\/*/ {next}
-        /yum install -y &&/ {next}
-        /yum install -y apt-get/ {next}
-        /yum install -y upgrade/ {next}
-        /yum install -y clean/ {next}
-        /yum install -y autoclean/ {next}
-        /yum install -y autoremove/ {next}
-        /yum install -y rm/ {next}
-        /yum install -y -rf/ {next}
-        /yum install -y \/var\/lib\/apt\/lists\/*/ {next}
-        /yum install -y -y/ {next}
-        # Print everything else as-is
-        {if(in_apt==0) print}
-        ' Dockerfile > Dockerfile.tmp && mv Dockerfile.tmp Dockerfile
+        ENV APP_NAME                                bamboo_agent
+        ENV RUN_USER                                bamboo
+        ENV RUN_GROUP                               bamboo
+        ENV RUN_UID                                 2005
+        ENV RUN_GID                                 2005
 
-        echo "Transformed Dockerfile:"
-        cat Dockerfile
+        ENV BAMBOO_AGENT_HOME                       /var/atlassian/application-data/bamboo-agent
+        ENV BAMBOO_AGENT_INSTALL_DIR                /opt/atlassian/bamboo
+        ENV KUBE_NUM_EXTRA_CONTAINERS               0
+        ENV EXTRA_CONTAINERS_REGISTRATION_DIRECTORY /pbc/kube
+        ENV DISABLE_AGENT_AUTO_CAPABILITY_DETECTION false
+
+        WORKDIR $BAMBOO_AGENT_HOME
+
+        COPY entrypoint.py \
+             probe-common.sh \
+             probe-startup.sh \
+             probe-readiness.sh \
+             pre-launch.sh \
+             shared-components/image/entrypoint_helpers.py  /
+        COPY shared-components/support                      /opt/atlassian/support
+        COPY config/*                                       /opt/atlassian/etc/
+
+        RUN yum update -y && \
+            yum upgrade -y && \
+            yum install -y \
+                git \
+                git-lfs \
+                openssh \
+                python3 \
+                python3-jinja2 \
+                python-is-python3 \
+                tar \
+                java-17-amazon-corretto-devel && \
+            yum clean all
+
+        RUN curl -Lo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-0.19.0-amd64 && \
+            chmod +x /tini && \
+            mv /tini /usr/local/bin/tini
+
+        ARG MAVEN_VERSION=3.9.9
+        ENV MAVEN_HOME                              /opt/maven
+        RUN mkdir -p ${MAVEN_HOME} \
+            && curl -L --silent https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar -xz --strip-components=1 -C "${MAVEN_HOME}" \
+            && ln -s ${MAVEN_HOME}/bin/mvn /usr/local/bin/mvn
+
+        ARG BAMBOO_VERSION
+        ENV BAMBOO_VERSION                          ${BAMBOO_VERSION}
+        ARG DOWNLOAD_URL=https://packages.atlassian.com/mvn/maven-atlassian-external/com/atlassian/bamboo/atlassian-bamboo-agent-installer/${BAMBOO_VERSION}/atlassian-bamboo-agent-installer-${BAMBOO_VERSION}.jar
+        ARG DOWNLOAD_USERNAME
+        ARG DOWNLOAD_PASSWORD
+
+        COPY bamboo-update-capability.sh /
+
+        RUN groupadd --gid ${RUN_GID} ${RUN_GROUP} \
+            && useradd --uid ${RUN_UID} --gid ${RUN_GID} --home-dir ${BAMBOO_AGENT_HOME} --shell /bin/bash ${RUN_USER} \
+            && echo PATH=$PATH > /etc/environment \
+            && mkdir -p ${BAMBOO_AGENT_INSTALL_DIR} \
+            && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_INSTALL_DIR} \
+            && if [ -n "${DOWNLOAD_USERNAME}" ] && [ -n "${DOWNLOAD_PASSWORD}" ]; then \
+                curl -u ${DOWNLOAD_USERNAME}:${DOWNLOAD_PASSWORD} -L --silent ${DOWNLOAD_URL} -o "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar"; \
+            else \
+                curl -L --silent ${DOWNLOAD_URL} -o "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar"; \
+            fi \
+            && jar -tf "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar" \
+            && mkdir -p ${BAMBOO_AGENT_HOME}/conf ${BAMBOO_AGENT_HOME}/bin \
+            && export TEMP_VERSION=${JAVA_VERSION#*-} && export JAVA_MAJOR_VERSION=${TEMP_VERSION%%.*} \
+            && export TEMP_VERSION=${TEMP_VERSION#*.} && JAVA_MINOR_VERSION=${TEMP_VERSION%%.*} \
+            && chmod +x /bamboo-update-capability.sh && \
+               /bamboo-update-capability.sh "JDK" ${JAVA_HOME}/bin/java && \
+               /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}" ${JAVA_HOME}/bin/java && \
+               /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}.${JAVA_MINOR_VERSION}" ${JAVA_HOME}/bin/java && \
+               /bamboo-update-capability.sh "JDK ${JAVA_VERSION}" ${JAVA_HOME}/bin/java && \
+               /bamboo-update-capability.sh "Python" /usr/bin/python3 && \
+               /bamboo-update-capability.sh "Python 3" /usr/bin/python3 && \
+               /bamboo-update-capability.sh "Git" /usr/bin/git \
+            && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_HOME} \
+            && chmod -R 770 ${BAMBOO_AGENT_HOME} \
+            && for file in "/opt/atlassian/support /entrypoint.py /entrypoint_helpers.py /probe-common.sh /probe-startup.sh /probe-readiness.sh /pre-launch.sh /bamboo-update-capability.sh"; do \
+               chmod -R "u=rwX,g=rX,o=rX" ${file} && chown -R root ${file}; done
+
+        CMD ["/usr/bin/tini", "--", "/entrypoint.py"]
+        ENTRYPOINT ["/pre-launch.sh"]
+        EOF
 
     - name: Copy everything from agent-base to workspace
-      if: steps.compare.outputs.changed == 'true'
-      shell: bash
       run: cp -r agent-base/* .
 
     - name: Copy shared-components from upstream to workspace
-      if: steps.compare.outputs.changed == 'true'
-      shell: bash
       run: |
         rm -rf shared-components
         cp -r shared-components-upstream shared-components
 
     - name: Configure AWS credentials
-      if: steps.compare.outputs.changed == 'true'
       uses: aws-actions/configure-aws-credentials@v4
       with:
         aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
@@ -132,37 +135,25 @@ jobs:
         aws-region: us-west-2
 
     - name: Login to Amazon ECR
-      if: steps.compare.outputs.changed == 'true'
-      shell: bash
       run: aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
 
     - name: Build Docker image
-      if: steps.compare.outputs.changed == 'true'
-      shell: bash
       run: docker build -t vitech-bamboodr-repo .
 
     - name: Tag Docker image
-      if: steps.compare.outputs.changed == 'true'
-      shell: bash
       run: |
         TAG=$(date +%Y%m%d-%H%M%S)
         docker tag vitech-bamboodr-repo:latest $ECR_REPO:$TAG
 
     - name: Push Docker image to ECR
-      if: steps.compare.outputs.changed == 'true'
-      shell: bash
       run: |
         TAG=$(date +%Y%m%d-%H%M%S)
         docker push $ECR_REPO:$TAG
 
     - name: Update Dockerfile.last in repo for future comparison
-      if: steps.compare.outputs.changed == 'true'
-      shell: bash
       run: cp agent-base/Dockerfile Dockerfile.last
 
     - name: Commit and push Dockerfile.last
-      if: steps.compare.outputs.changed == 'true'
-      shell: bash
       run: |
         git config --global user.email "actions@github.com"
         git config --global user.name "GitHub Actions"
