@@ -101,7 +101,7 @@
             {%- set _ = status_msg.append("HTTPs Status 200") -%}
           {%- endif -%} {%- if crucible_qa_http_status.stdout is defined and crucible_qa_http_status.stdout == '200' -%}
             {%- set _ = status_msg.append("HTTPs Status 200") -%}
-          {%- endif -%} {%- if jenkins_qa_http_status.stdout is defined and jenkins_qa_http_status.stdout == '200' -%}
+          {%- endif -%} {%- if jenkins_qa_http_status.stdout is defined and jenkins_qa_http_status.stdout == '403' -%}
             {%- set _ = status_msg.append("HTTPs Status 200") -%}
           {%- endif -%} {%- if jenkins_prod_http_status.stdout is defined and jenkins_prod_http_status.stdout == '200' -%}
             {%- set _ = status_msg.append("HTTPs Status 200") -%}
