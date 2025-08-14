@@ -134,7 +134,7 @@ jobs:
             elif [[ "$APP_COMP" == "sonarv310ucqa" ]]; then
               echo "172.26.49.203 ansible_user=root ansible_ssh_pass=\"${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}\"" >> $INVENTORY_PATH
             elif [[ "$APP_COMP" == "jenkinsqa" ]]; then
-              echo "172.26.56.109 ansible_user=root ansible_ssh_pass=$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$" >> $INVENTORY_PATH
+              echo "10.172.3.19 ansible_user=root ansible_ssh_pass=$'${{ secrets.INTERNAL_TOOLS_PASSWORD }}'$" >> $INVENTORY_PATH
             fi
           else
             echo "Error: Invalid environment selected!"
