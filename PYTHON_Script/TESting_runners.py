@@ -26,7 +26,7 @@ GITHUB_API_URL = f"https://api.github.com/orgs/{ORG_NAME}/actions/runners"
  
 # Condition: 700 seconds (~11.7 minutes) — adjust as needed
 
-MIN_RUNNING_SECONDS = 700
+MIN_RUNNING_SECONDS = 7200
  
  
 def get_ec2_instances():
