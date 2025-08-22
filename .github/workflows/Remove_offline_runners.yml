@@ -4,7 +4,7 @@ on:
 
   schedule:
 
-    - cron: '0 23 * * 1-5' # Runs Mon-Fri at 23:00 UTC
+    - cron: '0 23 * * 6' # Runs every Saturday at 23:00 UTC
 
   workflow_dispatch:
  
