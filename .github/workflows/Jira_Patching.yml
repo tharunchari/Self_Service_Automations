@@ -247,26 +247,26 @@ jobs:
             fi
       
             echo "ds_agent tasks"
-              aws ssm send-command \
-                --instance-ids "$INSTANCE_ID" \
-                --document-name "AWS-RunShellScript" \
-                --comment "Stop ds_agent, remove dsa_filt, and start ds_agent" \
-                --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]' \
-                --query 'Command.CommandId' --output text > command-id.txt
-              COMMAND_ID=$(cat command-id.txt)
-              echo "Waiting for command to complete..."
-              for i in {1..30}; do
-                COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
-                echo "Current command status: $COMMAND_STATUS"
-                if [[ "$COMMAND_STATUS" == "Success" ]]; then
-                  echo "Command completed successfully."
-                  break
-                elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
-                  echo "Command failed. Exiting..."
-                  exit 1
-                fi
-                sleep 30  
-              done  
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Stop ds_agent, remove dsa_filt, and start ds_agent" \
+              --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]' \
+              --query 'Command.CommandId' --output text > command-id.txt
+            COMMAND_ID=$(cat command-id.txt)
+            echo "Waiting for command to complete..."
+            for i in {1..30}; do
+              COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+              echo "Current command status: $COMMAND_STATUS"
+              if [[ "$COMMAND_STATUS" == "Success" ]]; then
+                echo "Command completed successfully."
+                break
+              elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
+                echo "Command failed. Exiting..."
+                exit 1
+              fi
+              sleep 30  
+            done  
       
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
@@ -293,15 +293,10 @@ jobs:
             echo "Raw API Response: $NODE_STATUS"
             echo "$NODE_STATUS" | jq .
       
-            echo "$NODE_STATUS"
-            
             INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances \
               --instance-ids "$INSTANCE_ID" \
               --query 'Reservations[].Instances[].PrivateIpAddress' \
               --output text)
-            
-            echo "Private IP: $INSTANCE_PRIVATE_IP"
-            echo "NODE_STATUS: $NODE_STATUS"
             
             INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.[] | select(.nodeId == $ip and .state == "ACTIVE")')
       
@@ -322,51 +317,25 @@ jobs:
             if [[ -n "$INSTANCE_ALIVE" ]]; then
               echo "Instance $INSTANCE_ID is alive and healthy."
       
-              # Compose HTML email content
-              EMAIL_SUBJECT="[$ENVIRONMENT] Jira Node Successfully Patched - $INSTANCE_ID ($INSTANCE_PRIVATE_IP)"
-                  EMAIL_BODY=$(cat <<EOF
-              <html>
-                <head>
-                  <style>
-                    body { background: #222; color: #fff; }
-                    table { border-collapse: collapse; width: 100%; }
-                    th, td { border: 1px solid #fff; padding: 8px; }
-                    th { background: #333; font-weight: bold; }
-                    tr:nth-child(even) { background: #2a2a2a; }
-                  </style>
-                </head>
-                <body>
-                  <p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>
-                  <table>
-                    <tr>
-                      <th>Instance ID</th>
-                      <th>Instance IP</th>
-                      <th>Before Patching Version</th>
-                      <th>After Patching Version</th>
-                      <th>Alive Status</th>
-                    </tr>
-                    <tr>
-                      <td>${INSTANCE_ID}</td>
-                      <td>${INSTANCE_PRIVATE_IP}</td>
-                      <td>${BEFORE_VERSION}</td>
-                      <td>${AFTER_VERSION}</td>
-                      <td>ALIVE</td>
-                    </tr>
-                  </table>
-                </body>
-              </html>
-              EOF
-                  )
+              # Compose HTML email content by echoing to a file (avoids here-doc issues)
+              echo "<html>" > email_body.html
+              echo "<head><style>body { background: #222; color: #fff; } table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #fff; padding: 8px; } th { background: #333; font-weight: bold; } tr:nth-child(even) { background: #2a2a2a; }</style></head>" >> email_body.html
+              echo "<body><p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>" >> email_body.html
+              echo "<table>" >> email_body.html
+              echo "<tr><th>Instance ID</th><th>Instance IP</th><th>Before Patching Version</th><th>After Patching Version</th><th>Alive Status</th></tr>" >> email_body.html
+              echo "<tr><td>${INSTANCE_ID}</td><td>${INSTANCE_PRIVATE_IP}</td><td>${BEFORE_VERSION}</td><td>${AFTER_VERSION}</td><td>ALIVE</td></tr>" >> email_body.html
+              echo "</table></body></html>" >> email_body.html
+              EMAIL_BODY=$(cat email_body.html)
       
               # Send email using AWS SES
               aws ses send-email \
                 --from "v3atlassianops@vitechinc.com" \
                 --destination "ToAddresses=v3atlassianops@vitechinc.com" \
-                --message "Subject={Data='$EMAIL_SUBJECT'},Body={Html={Data=\"$EMAIL_BODY\"}}"
+                --message "Subject={Data='[$ENVIRONMENT] Jira Node Successfully Patched - $INSTANCE_ID ($INSTANCE_PRIVATE_IP)'},Body={Html={Data=\"$EMAIL_BODY\"}}"
               echo "Email sent via SES for $INSTANCE_ID"
               echo "========================================================="
             else
-              echo "Error: Instance $INSTANCE_ID is NOT healthy. Sending notification."  
+              echo "Error: Instance $INSTANCE_ID is NOT healthy. Sending notification."
               aws sns publish \
                 --topic-arn ${{ env.SNS_TOPIC }} \
                 --subject "${{ env.SUBJECT_PREFIX }} Failed on Node $INSTANCE_PRIVATE_IP" \
