@@ -244,10 +244,13 @@ jobs:
             sleep 600
 
             echo "Check node status using the API"
-            NODE_STATUS=$(curl -X GET \
+            NODE_STATUS=$(curl -s -X GET \
               -H "Authorization: Bearer ${{ env.TOKEN }}" \
               -H "Content-Type: application/json" \
-              "${{ env.URL }}/rest/api/2/cluster/nodes" | jq .)
+              "${{ env.URL }}/rest/api/2/cluster/nodes")
+            
+            echo "Raw API Response: $NODE_STATUS"
+            echo "$NODE_STATUS" | jq .
 
             echo "$NODE_STATUS"
             
