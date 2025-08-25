@@ -293,4 +293,4 @@ jobs:
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully.\n\n **Patched Instance IDs:**\n%s\n "$INSTANCE_IDS" \n Please reach out to v3atlassianops@vitechinc.com for any issues.")"
+            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully.Please reach out to v3atlassianops@vitechinc.com for any issues.\n\n **Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
