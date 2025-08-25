@@ -240,5 +240,13 @@
     create: yes
   become_user: tomcat
 
+- name: Update JAVA_HOME in start.sh
+  ansible.builtin.lineinfile:
+    path: "/v3util/deploy/start.sh"
+    regexp: '^export JAVA_HOME='
+    line: 'export JAVA_HOME={{ corretto_home }}'
+    create: yes
+  become_user: tomcat
+
 - name: wait for 30 seconds
   shell: sleep 30
