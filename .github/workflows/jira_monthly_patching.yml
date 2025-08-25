@@ -49,8 +49,8 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-            --subject "Non-Production JIRA Monthly Patch - Rolling Restart (No Downtime)" \
-            --message "Automated notification: Non-Production JIRA patching with rolling restart is scheduled for today (last Monday of the month, EST). No application downtime is expected. Please contact DevOps if you have any questions."
+            --subject "Non-Production JIRAQA and JIRAUPG Monthly Patch - Rolling Restart (No Downtime)" \
+            --message "Automated notification: Non-Production JIRA patching with rolling restart is scheduled for today JIRAQA and JIRAUPG. No application downtime is expected. Please contact v3atlassianops if you have any questions."
 
   trigger_nonprod_jiraqa:
     name: Trigger JIRAQA Patching (Last Monday)
@@ -166,7 +166,7 @@ jobs:
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
             --subject "Production JIRA Monthly Patch Scheduled for Tomorrow" \
-            --message "Reminder: Production JIRA patching will be performed tomorrow (Saturday, rolling restart, no downtime expected). Please reach out to DevOps if you have any concerns."
+            --message "Reminder: Production JIRA patching will be performed tomorrow (Saturday, rolling restart, no downtime expected). Please reach out to v3atlassianops if you have any concerns."
 
 
   check_last_saturday:
