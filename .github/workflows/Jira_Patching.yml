@@ -112,10 +112,10 @@ jobs:
             echo "ERROR: No instances found in ASG. Exiting."
             exit 1
           fi
-          aws sns publish \
-            --topic-arn ${{ env.SNS_TOPIC }} \
-            --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
-            --message "$(printf "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process.\n\n **Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
+         # aws sns publish \
+          #  --topic-arn ${{ env.SNS_TOPIC }} \
+          #  --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
+          #  --message "$(printf "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process.\n\n **Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
 
       - name: Disable Jira Plugins
         run: |
@@ -324,39 +324,39 @@ jobs:
       
               # Compose HTML email content
               EMAIL_SUBJECT="[$ENVIRONMENT] Jira Node Successfully Patched - $INSTANCE_ID ($INSTANCE_PRIVATE_IP)"
-              EMAIL_BODY=$(cat <<EOF
-            <html>
-              <head>
-                <style>
-                  body { background: #222; color: #fff; }
-                  table { border-collapse: collapse; width: 100%; }
-                  th, td { border: 1px solid #fff; padding: 8px; }
-                  th { background: #333; font-weight: bold; }
-                  tr:nth-child(even) { background: #2a2a2a; }
-                </style>
-              </head>
-              <body>
-                <p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>
-                <table>
-                  <tr>
-                    <th>Instance ID</th>
-                    <th>Instance IP</th>
-                    <th>Before Patching Version</th>
-                    <th>After Patching Version</th>
-                    <th>Alive Status</th>
-                  </tr>
-                  <tr>
-                    <td>${INSTANCE_ID}</td>
-                    <td>${INSTANCE_PRIVATE_IP}</td>
-                    <td>${BEFORE_VERSION}</td>
-                    <td>${AFTER_VERSION}</td>
-                    <td>ALIVE</td>
-                  </tr>
-                </table>
-              </body>
-            </html>
-            EOF
-                    )
+                  EMAIL_BODY=$(cat <<EOF
+              <html>
+                <head>
+                  <style>
+                    body { background: #222; color: #fff; }
+                    table { border-collapse: collapse; width: 100%; }
+                    th, td { border: 1px solid #fff; padding: 8px; }
+                    th { background: #333; font-weight: bold; }
+                    tr:nth-child(even) { background: #2a2a2a; }
+                  </style>
+                </head>
+                <body>
+                  <p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>
+                  <table>
+                    <tr>
+                      <th>Instance ID</th>
+                      <th>Instance IP</th>
+                      <th>Before Patching Version</th>
+                      <th>After Patching Version</th>
+                      <th>Alive Status</th>
+                    </tr>
+                    <tr>
+                      <td>${INSTANCE_ID}</td>
+                      <td>${INSTANCE_PRIVATE_IP}</td>
+                      <td>${BEFORE_VERSION}</td>
+                      <td>${AFTER_VERSION}</td>
+                      <td>ALIVE</td>
+                    </tr>
+                  </table>
+                </body>
+              </html>
+              EOF
+                  )
       
               # Send email using AWS SES
               aws ses send-email \
