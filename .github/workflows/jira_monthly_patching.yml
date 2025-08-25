@@ -47,7 +47,7 @@ jobs:
       - name: Notify via SNS for NON-PROD
         run: |
           aws sns publish \
-            --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
             --subject "Non-Production JIRA Monthly Patch - Rolling Restart (No Downtime)" \
             --message "Automated notification: Non-Production JIRA patching with rolling restart is scheduled for today (last Monday of the month, EST). No application downtime is expected. Please contact DevOps if you have any questions."
 
@@ -102,7 +102,7 @@ jobs:
       - name: Notify failure via SNS for JIRAQA
         run: |
           aws sns publish \
-            --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
             --subject "ALERT: JIRAQA Monthly Patch Failure" \
             --message "Automated patching (rolling restart, no expected downtime) for the JIRAQA environment has failed. Immediate manual intervention is required. Please check GitHub Actions logs for details."
 
@@ -121,7 +121,7 @@ jobs:
       - name: Notify failure via SNS for JIRAUPG
         run: |
           aws sns publish \
-            --topic-arn arn:aws:sns:us-east-1:123456789012:jira-nonprod-patch-topic \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
             --subject "ALERT: JIRAUPG Monthly Patch Failure" \
             --message "Automated patching (rolling restart, no expected downtime) for the JIRAUPG environment has failed. Immediate manual intervention is required. Please check GitHub Actions logs for details."
 
