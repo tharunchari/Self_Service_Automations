@@ -150,35 +150,34 @@ jobs:
           set -euo pipefail
           INSTANCE_IDS_ARRAY=($INSTANCE_IDS)
           PATCH_SUCCESS=true  
-
+      
           for INSTANCE_ID in "${INSTANCE_IDS_ARRAY[@]}"
           do
             echo "========================================================="
             echo "Starting patching process for: $INSTANCE_ID"
             echo "========================================================="
-
+      
             # Put instance into standby
             aws autoscaling enter-standby \
               --auto-scaling-group-name "${{ env.ASG_NAME }}" \
               --instance-ids "$INSTANCE_ID" \
               --should-decrement-desired-capacity
-
+      
             # Get Private IP for reporting
             INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances \
               --instance-ids "$INSTANCE_ID" \
               --query 'Reservations[].Instances[].PrivateIpAddress' \
               --output text)
-
+      
             echo "Private IP for $INSTANCE_ID: $INSTANCE_PRIVATE_IP"
-
+      
             # Get cluster status BEFORE patching
             BEFORE_STATUS=$(curl -s -X GET \
               -H "Authorization: Bearer ${{ env.TOKEN }}" \
               -H "Content-Type: application/json" \
               "${{ env.URL }}/rest/api/2/cluster/nodes")
-
+      
             # Get OS version BEFORE patching
-            echo "Checking version BEFORE patch..."
             VERSION_BEFORE_COMMAND_ID=$(aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
@@ -190,14 +189,14 @@ jobs:
               --command-id "$VERSION_BEFORE_COMMAND_ID" \
               --query 'CommandInvocations[0].CommandPlugins[0].Output' \
               --output text)
-
+      
             # Stop Jira and HTTPD
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
               --comment "Stop Jira and HTTPD services" \
               --parameters 'commands=["sudo service httpd stop", "sudo service jira stop"]'
-
+      
             # Perform system update
             COMMAND_ID=$(aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
@@ -205,28 +204,29 @@ jobs:
               --comment "Upgrade to latest Amazon Linux release" \
               --parameters 'commands=["dnf -y --releasever=latest update"]' \
               --query 'Command.CommandId' --output text)
+      
             echo "Waiting for upgrade command to complete..."
             for i in {1..30}; do
-                COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
-                echo "Current command status: $COMMAND_STATUS"     
-                if [[ "$COMMAND_STATUS" == "Success" ]]; then
-                    echo "Command completed successfully."
-                    break
-                elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
-                    echo "Command failed. Exiting..."
-                    exit 1
-                fi
-                sleep 30  
+              COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+              echo "Current command status: $COMMAND_STATUS"     
+              if [[ "$COMMAND_STATUS" == "Success" ]]; then
+                  echo "Command completed successfully."
+                  break
+              elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
+                  echo "Command failed. Exiting..."
+                  exit 1
+              fi
+              sleep 30  
             done
-
+      
             # Restart instance
             echo "Restarting instance $INSTANCE_ID..."
             aws ec2 stop-instances --instance-ids "$INSTANCE_ID"
             aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID"
             aws ec2 start-instances --instance-ids "$INSTANCE_ID"
             aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
-
-            # Wait for SSM to come online
+      
+            # Wait for SSM agent to be ready
             echo "Waiting for SSM agent to be ready..."
             for i in {1..30}; do
               STATUS=$(aws ssm describe-instance-information \
@@ -240,39 +240,38 @@ jobs:
               echo "SSM not ready yet... waiting (attempt $i)"
               sleep 15
             done
-
+      
             # Restart ds_agent and services
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
               --comment "Stop ds_agent, remove dsa_filt, and start ds_agent" \
               --parameters 'commands=["service ds_agent stop", "sleep 180", "sudo rmmod dsa_filter", "service ds_agent start"]'
-
+      
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
               --comment "Backup /etc/httpd/conf.d, then restart Jira and HTTPD services" \
               --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak-$(date +%Y%m%d-%H%M%S)", "sudo service httpd restart", "sudo service jira restart"]'
-
+      
             # Exit standby
             aws autoscaling exit-standby \
               --auto-scaling-group-name "${{ env.ASG_NAME }}" \
               --instance-ids "$INSTANCE_ID"
-
+      
             echo "Waiting 600 seconds for services to stabilize..."
             for i in {1..10}; do
               echo "  ... waiting $((i*60)) seconds elapsed"
               sleep 60
             done
-
+      
             # Get cluster status AFTER patching
             AFTER_STATUS=$(curl -s -X GET \
               -H "Authorization: Bearer ${{ env.TOKEN }}" \
               -H "Content-Type: application/json" \
               "${{ env.URL }}/rest/api/2/cluster/nodes")
-
+      
             # Get OS version AFTER patching
-            echo "Checking version AFTER patch..."
             VERSION_AFTER_COMMAND_ID=$(aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
@@ -284,14 +283,13 @@ jobs:
               --command-id "$VERSION_AFTER_COMMAND_ID" \
               --query 'CommandInvocations[0].CommandPlugins[0].Output' \
               --output text)
-
+      
             # Verify instance health in Jira cluster
             INSTANCE_ALIVE=$(echo "$AFTER_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.[] | select(.nodeId == $ip and .state == "ACTIVE")')
-
+      
             if [[ -n "$INSTANCE_ALIVE" ]]; then
               echo "Instance $INSTANCE_ID is alive and healthy."
               HEALTH_STATUS="HEALTHY"
-              echo "========================================================="
             else
               echo "Error: Instance $INSTANCE_ID is NOT healthy. Sending SNS notification."  
               aws sns publish \
@@ -301,23 +299,59 @@ jobs:
               PATCH_SUCCESS=false  
               break  
             fi
-
-            # Send SES email for this node
-            aws ses send-email \
-              --from v3atlassianops@vitechinc.com \
-              --destination "ToAddresses=v3atlassianops@vitechinc.com" \
-              --message "Subject={Data='${ENVIRONMENT} - Node Patching Completed - $INSTANCE_ID'},Body={Html={Data=\"<html><body><h3>${ENVIRONMENT} Node Patching Completed</h3><table border='1' cellpadding='5' cellspacing='0'><tr><th>Instance ID</th><th>Instance IP</th><th>Before Version</th><th>After Version</th><th>Before Status</th><th>After Status</th><th>Health</th></tr><tr><td>$INSTANCE_ID</td><td>$INSTANCE_PRIVATE_IP</td><td>$VERSION_BEFORE</td><td>$VERSION_AFTER</td><td>${BEFORE_STATUS//,/;}</td><td>${AFTER_STATUS//,/;}</td><td>$HEALTH_STATUS</td></tr></table></body></html>\"}}"
-
+      
+            # Sanitize BEFORE/AFTER status JSON for SES
+            CLEAN_BEFORE=$(echo "$BEFORE_STATUS" | jq -c '.' | sed 's/"/\\"/g')
+            CLEAN_AFTER=$(echo "$AFTER_STATUS" | jq -c '.' | sed 's/"/\\"/g')
+      
+            # Build SES email JSON payload
+            cat > email.json <<EOF
+      {
+        "Source": "v3atlassianops@vitechinc.com",
+        "Destination": {
+          "ToAddresses": ["v3atlassianops@vitechinc.com"]
+        },
+        "Message": {
+          "Subject": {
+            "Data": "${ENVIRONMENT} - Node Patching Completed - ${INSTANCE_ID}"
+          },
+          "Body": {
+            "Html": {
+              "Data": "<html><body>
+                <h3>${ENVIRONMENT} Node Patching Completed</h3>
+                <table border='1' cellpadding='5' cellspacing='0'>
+                  <tr><th>Instance ID</th><th>Instance IP</th><th>Before Version</th><th>After Version</th><th>Before Status</th><th>After Status</th><th>Health</th></tr>
+                  <tr>
+                    <td>${INSTANCE_ID}</td>
+                    <td>${INSTANCE_PRIVATE_IP}</td>
+                    <td>${VERSION_BEFORE}</td>
+                    <td>${VERSION_AFTER}</td>
+                    <td>${CLEAN_BEFORE}</td>
+                    <td>${CLEAN_AFTER}</td>
+                    <td>${HEALTH_STATUS}</td>
+                  </tr>
+                </table>
+              </body></html>"
+            }
+          }
+        }
+      }
+      EOF
+      
+            # Send SES email
+            aws ses send-email --cli-input-json file://email.json
+      
             echo "========================================================="
             echo "Patching completed for: $INSTANCE_ID"
             echo "========================================================="
           done
-
+      
           # Stop patching if any node failed
           if [[ "$PATCH_SUCCESS" == "false" ]]; then
             echo "One or more instances failed patching. Exiting workflow."
             exit 1
           fi
+
 
       - name: Set Auto Scaling Group to 2 instances
         run: |
