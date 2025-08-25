@@ -145,7 +145,6 @@ jobs:
             --min-size 1  
 
       - name: Patch Each Instance
-        id: patch-each-instance
         run: |
           set -euo pipefail
           INSTANCE_IDS_ARRAY=($INSTANCE_IDS)
@@ -337,7 +336,7 @@ jobs:
                 </style>
               </head>
               <body>
-                <p>The following Jira node was successfully patched in <b>$ENVIRONMENT</b>:</p>
+                <p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>
                 <table>
                   <tr>
                     <th>Instance ID</th>
@@ -347,10 +346,10 @@ jobs:
                     <th>Alive Status</th>
                   </tr>
                   <tr>
-                    <td>$INSTANCE_ID</td>
-                    <td>$INSTANCE_PRIVATE_IP</td>
-                    <td>$BEFORE_VERSION</td>
-                    <td>$AFTER_VERSION</td>
+                    <td>${INSTANCE_ID}</td>
+                    <td>${INSTANCE_PRIVATE_IP}</td>
+                    <td>${BEFORE_VERSION}</td>
+                    <td>${AFTER_VERSION}</td>
                     <td>ALIVE</td>
                   </tr>
                 </table>
@@ -363,7 +362,7 @@ jobs:
               aws ses send-email \
                 --from "v3atlassianops@vitechinc.com" \
                 --destination "ToAddresses=v3atlassianops@vitechinc.com" \
-                --message "Subject={Data='$EMAIL_SUBJECT'},Body={Html={Data='$EMAIL_BODY'}}"
+                --message "Subject={Data='$EMAIL_SUBJECT'},Body={Html={Data=\"$EMAIL_BODY\"}}"
               echo "Email sent via SES for $INSTANCE_ID"
               echo "========================================================="
             else
@@ -382,7 +381,7 @@ jobs:
             echo "Instances $INSTANCE_ID ($INSTANCE_PRIVATE_IP) failed the patching process. Exiting workflow."
             exit 1
           fi
-
+    
       - name: Set Auto Scaling Group to 2 instances
         run: |
           aws autoscaling update-auto-scaling-group \
