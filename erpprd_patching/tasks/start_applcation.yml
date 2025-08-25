@@ -3,6 +3,7 @@
 - name: Start Apache Tomcat with correct JAVA_HOME
   ansible.builtin.shell: |
     export JAVA_HOME={{ corretto_home }}
+    export PATH=$JAVA_HOME/bin:$PATH
     cd /opt/{{ erpprd_path }}/apache-tomcat-9.0/bin
     ./startup.sh
   register: tomcat_start
