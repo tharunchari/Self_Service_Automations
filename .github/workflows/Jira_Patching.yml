@@ -306,37 +306,37 @@ jobs:
       
             # Build SES email JSON payload
             cat > email.json <<EOF
-      {
-        "Source": "v3atlassianops@vitechinc.com",
-        "Destination": {
-          "ToAddresses": ["v3atlassianops@vitechinc.com"]
-        },
-        "Message": {
-          "Subject": {
-            "Data": "${ENVIRONMENT} - Node Patching Completed - ${INSTANCE_ID}"
-          },
-          "Body": {
-            "Html": {
-              "Data": "<html><body>
-                <h3>${ENVIRONMENT} Node Patching Completed</h3>
-                <table border='1' cellpadding='5' cellspacing='0'>
-                  <tr><th>Instance ID</th><th>Instance IP</th><th>Before Version</th><th>After Version</th><th>Before Status</th><th>After Status</th><th>Health</th></tr>
-                  <tr>
-                    <td>${INSTANCE_ID}</td>
-                    <td>${INSTANCE_PRIVATE_IP}</td>
-                    <td>${VERSION_BEFORE}</td>
-                    <td>${VERSION_AFTER}</td>
-                    <td>${CLEAN_BEFORE}</td>
-                    <td>${CLEAN_AFTER}</td>
-                    <td>${HEALTH_STATUS}</td>
-                  </tr>
-                </table>
-              </body></html>"
+          {
+            "Source": "v3atlassianops@vitechinc.com",
+            "Destination": {
+              "ToAddresses": ["v3atlassianops@vitechinc.com"]
+            },
+            "Message": {
+              "Subject": {
+                "Data": "${ENVIRONMENT} - Node Patching Completed - ${INSTANCE_ID}"
+              },
+              "Body": {
+                "Html": {
+                  "Data": "<html><body>
+                    <h3>${ENVIRONMENT} Node Patching Completed</h3>
+                    <table border='1' cellpadding='5' cellspacing='0'>
+                      <tr><th>Instance ID</th><th>Instance IP</th><th>Before Version</th><th>After Version</th><th>Before Status</th><th>After Status</th><th>Health</th></tr>
+                      <tr>
+                        <td>${INSTANCE_ID}</td>
+                        <td>${INSTANCE_PRIVATE_IP}</td>
+                        <td>${VERSION_BEFORE}</td>
+                        <td>${VERSION_AFTER}</td>
+                        <td>${CLEAN_BEFORE}</td>
+                        <td>${CLEAN_AFTER}</td>
+                        <td>${HEALTH_STATUS}</td>
+                      </tr>
+                    </table>
+                  </body></html>"
+                }
+              }
             }
           }
-        }
-      }
-      EOF
+          EOF
       
             # Send SES email
             aws ses send-email --cli-input-json file://email.json
