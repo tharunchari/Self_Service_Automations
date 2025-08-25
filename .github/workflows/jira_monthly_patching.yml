@@ -69,6 +69,7 @@ jobs:
       CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
       CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
       VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+      TOKEN: ${{ secrets.JIRAQA_ACCESS_TOKEN }}
 
   trigger_nonprod_jiraupg:
     name: Trigger JIRAUPG Patching (Last Monday)
@@ -87,6 +88,7 @@ jobs:
       CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
       CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
       VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+      TOKEN: ${{ secrets.JIRAUPG_ACCESS_TOKEN }}
 
   notify_failure_jiraqa:
     needs: trigger_nonprod_jiraqa
@@ -203,6 +205,7 @@ jobs:
       CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
       CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
       VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+      TOKEN: ${{ secrets.JIRAPROD_ACCESS_TOKEN }}
 
   notify_failure_jiraprod:
     name: Notify Failure - JIRAPROD
