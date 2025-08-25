@@ -1,6 +1,7 @@
 name: Monthly JIRA Patch Schedule
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: '0 2 22-28 * 1'   # Mondays between 22-28 at 2 AM UTC (potential last Monday for non-prod patching and notification)
     - cron: '0 10 22-28 * 5'  # Fridays between 22-28 at 10 AM UTC (potential last Friday for prod email notification)
