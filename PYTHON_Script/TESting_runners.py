@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timezone
  
 # === AWS Config ===
-SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:389180911583:Testing'
+SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd'
 ec2_client = boto3.client('ec2')
 sns_client = boto3.client('sns')
  
