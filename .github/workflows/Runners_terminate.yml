@@ -29,4 +29,4 @@ jobs:
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
           
-      - run: python3 PYTHON_Script/TESting_runners.py
+      - run: python3 PYTHON_Script/Morethan2hRunners_T.py
