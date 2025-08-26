@@ -5,7 +5,8 @@ import re
 from datetime import datetime, timezone
  
 # === AWS Config ===
-SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd'
+#SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd'
+SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:389180911583:Testing'
 ec2_client = boto3.client('ec2')
 sns_client = boto3.client('sns')
  
@@ -98,56 +99,26 @@ def main():
     matched_ids = list(set(ec2_ids) & set(github_idle_ids))
     not_matched_ids = list(set(ec2_ids) - set(github_idle_ids))
  
-    # === Build the message text ===
-    if instances:
-        message_lines = ["=== EC2 Self-Hosted Runners (> threshold) ==="]
+    if instances and (matched_ids or not_matched_ids):
+        to_terminate = matched_ids + not_matched_ids
+ 
+        # Terminate instances
+        ec2_client.terminate_instances(InstanceIds=to_terminate)
+ 
+        # === Build clean termination report ===
+        message_lines = ["GitHub self-hosted runners running more than two hours terminated\n"]
  
         for inst in instances:
-            message_lines.append(f"Instance ID: {inst['id']}")
-            message_lines.append(f"Launch Time: {inst['launch_time']}")
-            message_lines.append(f"Running Time: {inst['running_time']}")
-            message_lines.append(f"Tags: {inst['tags']}\n")
+            if inst['id'] in to_terminate:
+                message_lines.append(f"Instance ID: {inst['id']}")
+                message_lines.append(f"Launch Time: {inst['launch_time']}")
+                message_lines.append(f"Running Time: {inst['running_time']}\n")
  
-        message_lines.append("SNS notification sent with these EC2 IDs:")
-        message_lines.extend(ec2_ids)
+        report_text = "\n".join(message_lines)
  
-        message_lines.append("\n=== GitHub Runners (Online & Idle) ===")
-        message_lines.extend(github_idle_runners)
- 
-        message_lines.append("\nGitHub Runners (Online & Idle) IDs only:")
-        message_lines.extend(github_idle_ids)
- 
-        message_lines.append("\nMatched EC2 IDs and GitHub Runners (to be terminated)")
-        message_lines.extend(matched_ids)
- 
-        message_lines.append("\nNot Matched EC2 IDs (to be terminated)")
-        message_lines.extend(not_matched_ids)
- 
-        message_text = "\n".join(message_lines)
- 
-        print(message_text)
- 
-        # Send SNS notification only when EC2 > threshold exist
-        send_sns_notification("EC2 & GitHub Runners Termination Report", message_text)
- 
-        # Terminate instances only when EC2 > threshold exist
-        if matched_ids or not_matched_ids:
-            print("\nEligible EC2 instances to terminate (tagged 'Github_Self_Hosted_Runner'):")
- 
-            for inst in instances:
-                print(f"  - {inst['id']} (Tags: {inst['tags']})")
- 
-            to_terminate = matched_ids + not_matched_ids
- 
-            print(f"\nTerminating EC2 instances now: {to_terminate}")
-            ec2_client.terminate_instances(InstanceIds=to_terminate)
- 
-            # Show confirmation
-            for inst_id in matched_ids:
-                print(f"✅ Terminated matched instance: {inst_id}")
- 
-            for inst_id in not_matched_ids:
-                print(f"✅ Terminated not matched instance: {inst_id}")
+        # Print and send SNS
+        print(report_text)
+        send_sns_notification("GitHub self-hosted runners running more than two hours terminated", report_text)
  
     else:
         print("No EC2 instances above threshold. Skipping SNS and termination operations.")
