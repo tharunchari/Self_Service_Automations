@@ -51,8 +51,8 @@ jobs:
 
             aws sns publish \
               --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-              --message "$(echo -e "**${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n$(date +%Y-%m-%d)")" \
-              --subject "${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Patching Aborted: Invalid Key"
+              --message "$(echo -e "**${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Bamboo agents start**\n\nInvalid authentication key provided. Patching process was not started.\n$(date +%Y-%m-%d)")" \
+              --subject "${{ github.event.inputs.APP_ENVIRONMENT }}-${{ github.event.inputs.APP_COMPONENT }} Bamboo agents start agent script Aborted: Invalid Key"
 
             exit 1
           fi
