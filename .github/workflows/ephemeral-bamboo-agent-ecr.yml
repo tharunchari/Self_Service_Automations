@@ -48,6 +48,9 @@ jobs:
         aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
         aws-region: us-west-2
 
+    - name: Download Bamboo packages setup script from S3
+      run: aws s3 cp s3://bamboo-jdks-resources/shell_scripts/install_bamboo_packages_ephemeral.sh install_bamboo_packages_ephemeral.sh
+
     - name: Send SNS notification and exit if no changes
       if: steps.compare.outputs.changed == 'false'
       run: |
@@ -67,24 +70,24 @@ jobs:
         cat > agent-base/Dockerfile <<'EOF'
         ARG BASE_IMAGE=amazonlinux:2023
         FROM $BASE_IMAGE
-        
+
         LABEL maintainer="dc-deployments@atlassian.com"
         LABEL securitytxt="https://www.atlassian.com/.well-known/security.txt"
-        
-        ENV APP_NAME                                bamboo_agent
-        ENV RUN_USER                                bamboo
-        ENV RUN_GROUP                               bamboo
-        ENV RUN_UID                                 2005
-        ENV RUN_GID                                 2005
-        
-        ENV BAMBOO_AGENT_HOME                       /var/atlassian/application-data/bamboo-agent
-        ENV BAMBOO_AGENT_INSTALL_DIR                /opt/atlassian/bamboo
-        ENV KUBE_NUM_EXTRA_CONTAINERS               0
-        ENV EXTRA_CONTAINERS_REGISTRATION_DIRECTORY /pbc/kube
-        ENV DISABLE_AGENT_AUTO_CAPABILITY_DETECTION false
-        
+
+        ENV APP_NAME=bamboo_agent
+        ENV RUN_USER=bamboo
+        ENV RUN_GROUP=bamboo
+        ENV RUN_UID=2005
+        ENV RUN_GID=2005
+
+        ENV BAMBOO_AGENT_HOME=/var/atlassian/application-data/bamboo-agent
+        ENV BAMBOO_AGENT_INSTALL_DIR=/opt/atlassian/bamboo
+        ENV KUBE_NUM_EXTRA_CONTAINERS=0
+        ENV EXTRA_CONTAINERS_REGISTRATION_DIRECTORY=/pbc/kube
+        ENV DISABLE_AGENT_AUTO_CAPABILITY_DETECTION=false
+
         WORKDIR $BAMBOO_AGENT_HOME
-        
+
         COPY entrypoint.py \
              probe-common.sh \
              probe-startup.sh \
@@ -93,8 +96,8 @@ jobs:
              shared-components/image/entrypoint_helpers.py  /
         COPY shared-components/support                      /opt/atlassian/support
         COPY config/*                                       /opt/atlassian/etc/
-        
-        # Update system, install necessary packages, and clean up to minimize image size
+        COPY install_bamboo_packages_ephemeral.sh /install_bamboo_packages_ephemeral.sh
+
         RUN yum update -y && \
             yum upgrade -y && \
             yum install -y \
@@ -106,59 +109,47 @@ jobs:
                 python-is-python3 \
                 tar \
                 java-17-amazon-corretto-devel \
-                awscli \
-                procps-ng && \
+                procps-ng \
+                awscli && \
             yum clean all
-          
-          # Download the script from S3, make it executable, and run it
-          RUN aws s3 cp s3://bamboo-jdks-resources/shell_scripts/install_bamboo_packages_ephemeral.sh /install_bamboo_packages_ephemeral.sh \
-              && chmod +x /install_bamboo_packages_ephemeral.sh \
-              && /install_bamboo_packages_ephemeral.sh
-        
-        # Install tini manually (as it's not available in Amazon Linux repositories)
+
+        RUN /install_bamboo_packages_ephemeral.sh
+
         RUN curl -fLo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-amd64 && \
             chmod +x /tini && \
             mv /tini /usr/local/bin/tini
-        
-        # Add this to fix the issue
+
         ENV JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto
         ENV PATH="$JAVA_HOME/bin:$PATH"
-        
+
         ARG MAVEN_VERSION=3.9.9
-        ENV MAVEN_HOME                              /opt/maven
+        ENV MAVEN_HOME=/opt/maven
         RUN mkdir -p ${MAVEN_HOME} \
             && curl -L --silent https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar -xz --strip-components=1 -C "${MAVEN_HOME}" \
             && ln -s ${MAVEN_HOME}/bin/mvn /usr/local/bin/mvn
-        
+
         ARG BAMBOO_VERSION
-        ENV BAMBOO_VERSION                          ${BAMBOO_VERSION}
+        ENV BAMBOO_VERSION=${BAMBOO_VERSION}
         ARG DOWNLOAD_URL=https://packages.atlassian.com/mvn/maven-atlassian-external/com/atlassian/bamboo/atlassian-bamboo-agent-installer/${BAMBOO_VERSION}/atlassian-bamboo-agent-installer-${BAMBOO_VERSION}.jar
         ARG DOWNLOAD_USERNAME
         ARG DOWNLOAD_PASSWORD
-        
-        # Copy the bamboo-update-capability.sh script into the container
+
         COPY bamboo-update-capability.sh /
-        
-        # Add the user and group with configurable UID and GID
+
         RUN groupadd --gid ${RUN_GID} ${RUN_GROUP} \
             && useradd --uid ${RUN_UID} --gid ${RUN_GID} --home-dir ${BAMBOO_AGENT_HOME} --shell /bin/bash ${RUN_USER} \
             && echo PATH=$PATH > /etc/environment \
-            # Create installation directory and set correct ownership
             && mkdir -p ${BAMBOO_AGENT_INSTALL_DIR} \
             && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_INSTALL_DIR} \
-            # Download Bamboo agent installer
             && if [ -n "${DOWNLOAD_USERNAME}" ] && [ -n "${DOWNLOAD_PASSWORD}" ]; then \
                 curl -u ${DOWNLOAD_USERNAME}:${DOWNLOAD_PASSWORD} -L --silent ${DOWNLOAD_URL} -o "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar"; \
             else \
                 curl -L --silent ${DOWNLOAD_URL} -o "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar"; \
             fi \
-            # Verify the JAR file and extract its contents
             && jar -tf "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar" \
-            # Set up Bamboo agent directories
             && mkdir -p ${BAMBOO_AGENT_HOME}/conf ${BAMBOO_AGENT_HOME}/bin \
             && export TEMP_VERSION=${JAVA_VERSION#*-} && export JAVA_MAJOR_VERSION=${TEMP_VERSION%%.*} \
             && export TEMP_VERSION=${TEMP_VERSION#*.} && JAVA_MINOR_VERSION=${TEMP_VERSION%%.*} \
-            # Update Bamboo agent capabilities
             && chmod +x /bamboo-update-capability.sh && \
                /bamboo-update-capability.sh "JDK" ${JAVA_HOME}/bin/java && \
                /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}" ${JAVA_HOME}/bin/java && \
@@ -167,15 +158,13 @@ jobs:
                /bamboo-update-capability.sh "Python" /usr/bin/python3 && \
                /bamboo-update-capability.sh "Python 3" /usr/bin/python3 && \
                /bamboo-update-capability.sh "Git" /usr/bin/git \
-            # Set correct ownership and permissions for Bamboo agent home
             && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_HOME} \
             && chmod -R 770 ${BAMBOO_AGENT_HOME} \
-            # Ensure correct permissions for important files and scripts
             && for file in "/opt/atlassian/support /entrypoint.py /entrypoint_helpers.py /probe-common.sh /probe-startup.sh /probe-readiness.sh /pre-launch.sh /bamboo-update-capability.sh"; do \
                chmod -R "u=rwX,g=rX,o=rX" ${file} && chown -R root ${file}; done \
             && chmod +x /pre-launch.sh \
             && chmod +x /entrypoint.py
-        
+
         CMD ["/usr/local/bin/tini", "--", "/entrypoint.py"]
         ENTRYPOINT ["/pre-launch.sh"]
         EOF
@@ -189,6 +178,10 @@ jobs:
       run: |
         rm -rf shared-components
         cp -r shared-components-upstream shared-components
+
+    - name: Copy Bamboo packages setup script to workspace
+      if: steps.compare.outputs.changed == 'true'
+      run: cp install_bamboo_packages_ephemeral.sh .
 
     - name: Login to Amazon ECR
       if: steps.compare.outputs.changed == 'true'
