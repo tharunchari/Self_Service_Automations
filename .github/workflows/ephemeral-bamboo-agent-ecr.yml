@@ -179,10 +179,6 @@ jobs:
         rm -rf shared-components
         cp -r shared-components-upstream shared-components
 
-    - name: Copy Bamboo packages setup script to workspace
-      if: steps.compare.outputs.changed == 'true'
-      run: cp install_bamboo_packages_ephemeral.sh .
-
     - name: Login to Amazon ECR
       if: steps.compare.outputs.changed == 'true'
       run: aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
