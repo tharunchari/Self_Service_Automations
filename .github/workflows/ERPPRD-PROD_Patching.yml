@@ -75,7 +75,7 @@ jobs:
 
     - name: Download all required S3 resources to workspace
       run: |
-        mkdir s3-resources
+        mkdir -p s3-resources
         aws s3 cp s3://bamboo-jdks-resources/ s3-resources/ --recursive --exclude '*' --include '*.tar.gz'
         for file in s3-resources/*.tar.gz; do tar -zxvf "$file"; rm -rf "$file"; done
         ls -alh s3-resources
