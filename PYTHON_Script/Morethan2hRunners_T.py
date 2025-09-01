@@ -106,7 +106,7 @@ def main():
         ec2_client.terminate_instances(InstanceIds=to_terminate)
  
         # === Build clean termination report ===
-        message_lines = ["GitHub self-hosted runners running more than two hours terminated\n"]
+       # message_lines = ["Self-hosted GitHub runners running for more than 2 hours have been terminated.\n"]
  
         for inst in instances:
             if inst['id'] in to_terminate:
@@ -118,7 +118,7 @@ def main():
  
         # Print and send SNS
         print(report_text)
-        send_sns_notification("GitHub self-hosted runners running more than two hours terminated", report_text)
+        send_sns_notification("Self-hosted GitHub runners running for more than 2 hours have been terminated.", report_text)
  
     else:
         print("No EC2 instances above threshold. Skipping SNS and termination operations.")
