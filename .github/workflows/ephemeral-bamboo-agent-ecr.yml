@@ -52,10 +52,11 @@ jobs:
       run: |
         mkdir s3-resources
         aws s3 cp s3://bamboo-jdks-resources/ s3-resources/ --recursive --exclude '*' --include '*.tar.gz'
-        for file in s3-resources/*.tar.gz; do tar -zxvf "$file"; rm -rf "$file"; done
-        ls -alh s3-resources
-        find s3-resources -type f -name "*.tar.gz" -exec rm -f {} +
         rm -rf s3-resources/ant* s3-resources/glibc* s3-resources/grails*
+        for file in s3-resources/*.tar.gz; do
+          tar -zxvf "$file"
+          rm -f "$file"
+        done
         find s3-resources -type d -empty -delete
         ls -alh s3-resources
         aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources/logstream_metrics_to_cloudwatch.sh
