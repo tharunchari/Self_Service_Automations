@@ -24,16 +24,10 @@ jobs:
     steps:
     - name: Install Docker & dependencies on runner (using yum)
       run: |
-        sudo yum update -y
-        sudo yum install -y yum-utils device-mapper-persistent-data lvm2
-        sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-        sudo yum install -y docker-ce docker-ce-cli containerd.io
-        sudo systemctl start docker
-        sudo systemctl enable docker
-        sudo usermod -aG docker $USER
-        # Optional: Install docker-compose if needed
-        sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose
-        sudo chmod +x /usr/local/bin/docker-compose
+          sudo yum update -y
+          sudo yum install -y docker
+          sudo systemctl start docker
+          sudo systemctl enable docker
 
     - name: Checkout repository
       uses: actions/checkout@v4
