@@ -1,4 +1,4 @@
-name: "Testing_Runners_Status"
+name: "Terminate_Runners_Status"
 on:
   schedule:
     # This will run the workflow every 2 hours
