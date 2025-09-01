@@ -188,7 +188,7 @@ jobs:
 
     - name: Clean up workspace files
       run: |
-        find /tmp -user $(whoami) -delete
+        find /tmp -user $(whoami) -delete || true
         rm -rf ~/.cache/* || true
         
     - name: Build Docker image
