@@ -106,7 +106,7 @@ def main():
         ec2_client.terminate_instances(InstanceIds=to_terminate)
  
         # === Build clean termination report ===
-       # message_lines = ["Self-hosted GitHub runners running for more than 2 hours have been terminated.\n"]
+        message_lines = ["Self-hosted GitHub runners running for more than 2 hours have been terminated.\n"]
  
         for inst in instances:
             if inst['id'] in to_terminate:
