@@ -166,7 +166,9 @@ jobs:
         ARG DOWNLOAD_USERNAME
         ARG DOWNLOAD_PASSWORD
 
+        # Add diagnostics to catch missing/corrupt scripts
         COPY bamboo-update-capability.sh /opt/bamboo-update-capability.sh
+        RUN ls -l /opt/ && head -20 /opt/bamboo-update-capability.sh
         RUN chmod +x /opt/bamboo-update-capability.sh && /opt/bamboo-update-capability.sh
 
         RUN groupadd --gid ${RUN_GID} ${RUN_GROUP} \
