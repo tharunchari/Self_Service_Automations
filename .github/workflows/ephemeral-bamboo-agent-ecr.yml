@@ -52,22 +52,28 @@ jobs:
       run: |
         mkdir s3-resources
         aws s3 cp s3://bamboo-jdks-resources/ s3-resources/ --recursive --exclude '*' --include '*.tar.gz'
+        for file in s3-resources/*.tar.gz; do tar -zxvf "$file"; rm -rf "$file"; done
+        ls -alh s3-resources
+        find s3-resources -type f -name "*.tar.gz" -exec rm -f {} +
+        rm -rf s3-resources/ant* s3-resources/glibc* s3-resources/grails*
+        find s3-resources -type d -empty -delete
+        ls -alh s3-resources
         aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources/logstream_metrics_to_cloudwatch.sh
 
     - name: Download Bamboo packages setup script from S3
       run: aws s3 cp s3://bamboo-jdks-resources/shell_scripts/install_bamboo_packages_ephemeral.sh install_bamboo_packages_ephemeral.sh
 
-   # - name: Send SNS notification and exit if no changes
-   #   if: steps.compare.outputs.changed == 'false'
-   #   run: |
-   #     aws sns publish \
-   #       --topic-arn "${SNS_TOPIC_ARN}" \
-   #       --message "[Bamboo Docker Build] No changes detected in upstream Dockerfile. No build or push required. Image remains unchanged." \
-   #       --region us-west-2
-   #     echo "Nothing changed from previous build. Exiting workflow."
-   #     exit 0
-   #   env:
-   #     SNS_TOPIC_ARN: ${{ env.SNS_TOPIC_ARN }}
+    - name: Send SNS notification and exit if no changes
+      if: steps.compare.outputs.changed == 'false'
+      run: |
+        aws sns publish \
+          --topic-arn "${SNS_TOPIC_ARN}" \
+          --message "[Bamboo Docker Build] No changes detected in upstream Dockerfile. No build or push required. Image remains unchanged." \
+          --region us-west-2
+        echo "Nothing changed from previous build. Exiting workflow."
+        exit 0
+      env:
+        SNS_TOPIC_ARN: ${{ env.SNS_TOPIC_ARN }}
 
     # Proceed only if changes detected
     - name: Replace upstream Dockerfile with Amazon Linux version
@@ -104,8 +110,6 @@ jobs:
         COPY config/*                                       /opt/atlassian/etc/
         COPY s3-resources/ /opt/
         COPY install_bamboo_packages_ephemeral.sh /install_bamboo_packages_ephemeral.sh
-        COPY bamboo-update-capability.sh /
-        COPY entrypoint-wrapper.sh /entrypoint-wrapper.sh
 
         RUN yum update -y && \
             yum upgrade -y && \
@@ -143,6 +147,9 @@ jobs:
         ARG DOWNLOAD_USERNAME
         ARG DOWNLOAD_PASSWORD
 
+        COPY bamboo-update-capability.sh /opt/bamboo-update-capability.sh
+        RUN chmod +x /opt/bamboo-update-capability.sh && /opt/bamboo-update-capability.sh
+
         RUN groupadd --gid ${RUN_GID} ${RUN_GROUP} \
             && useradd --uid ${RUN_UID} --gid ${RUN_GID} --home-dir ${BAMBOO_AGENT_HOME} --shell /bin/bash ${RUN_USER} \
             && echo PATH=$PATH > /etc/environment \
@@ -157,19 +164,23 @@ jobs:
             && mkdir -p ${BAMBOO_AGENT_HOME}/conf ${BAMBOO_AGENT_HOME}/bin \
             && export TEMP_VERSION=${JAVA_VERSION#*-} && export JAVA_MAJOR_VERSION=${TEMP_VERSION%%.*} \
             && export TEMP_VERSION=${TEMP_VERSION#*.} && JAVA_MINOR_VERSION=${TEMP_VERSION%%.*} \
-            && chmod +x /bamboo-update-capability.sh
+            && chmod +x /bamboo-update-capability.sh && \
+               /bamboo-update-capability.sh "JDK" ${JAVA_HOME}/bin/java && \
+               /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}" ${JAVA_HOME}/bin/java && \
+               /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}.${JAVA_MINOR_VERSION}" ${JAVA_HOME}/bin/java && \
+               /bamboo-update-capability.sh "JDK ${JAVA_VERSION}" ${JAVA_HOME}/bin/java && \
+               /bamboo-update-capability.sh "Python" /usr/bin/python3 && \
+               /bamboo-update-capability.sh "Python 3" /usr/bin/python3 && \
+               /bamboo-update-capability.sh "Git" /usr/bin/git \
+            && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_HOME} \
+            && chmod -R 770 ${BAMBOO_AGENT_HOME} \
+            && for file in "/opt/atlassian/support /entrypoint.py /entrypoint_helpers.py /probe-common.sh /probe-startup.sh /probe-readiness.sh /pre-launch.sh /bamboo-update-capability.sh"; do \
+               chmod -R "u=rwX,g=rX,o=rX" ${file} && chown -R root ${file}; done \
+            && chmod +x /pre-launch.sh \
+            && chmod +x /entrypoint.py
 
-        CMD ["/usr/local/bin/tini", "--", "/entrypoint-wrapper.sh"]
+        CMD ["/usr/local/bin/tini", "--", "/entrypoint.py"]
         ENTRYPOINT ["/pre-launch.sh"]
-        EOF
-
-    - name: Create entrypoint-wrapper.sh
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        cat <<'EOF' > entrypoint-wrapper.sh
-        #!/bin/bash
-        /bamboo-update-capability.sh || echo "Warning: bamboo-update-capability.sh failed"
-        exec /entrypoint.py
         EOF
 
     - name: Copy everything from agent-base to workspace
@@ -186,11 +197,6 @@ jobs:
       if: steps.compare.outputs.changed == 'true'
       run: aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
 
-    - name: Clean up workspace files
-      run: |
-        find /tmp -user $(whoami) -delete || true
-        rm -rf ~/.cache/* || true
-        
     - name: Build Docker image
       if: steps.compare.outputs.changed == 'true'
       run: |
