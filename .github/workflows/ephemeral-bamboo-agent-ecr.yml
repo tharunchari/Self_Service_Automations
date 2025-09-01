@@ -186,6 +186,12 @@ jobs:
       if: steps.compare.outputs.changed == 'true'
       run: aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
 
+    - name: Clean up Docker system before build
+      run: |
+        docker system prune -a -f
+        rm -rf /tmp/*
+        rm -rf ~/.cache/*
+        
     - name: Build Docker image
       if: steps.compare.outputs.changed == 'true'
       run: |
