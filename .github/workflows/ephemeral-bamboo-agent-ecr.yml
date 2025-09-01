@@ -57,9 +57,6 @@ jobs:
     - name: Download Bamboo packages setup script from S3
       run: aws s3 cp s3://bamboo-jdks-resources/shell_scripts/install_bamboo_packages_ephemeral.sh install_bamboo_packages_ephemeral.sh
 
-    - name: Download bamboo-update-capability.sh from S3
-      run: aws s3 cp s3://bamboo-jdks-resources/shell_scripts/bamboo-update-capability.sh bamboo-update-capability.sh
-
    # - name: Send SNS notification and exit if no changes
    #   if: steps.compare.outputs.changed == 'false'
    #   run: |
