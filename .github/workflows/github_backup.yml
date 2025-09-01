@@ -2,8 +2,8 @@ name: Mirror GitHub Repositories to AWS CodeCommit
  
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 0/3 * * 1-5'
+ # schedule:
+ #   - cron: '0 0/3 * * 1-5'
  
 jobs:
   start-runner:
