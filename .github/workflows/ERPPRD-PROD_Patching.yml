@@ -1,273 +1,228 @@
-name: ephemeral-Bamboo-Agent-build
-
+name: ERPPRD-PROD Patching Pipeline
 on:
   workflow_dispatch:
+    inputs:
+      KEY:
+        required: true
+        description: Authentication Key for OPS Internal Tools
   schedule:
-    - cron: '30 5 1 * *'
-
+    # Every Saturday at 11:00 AM EST (16:00 UTC)
+    - cron: '0 16 * * 6'
+ 
 jobs:
-  start-runner:
+  run_on_last_saturday: 
+    if: github.event_name == 'schedule'  # Only runs for scheduled trigger 
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/time_last_saturday.yml@main 
+    with: 
+      run_type: last_saturday 
+    secrets: inherit 
+ 
+  start-runner-scheduled:
+    if: github.event_name == 'schedule' && needs.run_on_last_saturday.result == 'success' && needs.run_on_last_saturday.outputs.should_proceed == 'true'
+    needs: run_on_last_saturday
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
-
-  build-and-push:
-    needs: start-runner
+ 
+  start-runner-manual:
+    if: github.event_name == 'workflow_dispatch'
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
+    secrets: inherit
+ 
+  execute-job-scheduled:
+    needs: start-runner-scheduled
     runs-on: Internal_Tools_Automation_Server
-    env:
-      ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
-      TINI_VERSION: v0.19.0
-      BAMBOO_VERSION: 10.2.5
-      SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
-
     steps:
-    - name: Install Docker & dependencies on runner
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          ca-certificates \
-          curl \
-          gnupg \
-          lsb-release
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-        echo \
-          "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
-          $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-        sudo apt-get update
-        sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-        sudo usermod -aG docker $USER
-        sudo systemctl start docker
-        sudo systemctl enable docker
+      - name: Checkout repository
+        uses: actions/checkout@v4
+ 
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+ 
+      - name: Validate Authentication Key
+        id: validate_key
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [[ "${{ inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
+            echo "Invalid authentication key."
+            # Send notification for invalid key
+            aws sns publish \
+              --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+              --message "$(echo -e "**ERPPRD-PROD Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n$(date +%Y-%m-%d)")" \
+              --subject "ERPPRD-PROD Patching Aborted: Invalid Key"
+            exit 1
+          fi
+ 
+      - name: Write defaults/main.yml file
+        run: |
+          sudo tee erpprd_patching/vars/main.yml > /dev/null <<EOF
+          vcusername: "${{ vars.VC_USERNAME }}"
+          vcpassword: "${{ secrets.VC_PASSWORD }}"
+          EOF
+ 
+      - name: Write inventory file
+        run: |
+          sudo tee erpprd_patching/tests/inventory > /dev/null <<EOF
+          [APP01-ERPPRD]
+          #VITECH-APP01-ERPPRD-TOM9
+          172.26.52.188 ansible_user=root ansible_ssh_pass="${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}"
+ 
+          [APP02-ERPPRD]
+          #VITECH-APP02-ERPPRD-TOM9
+          172.26.52.189 ansible_user=root ansible_ssh_pass="${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}"
+          EOF
+ 
+      - name: Run Ansible Playbook
+        id: run_playbook
+        run: |
+          sudo ansible-playbook erpprd_patching/tests/test.yml -i erpprd_patching/tests/inventory
+        continue-on-error: true  # Capture playbook failure but don't stop workflow
+ 
+      - name: Check App Status with Curl
+        id: check_app_status
+        if: success()  # Only run if the playbook succeeded
+        run: |
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://v3.vitechinc.com/erpprd/app)
+          echo "Response Code: $RESPONSE_CODE"
+          if [ "$RESPONSE_CODE" -eq 200 ]; then
+            echo "APP_STATUS=up" >> $GITHUB_ENV
+          else
+            echo "APP_STATUS=down" >> $GITHUB_ENV
+          fi
+ 
+      - name: Send Notification on Playbook Failure
+        if: steps.run_playbook.outcome == 'failure'
+        run: |
+          ERROR_MSG=$(grep -iE "fatal:|error:" $GITHUB_WORKSPACE/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/logs/*.log | tail -n 20)
+          if [[ -z "$ERROR_MSG" ]]; then
+            ERROR_MSG="No specific error message found. Check GitHub Actions logs for details."
+          fi
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "ERPPRD-PROD Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\n\n Please check the GitHub Actions logs for more details.")" \
+            --subject "ERPPRD-PROD Patching Failed"
+ 
+      - name: Send Notification on Success
+        if: steps.run_playbook.outcome == 'success' && env.APP_STATUS == 'up'
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "**ERPPRD-PROD Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)")" \
+            --subject "ERPPRD-PROD Patching Completed"
+ 
+      - name: Send Notification on App Down
+        if: steps.run_playbook.outcome == 'success' && env.APP_STATUS == 'down'
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "**Attention: ERPPRD-PROD Patch Status: SUCCESS but App is Down**\n\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)")" \
+            --subject "ERPPRD-PROD Patching Completed but App is Down"
 
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+  execute-job-manual:
+    needs: start-runner-manual
+    runs-on: Internal_Tools_Automation_Server
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Clone Atlassian Docker Bamboo Agent Base
-      run: git clone https://bitbucket.org/atlassian-docker/docker-bamboo-agent-base.git agent-base
-
-    - name: Clone Atlassian Docker Shared Components
-      run: git clone https://bitbucket.org/atlassian-docker/docker-shared-components.git shared-components-upstream
-
-    - name: Compare Dockerfiles
-      id: compare
-      shell: bash
-      run: |
-        if [ -f agent-base/Dockerfile ] && [ -f Dockerfile.last ]; then
-          diff -q agent-base/Dockerfile Dockerfile.last > diff.log || true
-        else
-          echo "DIFF" > diff.log
-        fi
-        if [ -s diff.log ]; then
-          echo "changed=true" >> $GITHUB_OUTPUT
-        else
-          echo "changed=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-west-2
-
-    - name: Download all required S3 resources to workspace
-      run: |
-        set -x
-        mkdir -p s3-resources
-        aws s3 cp s3://bamboo-jdks-resources/ s3-resources/ --recursive --exclude '*' --include '*.tar.gz'
-        cd s3-resources/
-        for file in *.tar.gz; do tar -zxvf "$file"; rm -rf "$file"; done
-        [ -d s3-resources ] && ls -alh s3-resources || echo "s3-resources does not exist."
-        find s3-resources -type f -name "*.tar.gz" -exec rm -f {} +
-        rm -rf s3-resources/ant* s3-resources/glibc* s3-resources/grails*
-        find s3-resources -type d -empty -delete
-        [ -d s3-resources ] && ls -alh s3-resources || echo "s3-resources does not exist."
-        aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources/logstream_metrics_to_cloudwatch.sh
-    - name: Download Bamboo packages setup script from S3
-      run: aws s3 cp s3://bamboo-jdks-resources/shell_scripts/install_bamboo_packages_ephemeral.sh install_bamboo_packages_ephemeral.sh
-
-    - name: Send SNS notification and exit if no changes
-      if: steps.compare.outputs.changed == 'false'
-      run: |
-        aws sns publish \
-          --topic-arn "${SNS_TOPIC_ARN}" \
-          --message "[Bamboo Docker Build] No changes detected in upstream Dockerfile. No build or push required. Image remains unchanged." \
-          --region us-west-2
-        echo "Nothing changed from previous build. Exiting workflow."
-        #exit 0
-      env:
-        SNS_TOPIC_ARN: ${{ env.SNS_TOPIC_ARN }}
-
-    # Proceed only if changes detected
-    - name: Replace upstream Dockerfile with Amazon Linux version
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        cat > agent-base/Dockerfile <<'EOF'
-        ARG BASE_IMAGE=amazonlinux:2023
-        FROM $BASE_IMAGE
-
-        LABEL maintainer="dc-deployments@atlassian.com"
-        LABEL securitytxt="https://www.atlassian.com/.well-known/security.txt"
-
-        ENV APP_NAME=bamboo_agent
-        ENV RUN_USER=bamboo
-        ENV RUN_GROUP=bamboo
-        ENV RUN_UID=2005
-        ENV RUN_GID=2005
-
-        ENV BAMBOO_AGENT_HOME=/var/atlassian/application-data/bamboo-agent
-        ENV BAMBOO_AGENT_INSTALL_DIR=/opt/atlassian/bamboo
-        ENV KUBE_NUM_EXTRA_CONTAINERS=0
-        ENV EXTRA_CONTAINERS_REGISTRATION_DIRECTORY=/pbc/kube
-        ENV DISABLE_AGENT_AUTO_CAPABILITY_DETECTION=false
-
-        WORKDIR $BAMBOO_AGENT_HOME
-
-        COPY entrypoint.py \
-             probe-common.sh \
-             probe-startup.sh \
-             probe-readiness.sh \
-             pre-launch.sh \
-             shared-components/image/entrypoint_helpers.py  /
-        COPY shared-components/support                      /opt/atlassian/support
-        COPY config/*                                       /opt/atlassian/etc/
-        COPY s3-resources/ /opt/
-        COPY install_bamboo_packages_ephemeral.sh /install_bamboo_packages_ephemeral.sh
-
-        RUN yum update -y && \
-            yum upgrade -y && \
-            yum install -y \
-                git \
-                git-lfs \
-                openssh \
-                python3 \
-                python3-jinja2 \
-                python-is-python3 \
-                tar \
-                java-17-amazon-corretto-devel \
-                procps-ng \
-                awscli && \
-            yum clean all
-
-        RUN chmod +x /install_bamboo_packages_ephemeral.sh && /install_bamboo_packages_ephemeral.sh
-
-        RUN curl -fLo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-amd64 && \
-            chmod +x /tini && \
-            mv /tini /usr/local/bin/tini
-
-        ENV JAVA_HOME=/usr/lib/jvm/java-17-amazon-corretto
-        ENV PATH="$JAVA_HOME/bin:$PATH"
-
-        ARG MAVEN_VERSION=3.9.9
-        ENV MAVEN_HOME=/opt/maven
-        RUN mkdir -p ${MAVEN_HOME} \
-            && curl -L --silent https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar -xz --strip-components=1 -C "${MAVEN_HOME}" \
-            && ln -s ${MAVEN_HOME}/bin/mvn /usr/local/bin/mvn
-
-        ARG BAMBOO_VERSION
-        ENV BAMBOO_VERSION=${BAMBOO_VERSION}
-        ARG DOWNLOAD_URL=https://packages.atlassian.com/mvn/maven-atlassian-external/com/atlassian/bamboo/atlassian-bamboo-agent-installer/${BAMBOO_VERSION}/atlassian-bamboo-agent-installer-${BAMBOO_VERSION}.jar
-        ARG DOWNLOAD_USERNAME
-        ARG DOWNLOAD_PASSWORD
-
-        COPY bamboo-update-capability.sh /opt/bamboo-update-capability.sh
-        RUN chmod +x /opt/bamboo-update-capability.sh && /opt/bamboo-update-capability.sh
-
-        RUN groupadd --gid ${RUN_GID} ${RUN_GROUP} \
-            && useradd --uid ${RUN_UID} --gid ${RUN_GID} --home-dir ${BAMBOO_AGENT_HOME} --shell /bin/bash ${RUN_USER} \
-            && echo PATH=$PATH > /etc/environment \
-            && mkdir -p ${BAMBOO_AGENT_INSTALL_DIR} \
-            && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_INSTALL_DIR} \
-            && if [ -n "${DOWNLOAD_USERNAME}" ] && [ -n "${DOWNLOAD_PASSWORD}" ]; then \
-                curl -u ${DOWNLOAD_USERNAME}:${DOWNLOAD_PASSWORD} -L --silent ${DOWNLOAD_URL} -o "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar"; \
-            else \
-                curl -L --silent ${DOWNLOAD_URL} -o "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar"; \
-            fi \
-            && jar -tf "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar" \
-            && mkdir -p ${BAMBOO_AGENT_HOME}/conf ${BAMBOO_AGENT_HOME}/bin \
-            && export TEMP_VERSION=${JAVA_VERSION#*-} && export JAVA_MAJOR_VERSION=${TEMP_VERSION%%.*} \
-            && export TEMP_VERSION=${TEMP_VERSION#*.} && JAVA_MINOR_VERSION=${TEMP_VERSION%%.*} \
-            && chmod +x /bamboo-update-capability.sh && \
-               /bamboo-update-capability.sh "JDK" ${JAVA_HOME}/bin/java && \
-               /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}" ${JAVA_HOME}/bin/java && \
-               /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}.${JAVA_MINOR_VERSION}" ${JAVA_HOME}/bin/java && \
-               /bamboo-update-capability.sh "JDK ${JAVA_VERSION}" ${JAVA_HOME}/bin/java && \
-               /bamboo-update-capability.sh "Python" /usr/bin/python3 && \
-               /bamboo-update-capability.sh "Python 3" /usr/bin/python3 && \
-               /bamboo-update-capability.sh "Git" /usr/bin/git \
-            && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_HOME} \
-            && chmod -R 770 ${BAMBOO_AGENT_HOME} \
-            && for file in "/opt/atlassian/support /entrypoint.py /entrypoint_helpers.py /probe-common.sh /probe-startup.sh /probe-readiness.sh /pre-launch.sh /bamboo-update-capability.sh"; do \
-               chmod -R "u=rwX,g=rX,o=rX" ${file} && chown -R root ${file}; done \
-            && chmod +x /pre-launch.sh \
-            && chmod +x /entrypoint.py
-
-        CMD ["/usr/local/bin/tini", "--", "/entrypoint.py"]
-        ENTRYPOINT ["/pre-launch.sh"]
-        EOF
-
-    - name: Copy everything from agent-base to workspace
-      if: steps.compare.outputs.changed == 'true'
-      run: cp -r agent-base/* .
-
-    - name: Copy shared-components from upstream to workspace
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        rm -rf shared-components
-        cp -r shared-components-upstream shared-components
-
-    - name: Login to Amazon ECR
-      if: steps.compare.outputs.changed == 'true'
-      run: aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_REPO
-
-    - name: Build Docker image
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        docker build --build-arg BAMBOO_VERSION=${{ env.BAMBOO_VERSION }} -t vitech-bamboodr-repo .
-        TAG=$(date +%Y%m%d-%H%M%S)
-        echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
-        docker tag vitech-bamboodr-repo:latest $ECR_REPO:$TAG
-
-    - name: Push Docker image to ECR
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        docker push $ECR_REPO:${{ env.IMAGE_TAG }}
-
-    - name: Update Dockerfile.last in repo for future comparison
-      if: steps.compare.outputs.changed == 'true'
-      run: cp agent-base/Dockerfile Dockerfile.last
-
-    - name: Commit and push Dockerfile.last
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        git config --global user.email "actions@github.com"
-        git config --global user.name "GitHub Actions"
-        git add Dockerfile.last
-        git diff --staged --quiet || git commit -m "Update last known Bamboo Dockerfile [skip ci]"
-        git push
-      env:
-        GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-
-    - name: Send SNS notification with new Docker image tag
-      if: steps.compare.outputs.changed == 'true'
-      run: |
-        aws sns publish \
-          --topic-arn "${SNS_TOPIC_ARN}" \
-          --message "[Bamboo Docker Build] Update completed. New Docker image pushed: ${ECR_REPO}:${IMAGE_TAG}. Bamboo version: ${BAMBOO_VERSION}" \
-          --region us-west-2
-      env:
-        SNS_TOPIC_ARN: ${{ env.SNS_TOPIC_ARN }}
-        ECR_REPO: ${{ env.ECR_REPO }}
-        IMAGE_TAG: ${{ env.IMAGE_TAG }}
-        BAMBOO_VERSION: ${{ env.BAMBOO_VERSION }}
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+ 
+      - name: Validate Authentication Key
+        id: validate_key
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [[ "${{ inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
+            echo "Invalid authentication key."
+            # Send notification for invalid key
+            aws sns publish \
+              --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+              --message "$(echo -e "**ERPPRD-PROD Patching Aborted**\n\nInvalid authentication key provided. Patching process was not started.\n$(date +%Y-%m-%d)")" \
+              --subject "ERPPRD-PROD Patching Aborted: Invalid Key"
+            exit 1
+          fi
+ 
+      - name: Write defaults/main.yml file
+        run: |
+          sudo tee erpprd_patching/vars/main.yml > /dev/null <<EOF
+          vcusername: "${{ vars.VC_USERNAME }}"
+          vcpassword: "${{ secrets.VC_PASSWORD }}"
+          EOF
+ 
+      - name: Write inventory file
+        run: |
+          sudo tee erpprd_patching/tests/inventory > /dev/null <<EOF
+          [APP01-ERPPRD]
+          #VITECH-APP01-ERPPRD-TOM9
+          172.26.52.188 ansible_user=root ansible_ssh_pass="${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}"
+ 
+          [APP02-ERPPRD]
+          #VITECH-APP02-ERPPRD-TOM9
+          172.26.52.189 ansible_user=root ansible_ssh_pass="${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}"
+          EOF
+ 
+      - name: Run Ansible Playbook
+        id: run_playbook
+        run: |
+          sudo ansible-playbook erpprd_patching/tests/test.yml -i erpprd_patching/tests/inventory
+        continue-on-error: true  # Capture playbook failure but don't stop workflow
+ 
+      - name: Check App Status with Curl
+        id: check_app_status
+        if: success()  # Only run if the playbook succeeded
+        run: |
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://v3.vitechinc.com/erpprd/app)
+          echo "Response Code: $RESPONSE_CODE"
+          if [ "$RESPONSE_CODE" -eq 200 ]; then
+            echo "APP_STATUS=up" >> $GITHUB_ENV
+          else
+            echo "APP_STATUS=down" >> $GITHUB_ENV
+          fi
+ 
+      - name: Send Notification on Playbook Failure
+        if: steps.run_playbook.outcome == 'failure'
+        run: |
+          ERROR_MSG=$(grep -iE "fatal:|error:" $GITHUB_WORKSPACE/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/logs/*.log | tail -n 20)
+          if [[ -z "$ERROR_MSG" ]]; then
+            ERROR_MSG="No specific error message found. Check GitHub Actions logs for details."
+          fi
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "ERPPRD-PROD Patch Status: FAILED\n\n **Error Details:**\n$ERROR_MSG\n\n Please check the GitHub Actions logs for more details.")" \
+            --subject "ERPPRD-PROD Patching Failed"
+ 
+      - name: Send Notification on Success
+        if: steps.run_playbook.outcome == 'success' && env.APP_STATUS == 'up'
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "**ERPPRD-PROD Patch Status: SUCCESS**\n\nThe patching process for Tomcat has completed successfully.\nApplication is up and running with 200 status.\n$(date +%Y-%m-%d)")" \
+            --subject "ERPPRD-PROD Patching Completed"
+ 
+      - name: Send Notification on App Down
+        if: steps.run_playbook.outcome == 'success' && env.APP_STATUS == 'down'
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$(echo -e "**Attention: ERPPRD-PROD Patch Status: SUCCESS but App is Down**\n\nThe patching process has completed successfully, but the application is down. Please verify immediately.\n$(date +%Y-%m-%d)")" \
+            --subject "ERPPRD-PROD Patching Completed but App is Down"
 
   stop-runner:
-    needs: [build-and-push]
+    needs: [execute-job-scheduled, execute-job-manual]
     if: |
-      needs.build-and-push.result != 'skipped'
+      needs.execute-job-scheduled.result != 'skipped' ||
+      needs.execute-job-manual.result != 'skipped'
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
