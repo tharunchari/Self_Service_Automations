@@ -28,7 +28,12 @@ jobs:
           sudo yum install -y docker
           sudo systemctl start docker
           sudo systemctl enable docker
-
+          
+    - name: Ensure runner user is in docker group
+      run: |
+        sudo usermod -aG docker $(whoami)
+        newgrp docker
+        
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
@@ -214,7 +219,7 @@ jobs:
     - name: Build Docker image
       if: steps.compare.outputs.changed == 'true'
       run: |
-        docker build --build-arg BAMBOO_VERSION=${{ env.BAMBOO_VERSION }} -t vitech-bamboodr-repo .
+        sudo docker build --build-arg BAMBOO_VERSION=${{ env.BAMBOO_VERSION }} -t vitech-bamboodr-repo .
         TAG=$(date +%Y%m%d-%H%M%S)
         echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
         docker tag vitech-bamboodr-repo:latest $ECR_REPO:$TAG
