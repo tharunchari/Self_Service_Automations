@@ -6,15 +6,8 @@ on:
     - cron: '30 5 1 * *'
 
 jobs:
-  start-runner:
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
-    with:
-      runner_name: "Internal_Tools_Automation_Server"
-    secrets: inherit
-
   build-and-push:
-    needs: start-runner
-    runs-on: Internal_Tools_Automation_Server
+    runs-on: ubuntu-latest
     env:
       ECR_REPO: 389180911583.dkr.ecr.us-west-2.amazonaws.com/vitech-bamboodr-repo
       TINI_VERSION: v0.19.0
@@ -57,7 +50,7 @@ jobs:
 
     - name: Download all required S3 resources to workspace
       run: |
-        mkdir -p s3-resources
+        mkdir s3-resources
         aws s3 cp s3://bamboo-jdks-resources/ s3-resources/ --recursive --exclude '*' --include '*.tar.gz'
         for file in s3-resources/*.tar.gz; do tar -zxvf "$file"; rm -rf "$file"; done
         [ -d s3-resources ] && ls -alh s3-resources || echo "s3-resources does not exist."
@@ -89,19 +82,24 @@ jobs:
         cat > agent-base/Dockerfile <<'EOF'
         ARG BASE_IMAGE=amazonlinux:2023
         FROM $BASE_IMAGE
+
         LABEL maintainer="dc-deployments@atlassian.com"
         LABEL securitytxt="https://www.atlassian.com/.well-known/security.txt"
+
         ENV APP_NAME=bamboo_agent
         ENV RUN_USER=bamboo
         ENV RUN_GROUP=bamboo
         ENV RUN_UID=2005
         ENV RUN_GID=2005
+
         ENV BAMBOO_AGENT_HOME=/var/atlassian/application-data/bamboo-agent
         ENV BAMBOO_AGENT_INSTALL_DIR=/opt/atlassian/bamboo
         ENV KUBE_NUM_EXTRA_CONTAINERS=0
         ENV EXTRA_CONTAINERS_REGISTRATION_DIRECTORY=/pbc/kube
         ENV DISABLE_AGENT_AUTO_CAPABILITY_DETECTION=false
+
         WORKDIR $BAMBOO_AGENT_HOME
+
         COPY entrypoint.py \
              probe-common.sh \
              probe-startup.sh \
@@ -110,9 +108,10 @@ jobs:
              shared-components/image/entrypoint_helpers.py  /
         COPY shared-components/support                      /opt/atlassian/support
         COPY config/*                                       /opt/atlassian/etc/
-        COPY s3-resources/ /opt/
+        COPY s3-resources /opt
         COPY install_bamboo_packages_ephemeral.sh /install_bamboo_packages_ephemeral.sh
         RUN chmod +x /install_bamboo_packages_ephemeral.sh && /install_bamboo_packages_ephemeral.sh
+
         RUN yum update -y && \
             yum upgrade -y && \
             yum install -y \
@@ -128,6 +127,8 @@ jobs:
                 awscli && \
             yum clean all
 
+        RUN chmod +x /install_bamboo_packages_ephemeral.sh && /install_bamboo_packages_ephemeral.sh
+
         RUN curl -fLo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-amd64 && \
             chmod +x /tini && \
             mv /tini /usr/local/bin/tini
@@ -140,15 +141,18 @@ jobs:
         RUN mkdir -p ${MAVEN_HOME} \
             && curl -L --silent https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar -xz --strip-components=1 -C "${MAVEN_HOME}" \
             && ln -s ${MAVEN_HOME}/bin/mvn /usr/local/bin/mvn
+
         ARG BAMBOO_VERSION
         ENV BAMBOO_VERSION=${BAMBOO_VERSION}
         ARG DOWNLOAD_URL=https://packages.atlassian.com/mvn/maven-atlassian-external/com/atlassian/bamboo/atlassian-bamboo-agent-installer/${BAMBOO_VERSION}/atlassian-bamboo-agent-installer-${BAMBOO_VERSION}.jar
         ARG DOWNLOAD_USERNAME
         ARG DOWNLOAD_PASSWORD
+
         COPY bamboo-update-capability.sh /
+
         RUN groupadd --gid ${RUN_GID} ${RUN_GROUP} \
             && useradd --uid ${RUN_UID} --gid ${RUN_GID} --home-dir ${BAMBOO_AGENT_HOME} --shell /bin/bash ${RUN_USER} \
-            && echo PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin > /etc/environment \
+            && echo PATH=$PATH > /etc/environment \
             && mkdir -p ${BAMBOO_AGENT_INSTALL_DIR} \
             && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_INSTALL_DIR} \
             && if [ -n "${DOWNLOAD_USERNAME}" ] && [ -n "${DOWNLOAD_PASSWORD}" ]; then \
@@ -156,9 +160,10 @@ jobs:
             else \
                 curl -L --silent ${DOWNLOAD_URL} -o "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar"; \
             fi \
-            && test -s "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar" || (echo "Download failed or file empty!"; exit 2) \
             && jar -tf "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar" \
             && mkdir -p ${BAMBOO_AGENT_HOME}/conf ${BAMBOO_AGENT_HOME}/bin \
+            && export TEMP_VERSION=${JAVA_VERSION#*-} && export JAVA_MAJOR_VERSION=${TEMP_VERSION%%.*} \
+            && export TEMP_VERSION=${TEMP_VERSION#*.} && JAVA_MINOR_VERSION=${TEMP_VERSION%%.*} \
             && chmod +x /bamboo-update-capability.sh && \
                /bamboo-update-capability.sh "JDK" ${JAVA_HOME}/bin/java && \
                /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}" ${JAVA_HOME}/bin/java && \
@@ -195,7 +200,7 @@ jobs:
     - name: Build Docker image
       if: steps.compare.outputs.changed == 'true'
       run: |
-        sudo docker build --build-arg BAMBOO_VERSION=${{ env.BAMBOO_VERSION }} -t vitech-bamboodr-repo .
+        docker build --build-arg BAMBOO_VERSION=${{ env.BAMBOO_VERSION }} -t vitech-bamboodr-repo .
         TAG=$(date +%Y%m%d-%H%M%S)
         echo "IMAGE_TAG=$TAG" >> $GITHUB_ENV
         docker tag vitech-bamboodr-repo:latest $ECR_REPO:$TAG
@@ -232,12 +237,3 @@ jobs:
         ECR_REPO: ${{ env.ECR_REPO }}
         IMAGE_TAG: ${{ env.IMAGE_TAG }}
         BAMBOO_VERSION: ${{ env.BAMBOO_VERSION }}
-
-  stop-runner:
-    needs: [build-and-push]
-    if: |
-      needs.build-and-push.result != 'skipped'
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
-    with:
-      runner_name: "Internal_Tools_Automation_Server"
-    secrets: inherit
