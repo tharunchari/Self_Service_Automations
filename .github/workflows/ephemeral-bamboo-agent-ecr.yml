@@ -109,9 +109,6 @@ jobs:
         COPY shared-components/support                      /opt/atlassian/support
         COPY config/*                                       /opt/atlassian/etc/
         COPY s3-resources/* /opt/
-        RUN ls -la /opt && \
-        chown -R bamboo:bamboo /opt && \
-        chmod -R 777 /opt
         COPY install_bamboo_packages_ephemeral.sh /install_bamboo_packages_ephemeral.sh
         RUN chmod +x /install_bamboo_packages_ephemeral.sh && /install_bamboo_packages_ephemeral.sh
 
@@ -181,6 +178,10 @@ jobs:
                chmod -R "u=rwX,g=rX,o=rX" ${file} && chown -R root ${file}; done \
             && chmod +x /pre-launch.sh \
             && chmod +x /entrypoint.py
+
+        RUN ls -la /opt && \
+        chown -R bamboo:bamboo /opt && \
+        chmod -R 777 /opt
 
         CMD ["/usr/local/bin/tini", "--", "/entrypoint.py"]
         ENTRYPOINT ["/pre-launch.sh"]
