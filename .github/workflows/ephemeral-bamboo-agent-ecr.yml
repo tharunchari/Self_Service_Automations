@@ -52,7 +52,11 @@ jobs:
       run: |
         set -x
         mkdir -p s3-resources
-        aws s3 cp s3://bamboo-jdks-resources/ s3-resources/ --recursive --exclude '*' --include '*.tar.gz'
+        aws s3 cp s3://bamboo-jdks-resources/ s3-resources/ --recursive --exclude "*" --include "*.tar.gz"
+        if ! ls s3-resources/*.tar.gz 1> /dev/null 2>&1; then
+          echo "No .tar.gz files downloaded from S3. Failing the job."
+          exit 1
+        fi
         
         # Only extract if files exist
         if ls s3-resources/*.tar.gz 1> /dev/null 2>&1; then
@@ -64,7 +68,7 @@ jobs:
           echo "No .tar.gz files found in s3-resources."
         fi
         ls -la s3-resources
-        #aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources/logstream_metrics_to_cloudwatch.sh
+        aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources/logstream_metrics_to_cloudwatch.sh
 
     - name: Download Bamboo packages setup script from S3
       run: aws s3 cp s3://bamboo-jdks-resources/shell_scripts/install_bamboo_packages_ephemeral.sh install_bamboo_packages_ephemeral.sh
