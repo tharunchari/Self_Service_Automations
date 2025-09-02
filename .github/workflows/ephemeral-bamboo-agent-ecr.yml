@@ -48,44 +48,40 @@ jobs:
         aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
         aws-region: us-west-2
 
-    - name: Download all required S3 resources to workspace
+    - name: Download and extract S3 resources directly to s3-resources-dirs
       run: |
         set -x
-        mkdir -p s3-resources
-        aws s3 cp s3://bamboo-jdks-resources/ s3-resources/ --recursive --exclude "*" --include "*.tar.gz"
-        if ! ls s3-resources/*.tar.gz 1> /dev/null 2>&1; then
+    
+        # Create directories
+        mkdir -p s3-resources-tar
+        mkdir -p s3-resources-dirs
+    
+        # Download all tar.gz files to s3-resources-tar
+        aws s3 cp s3://bamboo-jdks-resources/ s3-resources-tar/ --recursive --exclude "*" --include "*.tar.gz"
+    
+        # Fail if none downloaded
+        if ! ls s3-resources-tar/*.tar.gz 1> /dev/null 2>&1; then
           echo "No .tar.gz files downloaded from S3. Failing the job."
           exit 1
         fi
-        
-        for file in s3-resources/*.tar.gz; do
-          tar -zxvf "$file" -C s3-resources
+    
+        # Extract each tar.gz to s3-resources-dirs/ with its own subdir
+        for file in s3-resources-tar/*.tar.gz; do
+          # Get the base name without extension
+          dirname=$(basename "$file" .tar.gz)
+          mkdir -p "s3-resources-dirs/$dirname"
+          tar -zxvf "$file" -C "s3-resources-dirs/$dirname"
           rm -f "$file"
         done
-        ls -la s3-resources
-        aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources/logstream_metrics_to_cloudwatch.sh
+    
+        # List the extracted directories
+        ls -la s3-resources-dirs
+    
+        # Download additional script as needed
+        aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources-dirs/logstream_metrics_to_cloudwatch.sh
 
     - name: Download Bamboo packages setup script from S3
       run: aws s3 cp s3://bamboo-jdks-resources/shell_scripts/install_bamboo_packages_ephemeral.sh install_bamboo_packages_ephemeral.sh
-
-    - name: Copy only directories and verify
-      run: |
-        mkdir -p s3-resources-dirs
-        for dir in s3-resources/*/; do
-          cp -r "$dir" s3-resources-dirs/
-        done
-    
-        # List directories in source and destination
-        find s3-resources -mindepth 1 -maxdepth 1 -type d | sort > /tmp/original_dirs.txt
-        find s3-resources-dirs -mindepth 1 -maxdepth 1 -type d | sort > /tmp/copied_dirs.txt
-    
-        # Compare the lists; fail the job if not identical
-        if ! diff /tmp/original_dirs.txt /tmp/copied_dirs.txt; then
-          echo "ERROR: Not all directories were copied successfully!"
-          exit 1
-        else
-          echo "All directories were copied successfully."
-        fi
 
     - name: Send SNS notification and exit if no changes
       if: steps.compare.outputs.changed == 'false'
