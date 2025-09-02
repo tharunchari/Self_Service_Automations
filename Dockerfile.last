@@ -26,7 +26,7 @@ COPY entrypoint.py \
      shared-components/image/entrypoint_helpers.py  /
 COPY shared-components/support                      /opt/atlassian/support
 COPY config/*                                       /opt/atlassian/etc/
-COPY s3-resources/*                                 /opt/
+COPY s3-resources-dirs/*                            /opt/
 COPY install_bamboo_packages_ephemeral.sh /install_bamboo_packages_ephemeral.sh
 RUN chmod +x /install_bamboo_packages_ephemeral.sh && /install_bamboo_packages_ephemeral.sh
 
