@@ -129,7 +129,6 @@ jobs:
         COPY shared-components/support                      /opt/atlassian/support
         COPY config/*                                       /opt/atlassian/etc/
         COPY s3-resources-dirs/*                            /opt/
-        COPY s3-resources/logstream_metrics_to_cloudwatch.sh                          /opt/logstream_metrics_to_cloudwatch.sh
         COPY install_bamboo_packages_ephemeral.sh /install_bamboo_packages_ephemeral.sh
         RUN chmod +x /install_bamboo_packages_ephemeral.sh && /install_bamboo_packages_ephemeral.sh
 
