@@ -72,12 +72,11 @@ jobs:
           exit 1
         fi
     
-        # Extract each tar.gz to s3-resources-dirs/ with its own subdir
+        # Extract each tar.gz to s3-resources-dirs/ with its own subdir, removing the top-level folder
         for file in s3-resources-tar/*.tar.gz; do
-          # Get the base name without extension
           dirname=$(basename "$file" .tar.gz)
           mkdir -p "s3-resources-dirs/$dirname"
-          tar -zxvf "$file" -C "s3-resources-dirs/$dirname"
+          tar -zxvf "$file" -C "s3-resources-dirs/$dirname" --strip-components=1
           rm -f "$file"
         done
     
@@ -86,7 +85,7 @@ jobs:
     
         # Download additional script as needed
         aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources-dirs/logstream_metrics_to_cloudwatch.sh
-
+        
     - name: Download Bamboo packages setup script from S3
       run: aws s3 cp s3://bamboo-jdks-resources/shell_scripts/install_bamboo_packages_ephemeral.sh install_bamboo_packages_ephemeral.sh
 
