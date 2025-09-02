@@ -21,6 +21,7 @@ jobs:
       BAMBOO_VERSION: 10.2.5
       SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
 
+    steps:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
