@@ -58,15 +58,10 @@ jobs:
           exit 1
         fi
         
-        # Only extract if files exist
-        if ls s3-resources/*.tar.gz 1> /dev/null 2>&1; then
-          for file in s3-resources/*.tar.gz; do
-            tar -zxvf "$file"
-            rm -f "$file"
-          done
-        else
-          echo "No .tar.gz files found in s3-resources."
-        fi
+        for file in s3-resources/*.tar.gz; do
+          tar -zxvf "$file" -C s3-resources
+          rm -f "$file"
+        done
         ls -la s3-resources
         aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources/logstream_metrics_to_cloudwatch.sh
 
