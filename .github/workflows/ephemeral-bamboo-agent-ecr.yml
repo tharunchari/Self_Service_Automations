@@ -50,14 +50,19 @@ jobs:
 
     - name: Download all required S3 resources to workspace
       run: |
-        mkdir s3-resources
+        set -x
+        mkdir -p s3-resources
         aws s3 cp s3://bamboo-jdks-resources/ s3-resources/ --recursive --exclude '*' --include '*.tar.gz'
-        for file in s3-resources/*.tar.gz; do tar -zxvf "$file"; rm -rf "$file"; done
-        [ -d s3-resources ] && ls -alh s3-resources || echo "s3-resources does not exist."
-        find s3-resources -type f -name "*.tar.gz" -exec rm -f {} +
-        rm -rf s3-resources/ant* s3-resources/glibc* s3-resources/grails*
-        find s3-resources -type d -empty -delete
-        [ -d s3-resources ] && ls -alh s3-resources || echo "s3-resources does not exist."
+        
+        # Only extract if files exist
+        if ls s3-resources/*.tar.gz 1> /dev/null 2>&1; then
+          for file in s3-resources/*.tar.gz; do
+            tar -zxvf "$file"
+            rm -f "$file"
+          done
+        else
+          echo "No .tar.gz files found in s3-resources."
+        fi
         aws s3 cp s3://bamboo-jdks-resources/shell_scripts/logstream_metrics_to_cloudwatch.sh s3-resources/logstream_metrics_to_cloudwatch.sh
 
     - name: Download Bamboo packages setup script from S3
