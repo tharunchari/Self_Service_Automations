@@ -21,19 +21,6 @@ jobs:
       BAMBOO_VERSION: 10.2.5
       SNS_TOPIC_ARN: arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching
 
-    steps:
-    - name: Install Docker & dependencies on runner (using yum)
-      run: |
-          sudo yum update -y
-          sudo yum install -y docker
-          sudo systemctl start docker
-          sudo systemctl enable docker
-          
-    - name: Ensure runner user is in docker group
-      run: |
-        sudo usermod -aG docker $(whoami)
-        newgrp docker
-        
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
@@ -101,24 +88,19 @@ jobs:
         cat > agent-base/Dockerfile <<'EOF'
         ARG BASE_IMAGE=amazonlinux:2023
         FROM $BASE_IMAGE
-
         LABEL maintainer="dc-deployments@atlassian.com"
         LABEL securitytxt="https://www.atlassian.com/.well-known/security.txt"
-
         ENV APP_NAME=bamboo_agent
         ENV RUN_USER=bamboo
         ENV RUN_GROUP=bamboo
         ENV RUN_UID=2005
         ENV RUN_GID=2005
-
         ENV BAMBOO_AGENT_HOME=/var/atlassian/application-data/bamboo-agent
         ENV BAMBOO_AGENT_INSTALL_DIR=/opt/atlassian/bamboo
         ENV KUBE_NUM_EXTRA_CONTAINERS=0
         ENV EXTRA_CONTAINERS_REGISTRATION_DIRECTORY=/pbc/kube
         ENV DISABLE_AGENT_AUTO_CAPABILITY_DETECTION=false
-
         WORKDIR $BAMBOO_AGENT_HOME
-
         COPY entrypoint.py \
              probe-common.sh \
              probe-startup.sh \
@@ -129,7 +111,7 @@ jobs:
         COPY config/*                                       /opt/atlassian/etc/
         COPY s3-resources/ /opt/
         COPY install_bamboo_packages_ephemeral.sh /install_bamboo_packages_ephemeral.sh
-
+        RUN chmod +x /install_bamboo_packages_ephemeral.sh && /install_bamboo_packages_ephemeral.sh
         RUN yum update -y && \
             yum upgrade -y && \
             yum install -y \
@@ -145,8 +127,6 @@ jobs:
                 awscli && \
             yum clean all
 
-        RUN chmod +x /install_bamboo_packages_ephemeral.sh && /install_bamboo_packages_ephemeral.sh
-
         RUN curl -fLo /tini https://github.com/krallin/tini/releases/download/v0.19.0/tini-static-amd64 && \
             chmod +x /tini && \
             mv /tini /usr/local/bin/tini
@@ -159,21 +139,15 @@ jobs:
         RUN mkdir -p ${MAVEN_HOME} \
             && curl -L --silent https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz | tar -xz --strip-components=1 -C "${MAVEN_HOME}" \
             && ln -s ${MAVEN_HOME}/bin/mvn /usr/local/bin/mvn
-
         ARG BAMBOO_VERSION
         ENV BAMBOO_VERSION=${BAMBOO_VERSION}
         ARG DOWNLOAD_URL=https://packages.atlassian.com/mvn/maven-atlassian-external/com/atlassian/bamboo/atlassian-bamboo-agent-installer/${BAMBOO_VERSION}/atlassian-bamboo-agent-installer-${BAMBOO_VERSION}.jar
         ARG DOWNLOAD_USERNAME
         ARG DOWNLOAD_PASSWORD
-
-        # Add diagnostics to catch missing/corrupt scripts
-        COPY bamboo-update-capability.sh /opt/bamboo-update-capability.sh
-        RUN ls -l /opt/ && head -20 /opt/bamboo-update-capability.sh
-        RUN chmod +x /opt/bamboo-update-capability.sh && /opt/bamboo-update-capability.sh
-
+        COPY bamboo-update-capability.sh /
         RUN groupadd --gid ${RUN_GID} ${RUN_GROUP} \
             && useradd --uid ${RUN_UID} --gid ${RUN_GID} --home-dir ${BAMBOO_AGENT_HOME} --shell /bin/bash ${RUN_USER} \
-            && echo PATH=$PATH > /etc/environment \
+            && echo PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin > /etc/environment \
             && mkdir -p ${BAMBOO_AGENT_INSTALL_DIR} \
             && chown -R ${RUN_USER}:root ${BAMBOO_AGENT_INSTALL_DIR} \
             && if [ -n "${DOWNLOAD_USERNAME}" ] && [ -n "${DOWNLOAD_PASSWORD}" ]; then \
@@ -181,10 +155,9 @@ jobs:
             else \
                 curl -L --silent ${DOWNLOAD_URL} -o "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar"; \
             fi \
+            && test -s "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar" || (echo "Download failed or file empty!"; exit 2) \
             && jar -tf "${BAMBOO_AGENT_INSTALL_DIR}/atlassian-bamboo-agent-installer.jar" \
             && mkdir -p ${BAMBOO_AGENT_HOME}/conf ${BAMBOO_AGENT_HOME}/bin \
-            && export TEMP_VERSION=${JAVA_VERSION#*-} && export JAVA_MAJOR_VERSION=${TEMP_VERSION%%.*} \
-            && export TEMP_VERSION=${TEMP_VERSION#*.} && JAVA_MINOR_VERSION=${TEMP_VERSION%%.*} \
             && chmod +x /bamboo-update-capability.sh && \
                /bamboo-update-capability.sh "JDK" ${JAVA_HOME}/bin/java && \
                /bamboo-update-capability.sh "system.jdk.JDK ${JAVA_MAJOR_VERSION}" ${JAVA_HOME}/bin/java && \
