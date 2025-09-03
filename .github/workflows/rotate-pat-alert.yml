@@ -38,7 +38,7 @@ jobs:
 
             aws sns publish \
               --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
-              --message "Reminder: It's time to rotate GitHub PATs for all organizations. The last Saturday of this month is ${last_saturday}. Please make sure to rotate the PATs before then." \
+              --message "Reminder: It's time to rotate GitHub PATs for all organizations. The last Saturday of this month. Please make sure to rotate the PATs before then." \
               --subject "GitHub PAT Rotation Reminder"
           else
             echo "Today is not the last Thursday, skipping alert."
