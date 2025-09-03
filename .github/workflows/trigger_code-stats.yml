@@ -3,7 +3,7 @@ name: Trigger Generate Code Stats
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 2 * *'  # every month on 2nd at 00:00 AM UTC
+    - cron: '0 0 3 * *'  # every month on 2nd at 00:00 AM UTC
  
 jobs:
   Trigger_Generate_Code_Stats:
@@ -12,7 +12,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}  # GitHub PAT with repo + workflow scope
       AWS_REGION: ${{ vars.AWS_REGION }}
-      EXCLUDED_REPOS: "Internal-Tools,central-workflows,Internal-Tools_sub_workflows,ImagingViewer,InterfaceBulkupload,MarketplaceStore,Nextgen_CodeQL_Test,CoreAdmin_CodeQL_Test,ConfigurationStore,CoreAdminReact,DLockService,Backport,BackportHack,acttesting,changed-files_backup,codacy-analysis-cli-action,config-transformer,configure-aws-credentials,connector-x,digital-automation,ghas-jira-integration,github-runner-testing,github-securityreport-action,md2jira,multitenanttool,pmd-github-action,productutilities,pull-request-analytics,quality-tools,scripts_queue,v3-graphql,v3-graphql-js,v3-lambda-core,v3-lambda-host,JSON_Extract_Tool,KafkaTestTool,Proxy-Manager"
+      EXCLUDED_REPOS: "Internal-Tools,central-workflows,Internal-Tools_sub_workflows,ImagingViewer,InterfaceBulkupload,MarketplaceStore,Nextgen_CodeQL_Test,CoreAdmin_CodeQL_Test,ConfigurationStore,CoreAdminReact,DLockService,Backport,BackportHack,acttesting,changed-files_backup,codacy-analysis-cli-action,config-transformer,configure-aws-credentials,connector-x,digital-automation,ghas-jira-integration,github-runner-testing,github-securityreport-action,md2jira,multitenanttool,pmd-github-action,productutilities,pull-request-analytics,quality-tools,v3-graphql,v3-graphql-js,v3-lambda-core,v3-lambda-host,JSON_Extract_Tool,Proxy-Manager"
       WORKFLOW_FILE: ".github/workflows/code-stats.yml"
       SNS_TOPIC_ARN: "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
  
