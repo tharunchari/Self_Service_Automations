@@ -1,37 +1,39 @@
-name: Get GHAS and Copilot Users
+name: Export GHAS and Copilot Users
 
 on:
   workflow_dispatch:
 
 jobs:
-  fetch-users:
+  export-users:
     runs-on: ubuntu-latest
     steps:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Get Organization Members (GHAS candidates)
+      - name: Get GHAS users (org members of vitechsystems)
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           curl -s -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/orgs/vitechsystems/members" > org_members.json
-          jq . org_members.json
+          echo "login" > ghas_users.csv
+          jq -r '.[] | [.login] | @csv' org_members.json >> ghas_users.csv
 
-      - name: Get Copilot Users (Seats)
+      - name: Get Copilot users (seats in VitechCopilot)
         env:
-          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          GH_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
         run: |
           curl -s -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/orgs/vitechsystems/copilot/billing/seats" > copilot_seats.json
-          jq . copilot_seats.json
+            "https://api.github.com/orgs/VitechCopilot/copilot/billing/seats" > copilot_seats.json
+          echo "login,name,email" > copilot_users.csv
+          jq -r '.seats[]? | [.user.login, .user.name, .user.email] | @csv' copilot_seats.json >> copilot_users.csv
 
-      - name: Upload results
+      - name: Upload CSVs
         uses: actions/upload-artifact@v4
         with:
           name: ghas-and-copilot-users
           path: |
-            org_members.json
-            copilot_seats.json
+            ghas_users.csv
+            copilot_users.csv
