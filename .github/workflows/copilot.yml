@@ -35,4 +35,4 @@ jobs:
           aws-region: us-east-1
  
       - name: Run report script
-        run: python3 PYTHON_Script/
+        run: python3 PYTHON_Script/Copilot.py
