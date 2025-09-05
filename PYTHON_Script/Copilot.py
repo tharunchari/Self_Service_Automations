@@ -1,11 +1,13 @@
 import requests
+
 import os
+
 import pandas as pd
  
 GITHUB_TOKEN = os.environ["CLASSIC_PAT"]
 
 ENTERPRISE = "vitech"
-
+ 
 HEADERS = {
 
     "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -24,66 +26,54 @@ def github_api(url):
  
 rows = []
  
-# 1. Get all orgs in enterprise
+# ✅ Get Copilot usage at enterprise level
 
-orgs = github_api(f"https://api.github.com/enterprises/{ENTERPRISE}/orgs")
+usage = github_api(f"https://api.github.com/enterprises/{ENTERPRISE}/copilot/usage")
  
-for org in orgs:
+for user in usage.get("breakdown", []):
 
-    org_login = org["login"]
+    username = user.get("login")
+
+    org = user.get("organization")
+
+    if not username:
+
+        continue
  
-    # 2. Get Copilot users in org
+    # Example: pull last commit for that user from a known repo
 
-    usage = github_api(f"https://api.github.com/orgs/{org_login}/copilot/usage")
+    # (to expand: iterate through repos if needed)
+
+    repo = "CoreAdmin"
+
+    commit_url = f"https://api.github.com/repos/{org}/{repo}/commits?author={username}&per_page=1"
+
+    commits = github_api(commit_url)
  
-    for user in usage.get("breakdown", []):
+    if isinstance(commits, list) and commits:
 
-        username = user.get("login")
+        commit = commits[0]["commit"]
 
-        if not username:
+        last_date = commit["committer"]["date"]
 
-            continue
+        last_email = commit["committer"]["email"]
+
+    else:
+
+        last_date = last_email = None
  
-        # 3. Get all repos in org
+    rows.append({
 
-        repos = github_api(f"https://api.github.com/orgs/{org_login}/repos?per_page=100")
+        "User login": username,
+
+        "Organization / repository": f"{org}/{repo}",
+
+        "Last pushed date": last_date,
+
+        "Last pushed email": last_email
+
+    })
  
-        for repo in repos:
-
-            repo_name = repo["name"]
- 
-            # 4. Get last commit for that user in this repo
-
-            commit_url = f"https://api.github.com/repos/{org_login}/{repo_name}/commits?author={username}&per_page=1"
-
-            commits = github_api(commit_url)
- 
-            if isinstance(commits, list) and commits:
-
-                commit = commits[0]["commit"]
-
-                last_date = commit["committer"]["date"]
-
-                last_email = commit["committer"]["email"]
-
-            else:
-
-                last_date = last_email = None
- 
-            rows.append({
-
-                "User login": username,
-
-                "Organization / repository": f"{org_login}/{repo_name}",
-
-                "Last pushed date": last_date,
-
-                "Last pushed email": last_email
-
-            })
- 
-# 5. Save to Excel
-
 df = pd.DataFrame(rows)
 
 df.to_excel("enterprise_copilot_usage.xlsx", index=False)
