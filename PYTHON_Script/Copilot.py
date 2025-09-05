@@ -8,7 +8,7 @@ ENTERPRISE = "vitech"
 
 HEADERS = {
 
-    "Authorization": f"Bearer {TOKEN}",
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
 
     "Accept": "application/vnd.github+json"
 
