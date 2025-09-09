@@ -26,9 +26,9 @@ on:
         required: true
       VITECH_LINUX_ZOIO_PASSWORD:
         required: false
-      confluencedr_ACCESS_TOKEN:
+      CONFLUENCEDR_ACCESS_TOKEN:
         required: false
-      confluence_ACCESS_TOKEN:
+      CONFLUENCE_ACCESS_TOKEN:
         required: false      
 
 jobs:
@@ -45,7 +45,7 @@ jobs:
             echo "Using confluencedr configuration"
             echo "ASG_NAME=CONFLUENCEAWSDR-ConfluenceAWSPRODDScalingGroup-q2PbT1TX3oOj" >> $GITHUB_ENV
             echo "URL=https://confluencedr.vitechinc.com/confluencedr" >> $GITHUB_ENV
-            echo "TOKEN=${{ secrets.confluencedr_ACCESS_TOKEN }}" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.CONFLUENCEDR_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
             echo "SUBJECT_PREFIX=Restart of ConfluenceDR Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=ConfluenceDR patching is scheduled." >> $GITHUB_ENV
@@ -57,7 +57,7 @@ jobs:
             echo "Using confluence configuration"
             echo "ASG_NAME=CONFLUENCEPROD-ConfluenceAWSPRODDScalingGroup-zAmOVDq6H2v8" >> $GITHUB_ENV
             echo "URL=https://confluence.vitechinc.com/confluence" >> $GITHUB_ENV
-            echo "TOKEN=${{ secrets.confluence_ACCESS_TOKEN }}" >> $GITHUB_ENV
+            echo "TOKEN=${{ secrets.CONFLUENCE_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
             echo "SUBJECT_PREFIX=Restart of Confluence Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=Confluence patching is scheduled." >> $GITHUB_ENV  
