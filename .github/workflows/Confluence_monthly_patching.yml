@@ -47,7 +47,7 @@ jobs:
       CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
       CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
       VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
-      CONFLUENCEDR_ACCESS_TOKEN: ${{ secrets.confluencedr_ACCESS_TOKEN }}
+      CONFLUENCEDR_ACCESS_TOKEN: ${{ secrets.CONFLUENCEDR_ACCESS_TOKEN }}
 
   notify_failure_confluencedr:
     needs: trigger_confluencedr
@@ -137,7 +137,7 @@ jobs:
       CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
       CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
       VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
-      CONFLUENCE_ACCESS_TOKEN: ${{ secrets.confluence_ACCESS_TOKEN }}
+      CONFLUENCE_ACCESS_TOKEN: ${{ secrets.CONFLUENCE_ACCESS_TOKEN }}
 
   notify_failure_confluence:
     needs: trigger_confluence_prod
