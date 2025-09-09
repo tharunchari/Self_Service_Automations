@@ -1,0 +1,158 @@
+name: Monthly Confluence Patch Schedule
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 8-14 * 4'    # 2nd Thursday (8th-14th) at 2AM UTC for confluencedr
+    - cron: '0 10 8-14 * 5'   # 2nd Friday (8th-14th) at 10AM UTC for prod notification
+    - cron: '0 2 9-15 * 6'    # 2nd Saturday (9th-15th) at 2AM UTC for prod patching
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  check_2nd_thursday:
+    name: Check if today is the 2nd Thursday of the month
+    runs-on: ubuntu-latest
+    outputs:
+      is_2nd_thursday: ${{ steps.check.outputs.is_2nd_thursday }}
+    steps:
+      - id: check
+        run: |
+          day_of_month=$(date -u +'%d')
+          weekday=$(date -u +'%u')
+          # 2nd Thursday: Day 8-14 and weekday == 4 (Thursday)
+          if [ "$weekday" -eq 4 ] && [ "$day_of_month" -ge 8 ] && [ "$day_of_month" -le 14 ]; then
+            echo "is_2nd_thursday=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_2nd_thursday=false" >> $GITHUB_OUTPUT
+          fi
+
+  trigger_confluencedr:
+    name: Trigger ConfluenceDR Patching (2nd Thursday)
+    needs: check_2nd_thursday
+    if: needs.check_2nd_thursday.outputs.is_2nd_thursday == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+      pull-requests: read
+      security-events: write
+    uses: vitechsystems/Internal-Tools/.github/workflows/Confluence_Patching.yml@main
+    with:
+      environment: "confluencedr"
+    secrets:
+      CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+      CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+      VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+      CONFLUENCEDR_ACCESS_TOKEN: ${{ secrets.confluencedr_ACCESS_TOKEN }}
+
+  notify_failure_confluencedr:
+    needs: trigger_confluencedr
+    if: needs.trigger_confluencedr.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Notify failure via SNS for ConfluenceDR
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+            --subject "ALERT: ConfluenceDR Monthly Patch Failure" \
+            --message "Automated patching for the ConfluenceDR environment has failed. Immediate manual intervention is required. Please check GitHub Actions logs for details."
+
+  check_2nd_friday:
+    name: Check if today is the 2nd Friday of the month
+    runs-on: ubuntu-latest
+    outputs:
+      is_2nd_friday: ${{ steps.check.outputs.is_2nd_friday }}
+    steps:
+      - id: check
+        run: |
+          day_of_month=$(date -u +'%d')
+          weekday=$(date -u +'%u')
+          # 2nd Friday: Day 8-14 and weekday == 5 (Friday)
+          if [ "$weekday" -eq 5 ] && [ "$day_of_month" -ge 8 ] && [ "$day_of_month" -le 14 ]; then
+            echo "is_2nd_friday=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_2nd_friday=false" >> $GITHUB_OUTPUT
+          fi
+
+  notify_confluence_prod:
+    name: Notify PROD Confluence Patching (2nd Friday)
+    needs: check_2nd_friday
+    if: needs.check_2nd_friday.outputs.is_2nd_friday == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Notify via SNS for PROD Confluence
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+            --subject "Production Confluence Monthly Patch Scheduled for Tomorrow" \
+            --message "Reminder: Production Confluence patching will be performed tomorrow (Saturday, rolling restart, no downtime expected). Please reach out to v3atlassianops if you have any concerns."
+
+  check_2nd_saturday:
+    name: Check if today is the 2nd Saturday of the month
+    runs-on: ubuntu-latest
+    outputs:
+      is_2nd_saturday: ${{ steps.check.outputs.is_2nd_saturday }}
+    steps:
+      - id: check
+        run: |
+          day_of_month=$(date -u +'%d')
+          weekday=$(date -u +'%u')
+          # 2nd Saturday: Day 9-15 and weekday == 6 (Saturday)
+          if [ "$weekday" -eq 6 ] && [ "$day_of_month" -ge 9 ] && [ "$day_of_month" -le 15 ]; then
+            echo "is_2nd_saturday=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_2nd_saturday=false" >> $GITHUB_OUTPUT
+          fi
+
+  trigger_confluence_prod:
+    name: Trigger PROD Confluence Patching (2nd Saturday)
+    needs: check_2nd_saturday
+    if: needs.check_2nd_saturday.outputs.is_2nd_saturday == 'true'
+    permissions:
+      contents: read
+      id-token: write
+      actions: read
+      pull-requests: read
+      security-events: write
+    uses: vitechsystems/Internal-Tools/.github/workflows/Confluence_Patching.yml@main
+    with:
+      environment: "confluence"
+    secrets:
+      CORP_CLD_AWS_ACCESS_KEY_ID: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+      CORP_CLD_AWS_SECRET_ACCESS_KEY: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+      VITECH_LINUX_ZOIO_PASSWORD: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+      CONFLUENCE_ACCESS_TOKEN: ${{ secrets.confluence_ACCESS_TOKEN }}
+
+  notify_failure_confluence:
+    needs: trigger_confluence_prod
+    if: needs.trigger_confluence_prod.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Notify failure via SNS for Confluence PROD
+        run: |
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
+            --subject "URGENT: Production Confluence Monthly Patch Failure" \
+            --message "Critical: The scheduled monthly rolling restart patching process for Production Confluence has failed. Immediate investigation is required. Review GitHub Actions logs and notify stakeholders."
