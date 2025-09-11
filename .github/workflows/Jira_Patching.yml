@@ -274,7 +274,7 @@ jobs:
               --comment "Backup /etc/httpd/conf.d, then restart Jira and HTTPD services" \
               --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak-$(date +%Y%m%d-%H%M%S)", "sudo mv /etc/httpd/conf.d/ssl.conf /etc/httpd/conf.d/ssl.conf-bkp ", "sudo service httpd restart", "sudo service jira restart"]'
       
-            aws autoscaling exit-standby \/etc/httpd/conf.d/ssl.conf
+            aws autoscaling exit-standby \
               --auto-scaling-group-name "${{ env.ASG_NAME }}" \
               --instance-ids "$INSTANCE_ID"
       
