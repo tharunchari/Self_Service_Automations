@@ -36,12 +36,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write       
-
+      id-token: write     
+  
     steps:
+      - name: Set strict shell options
+        run: |
+          set -euo pipefail
+
+      - name: Set input variables
+        id: input_resolver
+        run: |
+          echo "ENVIRONMENT=${{ inputs.environment }}" >> $GITHUB_ENV
+
       - name: Set environment-specific variables
         run: |
-          if [ "${{ github.event.inputs.environment }}" == "confluencedr" ]; then
+          set -euo pipefail
+          echo "Using environment: $ENVIRONMENT"  
+
+      - name: Set environment-specific variables
+        run: |
+          if [ "$ENVIRONMENT" == "confluencedr" ]; then
             echo "Using confluencedr configuration"
             echo "ASG_NAME=CONFLUENCEAWSDR-ConfluenceAWSPRODDScalingGroup-q2PbT1TX3oOj" >> $GITHUB_ENV
             echo "URL=https://confluencedr.vitechinc.com/confluencedr" >> $GITHUB_ENV
@@ -49,7 +63,7 @@ jobs:
             echo "SNS_TOPIC=arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
             echo "SUBJECT_PREFIX=Restart of ConfluenceDR Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=ConfluenceDR patching is scheduled." >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.environment }}" == "confluence" ]; then
+          elif [ "$ENVIRONMENT" == "confluence" ]; then
                    if [ "${{ inputs.KEY }}" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
                       echo "The KEY does not match the expected secret for confluence environment."
                       exit 1
