@@ -97,12 +97,10 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
             --output text)
-
           if [[ -z "$INSTANCE_IDS" ]]; then
-            echo "No instances found in the Auto Scaling Group. Exiting."
+            echo "ERROR: No instances found in ASG. Exiting."
             exit 1
           fi
-      
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
@@ -118,11 +116,11 @@ jobs:
           echo "INSTANCE_IDS=$INSTANCE_IDS" >> $GITHUB_ENV
           echo "Instance IDs: $INSTANCE_IDS"
 
-      - name: Set Auto Scaling Group to 1 instances 
+      - name: Set Auto Scaling Group to 1 instance
         run: |
           aws autoscaling update-auto-scaling-group \
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
-            --min-size 1 
+            --min-size 1  
             
       - name: Patch Each Instance
         run: |
@@ -364,7 +362,6 @@ jobs:
             --auto-scaling-group-name "${{ env.ASG_NAME }}" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
             --output text)
-      
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
