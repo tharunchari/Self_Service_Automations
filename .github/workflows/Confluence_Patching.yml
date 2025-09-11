@@ -101,10 +101,37 @@ jobs:
             echo "ERROR: No instances found in ASG. Exiting."
             exit 1
           fi
-          aws sns publish \
-            --topic-arn ${{ env.SNS_TOPIC }} \
-            --subject "Rolling ${{ env.SUBJECT_PREFIX }}" \
-            --message "$(printf "${{ env.BODY_PREFIX }} Please be aware of any disruptions during this process.\n\n **Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
+          # Compose HTML email content by echoing to a file (avoids here-doc issues)
+      - name: Generate HTML email body
+        run: |
+          echo "<html>" > email_body.html
+          echo "<head><style>" >> email_body.html
+          echo "  body { font-family: Arial, sans-serif; background-color: #f9f9f9; color: #333; padding: 20px; }" >> email_body.html
+          echo "  table { border-collapse: collapse; width: 100%; background-color: #fff; }" >> email_body.html
+          echo "  th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }" >> email_body.html
+          echo "  th { background-color: #0073e6; color: white; }" >> email_body.html
+          echo "  tr:nth-child(even) { background-color: #f2f2f2; }" >> email_body.html
+          echo "</style></head>" >> email_body.html
+          echo "<body>" >> email_body.html
+          echo "<h2>${BODY_PREFIX}</h2>" >> email_body.html
+          echo "<p>Please be aware of any disruptions during this process.</p>" >> email_body.html
+          echo "<h3>Impacted EC2 Instances</h3>" >> email_body.html
+          echo "<table>" >> email_body.html
+          echo "<tr><th>Instance ID</th></tr>" >> email_body.html
+          while IFS= read -r line; do
+            echo "<tr><td>$line</td></tr>" >> email_body.html
+          done <<< "$INSTANCE_IDS"
+          echo "</table>" >> email_body.html
+          echo "<p style='margin-top: 30px; font-size: 12px; color: #888;'>Sent by GitHub Actions via AWS SES</p>" >> email_body.html
+          echo "</body></html>" >> email_body.html
+
+      - name: Send SES email
+        run: |
+          HTML_BODY=$(jq -Rs . < email_body.html)
+          aws ses send-email \
+            --from "v3atlassianops@vitechinc.com" \
+            --destination "ToAddresses=v3atlassianops@vitechinc.com" \
+            --message "Subject={Data='${SUBJECT_PREFIX}'},Body={Html={Data=${HTML_BODY}}}"
 
       - name: Get Auto Scaling Group Instances
         id: get-instances
@@ -252,7 +279,7 @@ jobs:
               --comment "Backup /etc/httpd/conf.d, then restart confluence and HTTPD services" \
               --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak-$(date +%Y%m%d-%H%M%S)", "sudo mv /etc/httpd/conf.d/ssl.conf /etc/httpd/conf.d/ssl.conf-bkp ", "sudo service httpd restart", "sudo service confluence restart"]'
       
-            aws autoscaling exit-standby \/etc/httpd/conf.d/ssl.conf
+            aws autoscaling exit-standby \
               --auto-scaling-group-name "${{ env.ASG_NAME }}" \
               --instance-ids "$INSTANCE_ID"
       
@@ -297,19 +324,30 @@ jobs:
       
               # Compose HTML email content by echoing to a file (avoids here-doc issues)
               echo "<html>" > email_body.html
-              echo "<head><style>body { background: #222; color: #fff; } table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #fff; padding: 8px; } th { background: #333; font-weight: bold; } tr:nth-child(even) { background: #2a2a2a; }</style></head>" >> email_body.html
-              echo "<body><p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>" >> email_body.html
+              echo "<head><style>" >> email_body.html
+              echo "  body { font-family: Arial, sans-serif; background-color: #f9f9f9; color: #333; padding: 20px; }" >> email_body.html
+              echo "  table { border-collapse: collapse; width: 100%; background-color: #fff; }" >> email_body.html
+              echo "  th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }" >> email_body.html
+              echo "  th { background-color: #0073e6; color: white; }" >> email_body.html
+              echo "  tr:nth-child(even) { background-color: #f2f2f2; }" >> email_body.html
+              echo "  .status-alive { color: green; font-weight: bold; }" >> email_body.html
+              echo "</style></head>" >> email_body.html
+              
+              echo "<body>" >> email_body.html
+              echo "<p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>" >> email_body.html
               echo "<table>" >> email_body.html
-              echo "<tr><th>Instance ID</th><th>Instance IP</th><th>Before Patching Version</th><th>After Patching Version</th><th>Alive Status</th></tr>" >> email_body.html
-              echo "<tr><td>${INSTANCE_ID}</td><td>${INSTANCE_PRIVATE_IP}</td><td>${BEFORE_VERSION}</td><td>${AFTER_VERSION}</td><td>ALIVE</td></tr>" >> email_body.html
-              echo "</table></body></html>" >> email_body.html
-              EMAIL_BODY=$(cat email_body.html)
+              echo "  <tr><th>Instance ID</th><th>Instance IP</th><th>Before Patching Version</th><th>After Patching Version</th><th>Alive Status</th></tr>" >> email_body.html
+              echo "  <tr><td>${INSTANCE_ID}</td><td>${INSTANCE_PRIVATE_IP}</td><td>${BEFORE_VERSION}</td><td>${AFTER_VERSION}</td><td class='status-alive'>✅ ALIVE</td></tr>" >> email_body.html
+              echo "</table>" >> email_body.html
+              echo "</body></html>" >> email_body.html
+
+              EMAIL_BODY=$(cat email_body.html | jq -Rs .)
       
               # Send email using AWS SES
               aws ses send-email \
-                --from "v3atlassianops@vitechinc.com" \
-                --destination "ToAddresses=v3atlassianops@vitechinc.com" \
-                --message "Subject={Data='[$ENVIRONMENT] Jira Node Successfully Patched - $INSTANCE_ID ($INSTANCE_PRIVATE_IP)'},Body={Html={Data=\"$EMAIL_BODY\"}}"
+              --from "v3atlassianops@vitechinc.com" \
+              --destination "ToAddresses=v3atlassianops@vitechinc.com" \
+              --message "Subject={Data='[${ENVIRONMENT}] Confluence Node Successfully Patched - ${INSTANCE_ID} (${INSTANCE_PRIVATE_IP})'},Body={Html={Data=${EMAIL_BODY}}}"
               echo "Email sent via SES for $INSTANCE_ID"
               echo "========================================================="
             else
