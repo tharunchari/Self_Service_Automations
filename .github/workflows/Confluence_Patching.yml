@@ -303,7 +303,7 @@ jobs:
               --query 'Reservations[].Instances[].PrivateIpAddress' \
               --output text)
             
-            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.[] | select(.ipAddress == $ip and .state == "ACTIVE")')
+            INSTANCE_ALIVE=$(echo "$NODE_STATUS" | jq --arg ip "$INSTANCE_PRIVATE_IP" '.nodes[] | select(.ipAddress == $ip and .state == "ACTIVE")')
       
             # Get AFTER_VERSION
             aws ssm send-command \
