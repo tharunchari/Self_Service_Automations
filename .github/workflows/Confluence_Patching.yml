@@ -57,7 +57,7 @@ jobs:
         run: |
           if [ "$ENVIRONMENT" == "confluencedr" ]; then
             echo "Using confluencedr configuration"
-            echo "ASG_NAME=CONFLUENCEAWSDR-ConfluenceAWSPRODDScalingGroup-q2PbT1TX3oOj" >> $GITHUB_ENV
+            echo "ASG_NAME=CONFLUENCEAWSDR-ConfluenceAWSDRScalingGroup-d5JOrSpgKbJr" >> $GITHUB_ENV
             echo "URL=https://confluencedr.vitechinc.com/confluencedr" >> $GITHUB_ENV
             echo "TOKEN=${{ secrets.CONFLUENCEDR_ACCESS_TOKEN }}" >> $GITHUB_ENV
             echo "SNS_TOPIC=arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
