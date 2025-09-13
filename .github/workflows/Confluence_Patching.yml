@@ -75,6 +75,7 @@ jobs:
             echo "SNS_TOPIC=arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
             echo "SUBJECT_PREFIX=Restart of Confluence Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=Confluence patching is scheduled." >> $GITHUB_ENV  
+            echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
           else
             echo "Invalid environment specified. Please choose either 'ConfluenceDR', or 'Confluence'."
             exit 1
