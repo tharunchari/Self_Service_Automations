@@ -83,7 +83,7 @@ jobs:
 
       - name: Set AWS region
         run: |
-          echo "AWS_REGION=${{ github.event.inputs.environment == 'confluence' && 'us-east-1' || 'us-west-2' }}" >> $GITHUB_ENV
+          #echo "AWS_REGION=${{ github.event.inputs.environment == 'confluence' && 'us-east-1' || 'us-west-2' }}" >> $GITHUB_ENV
           
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
