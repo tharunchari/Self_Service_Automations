@@ -64,10 +64,10 @@ jobs:
             echo "SUBJECT_PREFIX=Restart of ConfluenceDR Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=ConfluenceDR patching is scheduled." >> $GITHUB_ENV
           elif [ "$ENVIRONMENT" == "confluence" ]; then
-                   if [ "${{ inputs.KEY }}" != "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
-                      echo "The KEY does not match the expected secret for confluence environment."
-                      exit 1
-                   fi
+            if [ -z "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
+              echo "ERROR: Secret VITECH_LINUX_ZOIO_PASSWORD not set for JIRAPROD environment."
+              exit 1
+            fi
             echo "Using confluence configuration"
             echo "ASG_NAME=CONFLUENCEPROD-ConfluenceAWSPRODDScalingGroup-zAmOVDq6H2v8" >> $GITHUB_ENV
             echo "URL=https://confluence.vitechinc.com/confluence" >> $GITHUB_ENV
