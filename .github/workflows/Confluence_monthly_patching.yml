@@ -3,9 +3,9 @@ name: Monthly Confluence Patch Schedule
 on:
   workflow_dispatch:
   schedule:
-  #  - cron: '0 2 8-14 * 4'    # 2nd Thursday (8th-14th) at 2AM UTC for confluencedr
-   # - cron: '0 10 8-14 * 5'   # 2nd Friday (8th-14th) at 10AM UTC for prod notification
-  #  - cron: '0 2 9-15 * 6'    # 2nd Saturday (9th-15th) at 2AM UTC for prod patching
+    - cron: '0 2 8-14 * 4'    # 2nd Thursday (8th-14th) at 2AM UTC for confluencedr
+    - cron: '0 10 8-14 * 5'   # 2nd Friday (8th-14th) at 10AM UTC for prod notification
+    - cron: '0 2 9-15 * 6'    # 2nd Saturday (9th-15th) at 2AM UTC for prod patching
 
 permissions:
   id-token: write
