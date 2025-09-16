@@ -43,7 +43,7 @@ def check_self_hosted_runners():
             running_time = current_time - launch_time
             notified_tag = next((tag['Value'] for tag in instance.get('Tags', []) if tag['Key'] == 'Notified'), None)
  
-            if running_time.total_seconds() > 7200:  # > 2 hours
+            if running_time.total_seconds() > 1800:  # > 2 hours
                 self_hosted_instances.append({
                     'Instance ID': instance_id,
                     'Launch Time': launch_time,
@@ -53,7 +53,7 @@ def check_self_hosted_runners():
                     mark_instance_as_notified(instance_id)
  
     if self_hosted_instances:
-        subject = "Self-Hosted Github Runners Running for More Than 2 Hours"
+        subject = "Self-Hosted Github Runners Running for More Than 30 Min"
         message = ""
         for inst in self_hosted_instances:
             message += f"Instance ID: {inst['Instance ID']}\n"
