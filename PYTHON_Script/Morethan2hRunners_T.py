@@ -16,7 +16,7 @@ ORG_NAME = "vitechsystems"
 GITHUB_API_URL = f"https://api.github.com/orgs/{ORG_NAME}/actions/runners"
  
 # Condition: 7200 seconds (2 hours)
-MIN_RUNNING_SECONDS = 1800
+MIN_RUNNING_SECONDS = 7200
  
  
 def get_ec2_instances():
@@ -106,7 +106,7 @@ def main():
         ec2_client.terminate_instances(InstanceIds=to_terminate)
  
         # === Build clean termination report ===
-        message_lines = ["Self-hosted GitHub runners running for more than 30 min have been terminated.\n"]
+        message_lines = ["Self-hosted GitHub runners running for more than 2 hours have been terminated.\n"]
  
         for inst in instances:
             if inst['id'] in to_terminate:
@@ -118,7 +118,7 @@ def main():
  
         # Print and send SNS
         print(report_text)
-        send_sns_notification("Self-hosted GitHub runners running for more than 30 min have been terminated.", report_text)
+        send_sns_notification("Self-hosted GitHub runners running for more than 2hours have been terminated.", report_text)
  
     else:
         print("No EC2 instances above threshold. Skipping SNS and termination operations.")
