@@ -1,11 +1,10 @@
-name: Mirror GitHub Repositories to AWS CodeCommit
+name: Check Sync between GitHub And AWS CodeCommit Repositories
  
 on:
   workflow_dispatch:
  
 jobs:
   GitHub_Backup:
-    needs: start-runner
     name: Run Ansible Playbook
     runs-on: Internal_Tools_Automation_Server_2
  
