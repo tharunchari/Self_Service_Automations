@@ -38,6 +38,13 @@
     - debug:
         msg: "{{ full_vitechsystems_repos }}"
 
+    - name: GitHub commits (vitechsystems)
+      shell: git ls-remote https://{{ github_password }}@github.com/vitechsystems/productutilities.git | awk '{print $1}' | head -n 1
+      register: hello
+
+    - debug:
+        msg: "{{ hello }}"
+
     # ---- Get latest commits for vitechsystems ----
     - name: GitHub commits (vitechsystems)
       shell: git ls-remote https://{{ github_password }}@github.com/vitechsystems/{{ item }}.git | awk '{print $1}' | head -n 1
