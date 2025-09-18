@@ -53,7 +53,7 @@
     - name: CodeCommit commits (vitechsystems)
       shell: git ls-remote https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }} | awk '{print $1}' | head -n 1
       register: codecommit_commits_vitechsystems
-      with_items: "{{ filtered_vitechsystems_repos }}"
+      with_items: "{{ vitechsystems_repos }}"
       ignore_errors: yes
 
     - name: Compare commits (vitechsystems)
