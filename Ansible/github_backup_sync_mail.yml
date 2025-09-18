@@ -5,11 +5,10 @@
     region: "us-west-2"
     path_00: "/u02/github_to_codecommit"
     sns_topic_arn: "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
-    github_password: "{{ github_password_1 }}"
  
   tasks:
     - name: GitHub commits (vitechsystems)
-      shell: git ls-remote https://{{ github_password_1 }}@github.com/vitechsystems/productutilities.git | awk '{print $1}' | head -n 1
+      shell: git ls-remote https://"{{ github_password_1 }}"@github.com/vitechsystems/productutilities.git | awk '{print $1}' | head -n 1
       register: hello
 
     - debug:
