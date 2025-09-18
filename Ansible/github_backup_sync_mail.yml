@@ -37,56 +37,10 @@
 
     # ---- Get latest commits for vitechsystems ----
     - name: GitHub commits (vitechsystems)
-      shell: git ls-remote https://{{ github_username }}:{{ github_password_1 }}@github.com/{{ organization_1 }}/{{ item }}.git | awk '{print $1}' | head -n 1
+      shell: git ls-remote https://github-bamboo_vitech:{{ github_password_1 }}@github.com/{{ organization_1 }}/{{ item }}.git | awk '{print $1}' | head -n 1
       register: github_commits_vitechsystems
       with_items: "{{ vitechsystems_repos }}"
 
     - debug:
         msg: "{{ github_commits_vitechsystems }}"
 
-    - name: CodeCommit commits (vitechsystems)
-      shell: git ls-remote https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }} | awk '{print $1}' | head -n 1
-      register: codecommit_commits_vitechsystems
-      with_items: "{{ vitechsystems_repos }}"
-      ignore_errors: yes
-
-    - set_fact: 
-        github_commits_list: "{{ github_commits_vitechsystems.results | map(attribute='stdout') | list }}"
- 
-    - set_fact: 
-        codecommit_commits_list: "{{ codecommit_commits_vitechsystems.results | map(attribute='stdout') | list }}"
- 
-    - debug:
-        msg: "{{ github_commits_list }}"
- 
-    - debug:
-        msg: "{{ codecommit_commits_list }}"
- 
-    - name: Compare the commits IDs for GitHub and AWS CodeCommit
-      set_fact:
-        diff_commits: "{{ diff_commits | default({}) | combine({item.0.item: {'github': item.0.stdout, 'codecommit': item.1.stdout}}) }}"
-      loop: "{{ github_commits.results | zip(codecommit_commits.results) }}"
-
-    - debug:
-        msg: "{{ diff_commits }}"
-
-    - name: Compare commits (vitechsystems)
-      set_fact:
-        diff_commits_vitechsystems: "{{ diff_commits_vitechsystems | default({}) | combine({item.0.item: {'github': item.0.stdout, 'codecommit': item.1.stdout}}) }}"
-      loop: "{{ github_commits_vitechsystems.results | zip(codecommit_commits_vitechsystems.results) }}"
-
-    # ---- Prepare mail body ----
-    - name: Build report body for vitechsystems
-      set_fact:
-        report_vitechsystems: |
-          Vitechsystems Repositories Commit Comparison:
-
-          | Repository | GitHub Commit | CodeCommit Commit |
-          |------------|---------------|-------------------|
-          {% for repo, ids in diff_commits_vitechsystems.items() %}
-          | {{ repo }} | {{ ids.github }} | {{ ids.codecommit }} |
-          {% endfor %}
-
-    - name: Print repos in {{ organization_1 }}
-      debug:
-        msg: "{{ report_vitechsystems }}"
