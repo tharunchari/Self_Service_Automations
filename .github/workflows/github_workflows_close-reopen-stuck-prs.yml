@@ -1,8 +1,8 @@
-name: Close and Reopen Stuck PRs & Email Report
+name: Stuck PRs Email Report (No Close, No Reopen)
 
 on:
- # schedule:
-  #  - cron: "0 * * * *"
+  schedule:
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
       ORG_NAME: vitechsystems
       SES_FROM: v3atlassianops@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
-      SES_SUBJECT: '[PRODUCTION] PRs Reopened to Unblock Status Checks'
+      SES_SUBJECT: '[PRODUCTION] PRs Detected With Stuck Status Checks'
     steps:
       - name: Install dependencies
         run: |
@@ -25,11 +25,6 @@ jobs:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-
-      - name: Authenticate GitHub CLI
-        env:
-          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-        run: gh auth status
 
       - name: Get all repos in org
         env:
@@ -46,7 +41,8 @@ jobs:
           SES_SUBJECT: ${{ env.SES_SUBJECT }}
         run: |
           NOW=$(date -u +%s)
-          declare -a REOPENED_PRS
+          declare -a STUCK_PRS
+          AGE_LIMIT=$((90 * 60)) # 1 hour 30 minutes in seconds
 
           while read repo; do
             prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title)
@@ -55,8 +51,8 @@ jobs:
               title=$(echo $pr | jq -r '.title')
               created=$(echo $pr | jq -r '.createdAt')
               created_ts=$(date -d "$created" +%s)
-              age_hrs=$(( (NOW - created_ts)/3600 ))
-              if [ $age_hrs -ge 4 ]; then
+              age_secs=$(( NOW - created_ts ))
+              if [ $age_secs -ge $AGE_LIMIT ]; then
                 checks=$(gh pr view $number --repo "$ORG_NAME/$repo" --json commits | jq '.commits[-1].commit.statusCheckRollup')
                 if echo "$checks" | jq -e 'any(.state == "PENDING")'; then
                   pending_total=$(echo "$checks" | jq '[.[] | select(.state == "PENDING")] | length')
@@ -67,17 +63,18 @@ jobs:
                   fi
                   pending_names=$(echo "$checks" | jq -r '[.[] | select(.state == "PENDING") | .name] | join(", ")')
                   before_status="pending (${pending_names})"
-                  gh pr close $number --repo "$ORG_NAME/$repo" --delete-branch=false
-                  sleep 2
-                  gh pr reopen $number --repo "$ORG_NAME/$repo"
-                  after_status="reopened"
-                  REOPENED_PRS+=( "$repo|#${number}: ${title}|${before_status}|${after_status}" )
+                  # Would close/comment here, but disabled for now:
+                  # gh pr close $number --repo "$ORG_NAME/$repo" --delete-branch=false
+                  # after_status="closed"
+                  after_status="would-close"
+                  # Optionally, add a comment (uncomment the below to enable commenting)
+                  # gh pr comment $number --repo "$ORG_NAME/$repo" --body "This PR has been detected as stuck due to pending status checks for over 1hr30min: ${pending_names}. Please investigate."
+                  STUCK_PRS+=( "$repo|#${number}: ${title}|${before_status}|${after_status}" )
                 fi
               fi
             done
           done < repos.txt
 
-          # Build HTML with heredoc
           {
             echo "<html>"
             echo "<head>"
@@ -98,21 +95,21 @@ jobs:
             echo "    tr:nth-child(odd) { background: #f4f6fb; }"
             echo "    td { font-size: 15px; }"
             echo "    td.status-before { color: #b85c00; font-weight: bold; }"
-            echo "    td.status-after  { color: #2e7d32; font-weight: bold; }"
+            echo "    td.status-after  { color: #c62828; font-weight: bold; }"
             echo "    table tr:first-child th:first-child { border-top-left-radius: 8px; }"
             echo "    table tr:first-child th:last-child  { border-top-right-radius: 8px; }"
             echo "  </style>"
             echo "</head>"
             echo "<body>"
-            echo "<p>The following PRs were automatically closed and reopened to retrigger status checks:</p>"
+            echo "<p>The following PRs were detected as stuck (open over 1 hour 30 minutes with pending status checks):</p>"
             echo "<table>"
             echo "  <tr>"
             echo "    <th>Repo Name</th>"
             echo "    <th>PR Details</th>"
             echo "    <th>Status Before</th>"
-            echo "    <th>Status After</th>"
+            echo "    <th>Action</th>"
             echo "  </tr>"
-            for pr in "${REOPENED_PRS[@]}"; do
+            for pr in "${STUCK_PRS[@]}"; do
               IFS='|' read -r repo pr_details before_status after_status <<< "$pr"
               echo "  <tr><td>${repo}</td><td>${pr_details}</td><td class=\"status-before\">${before_status}</td><td class=\"status-after\">${after_status}</td></tr>"
             done
@@ -121,12 +118,12 @@ jobs:
 
           EMAIL_BODY=$(cat email_body.html)
 
-          if [ ${#REOPENED_PRS[@]} -gt 0 ]; then
+          if [ ${#STUCK_PRS[@]} -gt 0 ]; then
             aws ses send-email \
               --from "$SES_FROM" \
               --destination "ToAddresses=$SES_TO" \
               --message "Subject={Data='$SES_SUBJECT'},Body={Html={Data=\"$EMAIL_BODY\"}}"
-            echo "Email sent via SES for reopened PRs"
+            echo "Email sent via SES for stuck PRs"
           else
-            echo "No PRs needed to be reopened, no email sent."
+            echo "No stuck PRs found, no email sent."
           fi
