@@ -8,36 +8,6 @@
     github_password: "{{ github_password_1 }}"
  
   tasks:
-    - name: Make github_repo_names.sh executable
-      file:
-        path: "../shell_scripts/github_repo_names_both.sh"
-        mode: '0755'
-        state: file
- 
-    - name: Run script to fetch repos from both orgs
-      shell: "../shell_scripts/github_repo_names_both.sh"
-      register: script_output
-      environment:
-        token_1: "{{ github_password_1 }}" 
-        token_2: "{{ github_password_2 }}" 
-        org_name_1: "{{ organization_1 }}"   # vitechsystems
-        org_name_2: "{{ organization_2 }}"   # vitechinfra
-      become: false
- 
-    - name: Parse JSON output from script
-      set_fact:
-        repo_data: "{{ script_output.stdout | from_json }}"
- 
-    - name: Filter unwanted repos from vitechsystems
-      set_fact:
-        full_vitechsystems_repos: "{{ repo_data.vitechsystems_repos }}"
- 
-    - name: Final list of vitechinfra repos (exclude duplicates)
-      set_fact:
-        filtered_vitechinfra_repos: "{{ repo_data.filtered_repos }}"
-    - debug:
-        msg: "{{ full_vitechsystems_repos }}"
-
     - name: GitHub commits (vitechsystems)
       shell: git ls-remote https://{{ github_password_1 }}@github.com/vitechsystems/productutilities.git | awk '{print $1}' | head -n 1
       register: hello
@@ -45,12 +15,4 @@
     - debug:
         msg: "{{ hello }}"
 
-    # ---- Get latest commits for vitechsystems ----
-    - name: GitHub commits (vitechsystems)
-      shell: git ls-remote https://{{ github_password_1 }}@github.com/vitechsystems/{{ item }}.git | awk '{print $1}' | head -n 1
-      register: github_commits_vitechsystems
-      with_items: "{{ repo_data.vitechsystems_repos }}"
-
-    - debug:
-        msg: "{{ github_commits_vitechsystems }}"
 
