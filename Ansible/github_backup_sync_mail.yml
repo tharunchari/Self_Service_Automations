@@ -63,7 +63,7 @@
     - name: Compare the commits IDs for GitHub and AWS CodeCommit
       set_fact:
         diff_commits: "{{ diff_commits | default({}) | combine({item.0.item: {'github': item.0.stdout, 'codecommit': item.1.stdout}}) }}"
-      loop: "{{ github_commits.results | zip(codecommit_commits.results) }
+      loop: "{{ github_commits.results | zip(codecommit_commits.results) }}"
 
     - debug:
         msg: "{{ diff_commits }}"
