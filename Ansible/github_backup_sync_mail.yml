@@ -35,14 +35,6 @@
       set_fact:
         filtered_vitechinfra_repos: "{{ repo_data.filtered_repos }}"
 
-    - name: Print repos in {{ organization_1 }}
-      debug:
-        msg: "{{ vitechsystems_repos }}"
-
-    - name: Print repos in {{ organization_2 }}
-      debug:
-        msg: "{{ filtered_vitechinfra_repos }}"
-
     # ---- Get latest commits for vitechsystems ----
     - name: GitHub commits (vitechsystems)
       shell: git ls-remote https://{{ github_username }}:{{ github_password_1 }}@github.com/{{ organization_1 }}/{{ item }}.git | awk '{print $1}' | head -n 1
@@ -55,6 +47,26 @@
       register: codecommit_commits_vitechsystems
       with_items: "{{ vitechsystems_repos }}"
       ignore_errors: yes
+
+    - set_fact: 
+        github_commits_list: "{{ github_commits_vitechsystems.results | map(attribute='stdout') | list }}"
+ 
+    - set_fact: 
+        codecommit_commits_list: "{{ codecommit_commits_vitechsystems.results | map(attribute='stdout') | list }}"
+ 
+    - debug:
+        msg: "{{ github_commits_list }}"
+ 
+    - debug:
+        msg: "{{ codecommit_commits_list }}"
+ 
+    - name: Compare the commits IDs for GitHub and AWS CodeCommit
+      set_fact:
+        diff_commits: "{{ diff_commits | default({}) | combine({item.0.item: {'github': item.0.stdout, 'codecommit': item.1.stdout}}) }}"
+      loop: "{{ github_commits.results | zip(codecommit_commits.results) }
+
+    - debug:
+        msg: "{{ diff_commits }}"
 
     - name: Compare commits (vitechsystems)
       set_fact:
