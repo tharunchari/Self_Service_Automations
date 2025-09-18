@@ -40,7 +40,9 @@
       shell: git ls-remote https://{{ github_username }}:{{ github_password_1 }}@github.com/{{ organization_1 }}/{{ item }}.git | awk '{print $1}' | head -n 1
       register: github_commits_vitechsystems
       with_items: "{{ vitechsystems_repos }}"
-      ignore_errors: yes
+
+    - debug:
+        msg: "{{ github_commits_vitechsystems }}"
 
     - name: CodeCommit commits (vitechsystems)
       shell: git ls-remote https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }} | awk '{print $1}' | head -n 1
