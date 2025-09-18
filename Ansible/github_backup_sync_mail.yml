@@ -42,3 +42,37 @@
     - name: Print repos in {{ organization_2 }}
       debug:
         msg: "{{ filtered_vitechinfra_repos }}"
+
+    # ---- Get latest commits for vitechsystems ----
+    - name: GitHub commits (vitechsystems)
+      shell: git ls-remote https://{{ github_username }}:{{ github_password_1 }}@github.com/{{ organization_1 }}/{{ item }}.git | awk '{print $1}' | head -n 1
+      register: github_commits_vitechsystems
+      with_items: "{{ vitechsystems_repos }}"
+      ignore_errors: yes
+
+    - name: CodeCommit commits (vitechsystems)
+      shell: git ls-remote https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item }} | awk '{print $1}' | head -n 1
+      register: codecommit_commits_vitechsystems
+      with_items: "{{ filtered_vitechsystems_repos }}"
+      ignore_errors: yes
+
+    - name: Compare commits (vitechsystems)
+      set_fact:
+        diff_commits_vitechsystems: "{{ diff_commits_vitechsystems | default({}) | combine({item.0.item: {'github': item.0.stdout, 'codecommit': item.1.stdout}}) }}"
+      loop: "{{ github_commits_vitechsystems.results | zip(codecommit_commits_vitechsystems.results) }}"
+
+    # ---- Prepare mail body ----
+    - name: Build report body for vitechsystems
+      set_fact:
+        report_vitechsystems: |
+          Vitechsystems Repositories Commit Comparison:
+
+          | Repository | GitHub Commit | CodeCommit Commit |
+          |------------|---------------|-------------------|
+          {% for repo, ids in diff_commits_vitechsystems.items() %}
+          | {{ repo }} | {{ ids.github }} | {{ ids.codecommit }} |
+          {% endfor %}
+
+    - name: Print repos in {{ organization_1 }}
+      debug:
+        msg: "{{ report_vitechsystems }}"
