@@ -37,7 +37,7 @@
 
     # ---- Get latest commits for vitechsystems ----
     - name: GitHub commits (vitechsystems)
-      shell: git ls-remote https://github-bamboo_vitech:{{ github_password }}@github.com/{{ organization_1 }}/{{ item }}.git | awk '{print $1}' | head -n 1
+      shell: git ls-remote https://github-bamboo_vitech:{{ github_password_1 }}@github.com/{{ organization_1 }}/{{ item }} | awk '{print $1}' | head -n 1
       register: github_commits_vitechsystems
       with_items: "{{ vitechsystems_repos }}"
 
