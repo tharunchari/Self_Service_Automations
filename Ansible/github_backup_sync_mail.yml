@@ -47,7 +47,7 @@
 
     # ---- Get latest commits for vitechsystems ----
     - name: GitHub commits (vitechsystems)
-      shell: git ls-remote https://{{ github_password }}@github.com/vitechsystems/{{ item }}.git | awk '{print $1}' | head -n 1
+      shell: git ls-remote https://{{ github_password_1 }}@github.com/vitechsystems/{{ item }}.git | awk '{print $1}' | head -n 1
       register: github_commits_vitechsystems
       with_items: "{{ repo_data.vitechsystems_repos }}"
 
