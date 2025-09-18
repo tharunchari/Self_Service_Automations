@@ -42,7 +42,7 @@
     - name: GitHub commits (vitechsystems)
       shell: git ls-remote https://{{ github_password }}@github.com/vitechsystems/{{ item }}.git | awk '{print $1}' | head -n 1
       register: github_commits_vitechsystems
-      with_items: "{{ full_vitechsystems_repos }}"
+      with_items: "{{ repo_data.vitechsystems_repos }}"
 
     - debug:
         msg: "{{ github_commits_vitechsystems }}"
