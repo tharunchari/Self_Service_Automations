@@ -1,8 +1,8 @@
 name: Close and Reopen Stuck PRs & Email Report
 
 on:
-  schedule:
-    - cron: "0 * * * *"
+ # schedule:
+  #  - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
