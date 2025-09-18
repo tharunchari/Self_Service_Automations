@@ -29,7 +29,7 @@
  
     - name: Filter unwanted repos from vitechsystems
       set_fact:
-        filtered_vitechsystems_repos: "{{ repo_data.vitechsystems_repos | difference(['CoreAdmin', 'Nextgen', 'CPF_PRODUCT_L5']) }}"
+        vitechsystems_repos: "{{ repo_data.vitechsystems_repos }}"
  
     - name: Final list of vitechinfra repos (exclude duplicates)
       set_fact:
@@ -37,7 +37,7 @@
 
     - name: Print repos in {{ organization_1 }}
       debug:
-        msg: "{{ filtered_vitechsystems_repos }}"
+        msg: "{{ vitechsystems_repos }}"
 
     - name: Print repos in {{ organization_2 }}
       debug:
