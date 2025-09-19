@@ -1,4 +1,4 @@
-name: "GiTHub_Runners_Status"
+name: "Terminate Github Self Hosted Offline Runners"
 
 on:
 #  schedule:
