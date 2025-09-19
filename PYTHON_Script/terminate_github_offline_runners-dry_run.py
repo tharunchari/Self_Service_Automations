@@ -142,26 +142,26 @@ def main():
         terminate_instances(instances_to_terminate)
 
         if not DRY_RUN:
-            subject = "Terminated Idle/Orphaned Github Runners"
-            message = "Self-hosted GitHub runners running for more than 55 minutes have been terminated.\n\n"
+            subject = "Terminated Offline/Orphaned Github Runners"
+            message = "Self-hosted GitHub runners running for more than 60 minutes have been terminated.\n\n\n"
 
             if idle_offline_instances:
-                message += "Idle or Offline runners:\n"
+                message += "Idle or Offline runners:\n\n"
                 for inst_id in idle_offline_instances:
                     inst = aws_instance_map.get(inst_id)
                     if inst:
                         message += f"Instance ID: {inst_id}\n"
                         message += f"Launch Time: {inst['LaunchTime']}\n"
-                        message += f"Running Time: {inst['RunningTime']}\n\n"
+                        message += f"Running Time: {inst['RunningTime']}\n\n\n"
 
             if orphan_instances:
-                message += "Orphaned runner / failed registration:\n"
+                message += "Orphaned runner / failed registration:\n\n"
                 for inst_id in orphan_instances:
                     inst = aws_instance_map.get(inst_id)
                     if inst:
                         message += f"Instance ID: {inst_id}\n"
                         message += f"Launch Time: {inst['LaunchTime']}\n"
-                        message += f"Running Time: {inst['RunningTime']}\n\n"
+                        message += f"Running Time: {inst['RunningTime']}\n\n\n"
 
             message += "Thanks,\nv3atlassianops"
 
