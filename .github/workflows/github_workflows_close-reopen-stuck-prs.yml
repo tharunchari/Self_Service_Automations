@@ -46,15 +46,27 @@ jobs:
 
           while read repo; do
             prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title)
-            echo "$prs" | jq -c '.[]' | while read pr; do
+            if [ -z "$prs" ] || [ "$prs" = "null" ] || [ "$prs" = "[]" ]; then
+              continue
+            fi
+            echo "$prs" | jq -c '.[] // empty' | while read pr; do
               number=$(echo $pr | jq -r '.number')
               title=$(echo $pr | jq -r '.title')
               created=$(echo $pr | jq -r '.createdAt')
               created_ts=$(date -d "$created" +%s)
               age_secs=$(( NOW - created_ts ))
               if [ $age_secs -ge $AGE_LIMIT ]; then
-                checks=$(gh pr view $number --repo "$ORG_NAME/$repo" --json commits | jq '.commits[-1].commit.statusCheckRollup')
-                if echo "$checks" | jq -e 'any(.state == "PENDING")'; then
+                checks_json=$(gh pr view $number --repo "$ORG_NAME/$repo" --json commits)
+                # Defensive: skip if no commits or jq error
+                if [ -z "$checks_json" ] || [ "$checks_json" = "null" ]; then
+                  continue
+                fi
+                # Get statusCheckRollup or skip if not present
+                checks=$(echo "$checks_json" | jq '.commits|last|.commit.statusCheckRollup // empty')
+                if [ -z "$checks" ] || [ "$checks" = "null" ]; then
+                  continue
+                fi
+                if echo "$checks" | jq -e 'any(.state == "PENDING")' > /dev/null; then
                   pending_total=$(echo "$checks" | jq '[.[] | select(.state == "PENDING")] | length')
                   pending_approval=$(echo "$checks" | jq '[.[] | select(.state == "PENDING" and (.name | test("approval"; "i")))] | length')
                   if [ "$pending_total" -eq "$pending_approval" ] && [ "$pending_total" -gt 0 ]; then
@@ -63,12 +75,7 @@ jobs:
                   fi
                   pending_names=$(echo "$checks" | jq -r '[.[] | select(.state == "PENDING") | .name] | join(", ")')
                   before_status="pending (${pending_names})"
-                  # Would close/comment here, but disabled for now:
-                  # gh pr close $number --repo "$ORG_NAME/$repo" --delete-branch=false
-                  # after_status="closed"
                   after_status="would-close"
-                  # Optionally, add a comment (uncomment the below to enable commenting)
-                  # gh pr comment $number --repo "$ORG_NAME/$repo" --body "This PR has been detected as stuck due to pending status checks for over 1hr30min: ${pending_names}. Please investigate."
                   STUCK_PRS+=( "$repo|#${number}: ${title}|${before_status}|${after_status}" )
                 fi
               fi
