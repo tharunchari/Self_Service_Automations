@@ -52,9 +52,9 @@ jobs:
               continue
             fi
             echo "$prs" | jq -c '.[] // empty' | while read pr; do
-              number=$(echo $pr | jq -r '.number')
-              title=$(echo $pr | jq -r '.title')
-              created=$(echo $pr | jq -r '.createdAt')
+              number=$(echo "$pr" | jq -r '.number')
+              title=$(echo "$pr" | jq -r '.title')
+              created=$(echo "$pr" | jq -r '.createdAt')
               created_ts=$(date -d "$created" +%s)
               age_secs=$(( NOW - created_ts ))
               if [ $age_secs -ge $AGE_LIMIT ]; then
@@ -62,11 +62,13 @@ jobs:
                 if [ -z "$checks_json" ] || ! echo "$checks_json" | jq empty 2>/dev/null; then
                   continue
                 fi
+                # Defensive: guard against non-array or missing
                 checks=$(echo "$checks_json" | jq '.commits|last|.commit.statusCheckRollup // empty')
                 if [ -z "$checks" ] || [ "$checks" = "null" ]; then
                   continue
                 fi
-                if echo "$checks" | jq -e 'any(.state == "PENDING")' > /dev/null; then
+                # Only proceed if 'checks' is an array
+                if echo "$checks" | jq -e 'type == "array" and any(.state == "PENDING")' > /dev/null; then
                   pending_total=$(echo "$checks" | jq '[.[] | select(.state == "PENDING")] | length')
                   pending_approval=$(echo "$checks" | jq '[.[] | select(.state == "PENDING" and (.name | test("approval"; "i")))] | length')
                   if [ "$pending_total" -eq "$pending_approval" ] && [ "$pending_total" -gt 0 ]; then
