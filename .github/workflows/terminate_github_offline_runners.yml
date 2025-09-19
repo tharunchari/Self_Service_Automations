@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      CLASSIC_PAT: ${{ secrets.CLASSIC_PAT }}
+      CLASSIC_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT  }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
