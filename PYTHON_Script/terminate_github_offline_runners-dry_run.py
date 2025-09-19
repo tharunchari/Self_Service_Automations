@@ -10,8 +10,8 @@ AWS_REGION = "us-east-1"
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
 GITHUB_ORG = "vitechsystems"
 GITHUB_TOKEN = os.environ.get("CLASSIC_PAT")  # Classic PAT from workflow env
-DRY_RUN = False  # Change to False to actually terminate instances
-THRESHOLD_MINUTES = 55
+DRY_RUN = True  # Change to False to actually terminate instances
+THRESHOLD_MINUTES = 5
 TAG_KEY = "Name"
 TAG_VALUE = "Github_Self_Hosted_Runner"
 # ==============================
@@ -94,7 +94,8 @@ def main():
         print("⚠️ Running in DRY RUN mode. No instances will actually be terminated.")
 
     aws_instances = get_aws_instances()
-    aws_instance_ids = [inst["InstanceId"] for inst in aws_instances]
+    aws_instance_map = {inst["InstanceId"]: inst for inst in aws_instances}
+    aws_instance_ids = list(aws_instance_map.keys())
     print(f"AWS instances running >{THRESHOLD_MINUTES} mins: {aws_instance_ids}")
 
     github_runners = get_github_org_runners(GITHUB_ORG, GITHUB_TOKEN)
@@ -134,14 +135,35 @@ def main():
 
     if instances_to_terminate:
         terminate_instances(instances_to_terminate)
+
         if not DRY_RUN:
             subject = "Terminated Idle/Orphaned Github Runners"
-            message = "The following AWS instances were terminated:\n"
-            for inst_id in instances_to_terminate:
-                message += f"{inst_id}\n"
+            message = "Self-hosted GitHub runners running for more than 55 minutes have been terminated.\n\n"
+
+            if idle_offline_instances:
+                message += "Idle or Offline runners:\n"
+                for inst_id in idle_offline_instances:
+                    inst = aws_instance_map.get(inst_id)
+                    if inst:
+                        message += f"Instance ID: {inst_id}\n"
+                        message += f"Launch Time: {inst['LaunchTime']}\n"
+                        message += f"Running Time: {inst['RunningTime']}\n\n"
+
+            if orphan_instances:
+                message += "Orphaned runner / failed registration:\n"
+                for inst_id in orphan_instances:
+                    inst = aws_instance_map.get(inst_id)
+                    if inst:
+                        message += f"Instance ID: {inst_id}\n"
+                        message += f"Launch Time: {inst['LaunchTime']}\n"
+                        message += f"Running Time: {inst['RunningTime']}\n\n"
+
+            message += "Thanks,\nv3atlassianops"
+
             send_sns_notification(subject, message)
     else:
         print("No idle, offline, or orphaned instances found for termination.")
+
 
 
 if __name__ == "__main__":
