@@ -1,22 +1,20 @@
 name: "Terminate Github Self Hosted Offline Runners"
 
 on:
-#  schedule:
+  schedule:
     # This will run the workflow every 2 hours
-    #- cron: "0 */2 * * *"
-    #- cron: "*/30 * * * *"
-#    - cron: "55 1-23/2 * * *"
+    - cron: "0 */1 * * *"
   workflow_dispatch:
 
 jobs:
-  check_instances:
+  Terminate_Runners:
     runs-on: ubuntu-latest
     
     env:
-      CLASSIC_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT  }}
+      PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v2
@@ -32,9 +30,6 @@ jobs:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-
-#      - name: Run GitHub runner monitor script
-#        run: python3 PYTHON_Script/terminate_github_offline_runners-advanced-dry_run.py
 
       - name: Run GitHub runner monitor script
         run: python3 PYTHON_Script/terminate_github_offline_runners-dry_run.py
