@@ -112,7 +112,8 @@ def main():
                     "instance_id": inst_id,
                     "runner_id": runner.get("id"),
                     "runner_name": runner_name,
-                    "status": runner.get("status")
+                    "status": runner.get("status"),
+                    "busy": runner.get("busy")
                 })
                 matched_instance_ids.add(inst_id)
                 break
@@ -120,7 +121,11 @@ def main():
     # 1. Idle/Offline matched runners
     idle_offline_instances = []
     for runner in matched_runners:
-        if runner["status"].lower() in ["offline", "idle"]:
+        status = runner.get("status", "").lower()
+        busy = runner.get("busy", False)
+
+        # Offline OR Idle (online but not busy)
+        if status == "offline" or (status == "online" and not busy):
             idle_offline_instances.append(runner["instance_id"])
 
     # 2. Orphaned AWS instances (not in GitHub runner list)
