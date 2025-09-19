@@ -1,140 +1,42 @@
-name: Stuck PRs Email Report (No Close, No Reopen)
+name: Stuck PRs Email Report (Debugging jq Errors)
 
 on:
-  schedule:
-    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
-  check-prs:
+  debug-jq:
     runs-on: ubuntu-latest
     env:
       ORG_NAME: vitechsystems
-      SES_FROM: v3atlassianops@vitechinc.com
-      SES_TO: v3atlassianops@vitechinc.com
-      SES_SUBJECT: '[PRODUCTION] PRs Detected With Stuck Status Checks'
     steps:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq gh 
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          sudo apt-get install -y jq gh
 
       - name: Get all repos in org
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
-          gh repo list "$ORG_NAME" --limit 1000 --json name -q '.[] | .name' > repos.txt
+          gh repo list "$ORG_NAME" --limit 5 --json name -q '.[] | .name' > repos.txt
           echo "Repositories collected for org $ORG_NAME:"
           cat repos.txt
 
-      - name: Check PRs and build report
+      - name: Debug PR listing and jq input
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
           ORG_NAME: ${{ env.ORG_NAME }}
-          SES_FROM: ${{ env.SES_FROM }}
-          SES_TO: ${{ env.SES_TO }}
-          SES_SUBJECT: ${{ env.SES_SUBJECT }}
         run: |
-          NOW=$(date -u +%s)
-          declare -a STUCK_PRS
-          AGE_LIMIT=$((90 * 60)) # 1 hour 30 minutes in seconds
-
           while read repo; do
+            echo "==== Checking repository: $repo ===="
             prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title 2>&1)
+            echo "---- Raw gh pr list output ----"
+            echo "$prs"
             if [ -z "$prs" ] || ! echo "$prs" | jq empty > /dev/null 2>&1; then
-              echo "::warning:: Not valid JSON from gh pr list for $repo:"
-              echo "$prs"
+              echo "::error:: Not valid JSON from gh pr list for $repo"
               continue
             fi
-            echo "$prs" | jq -c '.[] // empty' | while read pr; do
-              number=$(echo "$pr" | jq -r '.number')
-              title=$(echo "$pr" | jq -r '.title')
-              created=$(echo "$pr" | jq -r '.createdAt')
-              created_ts=$(date -d "$created" +%s)
-              age_secs=$(( NOW - created_ts ))
-              if [ $age_secs -ge $AGE_LIMIT ]; then
-                checks_json=$(gh pr view $number --repo "$ORG_NAME/$repo" --json commits 2>&1)
-                if [ -z "$checks_json" ] || ! echo "$checks_json" | jq empty > /dev/null 2>&1; then
-                  echo "::warning:: Not valid JSON from gh pr view for $repo PR #$number:"
-                  echo "$checks_json"
-                  continue
-                fi
-                checks=$(echo "$checks_json" | jq '.commits|last|.commit.statusCheckRollup // empty')
-                if [ -z "$checks" ] || [ "$checks" = "null" ]; then
-                  continue
-                fi
-                if echo "$checks" | jq -e 'type == "array" and any(.state == "PENDING")' > /dev/null; then
-                  pending_total=$(echo "$checks" | jq '[.[] | select(.state == "PENDING")] | length')
-                  pending_approval=$(echo "$checks" | jq '[.[] | select(.state == "PENDING" and (.name | test("approval"; "i")))] | length')
-                  if [ "$pending_total" -eq "$pending_approval" ] && [ "$pending_total" -gt 0 ]; then
-                    echo "PR #$number ($repo) only pending approval, skipping"
-                    continue
-                  fi
-                  pending_names=$(echo "$checks" | jq -r '[.[] | select(.state == "PENDING") | .name] | join(", ")')
-                  before_status="pending (${pending_names})"
-                  after_status="would-close"
-                  STUCK_PRS+=( "$repo|#${number}: ${title}|${before_status}|${after_status}" )
-                fi
-              fi
-            done
+            echo "---- Valid JSON, output of jq -c '.[] // empty' ----"
+            echo "$prs" | jq -c '.[] // empty'
+            echo "-------------------------------"
           done < repos.txt
-
-          {
-            echo "<html>"
-            echo "<head>"
-            echo "  <style>"
-            echo "    body { background: #f4f6fb; color: #222; font-family: 'Segoe UI', Arial, sans-serif; }"
-            echo "    table { border-collapse: separate; border-spacing: 0; width: 100%; margin-top: 16px; }"
-            echo "    th, td { border: 1px solid #e1e4ea; padding: 12px 10px; }"
-            echo "    th {"
-            echo "      background: linear-gradient(90deg, #4f8cff 0%, #3f51b5 100%);"
-            echo "      color: #fff;"
-            echo "      font-weight: bold;"
-            echo "      border-top-left-radius: 8px;"
-            echo "      border-top-right-radius: 8px;"
-            echo "      font-size: 16px;"
-            echo "      border-bottom: 2px solid #3f51b5;"
-            echo "    }"
-            echo "    tr:nth-child(even) { background: #e3eafc; }"
-            echo "    tr:nth-child(odd) { background: #f4f6fb; }"
-            echo "    td { font-size: 15px; }"
-            echo "    td.status-before { color: #b85c00; font-weight: bold; }"
-            echo "    td.status-after  { color: #c62828; font-weight: bold; }"
-            echo "    table tr:first-child th:first-child { border-top-left-radius: 8px; }"
-            echo "    table tr:first-child th:last-child  { border-top-right-radius: 8px; }"
-            echo "  </style>"
-            echo "</head>"
-            echo "<body>"
-            echo "<p>The following PRs were detected as stuck (open over 1 hour 30 minutes with pending status checks):</p>"
-            echo "<table>"
-            echo "  <tr>"
-            echo "    <th>Repo Name</th>"
-            echo "    <th>PR Details</th>"
-            echo "    <th>Status Before</th>"
-            echo "    <th>Action</th>"
-            echo "  </tr>"
-            for pr in "${STUCK_PRS[@]}"; do
-              IFS='|' read -r repo pr_details before_status after_status <<< "$pr"
-              echo "  <tr><td>${repo}</td><td>${pr_details}</td><td class=\"status-before\">${before_status}</td><td class=\"status-after\">${after_status}</td></tr>"
-            done
-            echo "</table></body></html>"
-          } > email_body.html
-
-          EMAIL_BODY=$(cat email_body.html)
-
-          if [ ${#STUCK_PRS[@]} -gt 0 ]; then
-            aws ses send-email \
-              --from "$SES_FROM" \
-              --destination "ToAddresses=$SES_TO" \
-              --message "Subject={Data='$SES_SUBJECT'},Body={Html={Data=\"$EMAIL_BODY\"}}"
-            echo "Email sent via SES for stuck PRs"
-          else
-            echo "No stuck PRs found, no email sent."
-          fi
