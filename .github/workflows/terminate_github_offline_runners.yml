@@ -34,4 +34,4 @@ jobs:
           aws-region: us-east-1
 
       - name: Run GitHub runner monitor script
-        run: python3 PYTHON_Script/terminate_github_offline_runners-advanced.py
+        run: python3 PYTHON_Script/terminate_github_offline_runners-advanced-dry_run.py
