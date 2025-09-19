@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq gh 
+          sudo apt-get install -y jq gh
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -42,6 +42,7 @@ jobs:
           SES_TO: ${{ env.SES_TO }}
           SES_SUBJECT: ${{ env.SES_SUBJECT }}
         run: |
+          set -e
           NOW=$(date -u +%s)
           declare -a STUCK_PRS
           AGE_LIMIT=$((90 * 60)) # 1 hour 30 minutes in seconds
@@ -51,39 +52,38 @@ jobs:
             prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title 2>&1)
             echo "---- Raw gh pr list output ----"
             echo "$prs"
-            if [ -z "$prs" ] || ! echo "$prs" | jq empty > /dev/null 2>&1; then
+            if [ -z "$prs" ] || ! jq empty <<< "$prs" > /dev/null 2>&1; then
               echo "::warning:: Not valid JSON from gh pr list for $repo"
               continue
             fi
-            echo "---- Valid JSON, output of jq -c '.[] // empty' ----"
-            echo "$prs" | jq -c '.[] // empty'
-            echo "-------------------------------"
-            echo "$prs" | jq -c '.[] // empty' | while read pr; do
-              number=$(echo "$pr" | jq -r '.number')
-              title=$(echo "$pr" | jq -r '.title')
-              created=$(echo "$pr" | jq -r '.createdAt')
+            pr_count=$(jq 'length' <<< "$prs")
+            for i in $(seq 0 $((pr_count - 1))); do
+              pr=$(jq ".[$i]" <<< "$prs")
+              number=$(jq -r '.number' <<< "$pr")
+              title=$(jq -r '.title' <<< "$pr")
+              created=$(jq -r '.createdAt' <<< "$pr")
               created_ts=$(date -d "$created" +%s)
               age_secs=$(( NOW - created_ts ))
               if [ $age_secs -ge $AGE_LIMIT ]; then
                 checks_json=$(gh pr view $number --repo "$ORG_NAME/$repo" --json commits 2>&1)
                 echo "---- Raw gh pr view output for PR #$number ----"
                 echo "$checks_json"
-                if [ -z "$checks_json" ] || ! echo "$checks_json" | jq empty > /dev/null 2>&1; then
+                if [ -z "$checks_json" ] || ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
                   echo "::warning:: Not valid JSON from gh pr view for $repo PR #$number"
                   continue
                 fi
-                checks=$(echo "$checks_json" | jq '.commits|last|.commit.statusCheckRollup // empty')
+                checks=$(jq '.commits|last|.commit.statusCheckRollup // empty' <<< "$checks_json")
                 if [ -z "$checks" ] || [ "$checks" = "null" ]; then
                   continue
                 fi
-                if echo "$checks" | jq -e 'type == "array" and any(.state == "PENDING")' > /dev/null; then
-                  pending_total=$(echo "$checks" | jq '[.[] | select(.state == "PENDING")] | length')
-                  pending_approval=$(echo "$checks" | jq '[.[] | select(.state == "PENDING" and (.name | test("approval"; "i")))] | length')
+                if jq -e 'type == "array" and any(.state == "PENDING")' <<< "$checks" > /dev/null; then
+                  pending_total=$(jq '[.[] | select(.state == "PENDING")] | length' <<< "$checks")
+                  pending_approval=$(jq '[.[] | select(.state == "PENDING" and (.name | test("approval"; "i")))] | length' <<< "$checks")
                   if [ "$pending_total" -eq "$pending_approval" ] && [ "$pending_total" -gt 0 ]; then
                     echo "PR #$number ($repo) only pending approval, skipping"
                     continue
                   fi
-                  pending_names=$(echo "$checks" | jq -r '[.[] | select(.state == "PENDING") | .name] | join(", ")')
+                  pending_names=$(jq -r '[.[] | select(.state == "PENDING") | .name] | join(", ")' <<< "$checks")
                   before_status="pending (${pending_names})"
                   after_status="would-close"
                   STUCK_PRS+=( "$repo|#${number}: ${title}|${before_status}|${after_status}" )
