@@ -9,9 +9,9 @@ from datetime import datetime, timezone
 AWS_REGION = "us-east-1"
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
 GITHUB_ORG = "vitechsystems"
-GITHUB_TOKEN = os.environ.get("CLASSIC_PAT")  # Classic PAT from workflow env
+GITHUB_TOKEN = os.environ.get("PROD_FINE_GRAINED_PAT")  # Classic PAT from workflow env
 DRY_RUN = False  # Change to False to actually terminate instances
-THRESHOLD_MINUTES = 5
+THRESHOLD_MINUTES = 60
 TAG_KEY = "Name"
 TAG_VALUE = "Github_Self_Hosted_Runner"
 # ==============================
@@ -152,7 +152,7 @@ def main():
                     if inst:
                         message += f"Instance ID: {inst_id}\n"
                         message += f"Launch Time: {inst['LaunchTime']}\n"
-                        message += f"Running Time: {inst['RunningTime']}\n\n\n"
+                        message += f"Running Time: {inst['RunningTime']}\n\n"
 
             if orphan_instances:
                 message += "Orphaned runner / failed registration:\n\n"
