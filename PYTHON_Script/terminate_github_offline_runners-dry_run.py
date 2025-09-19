@@ -102,6 +102,7 @@ def main():
 
     # Match AWS instance IDs with runner names
     matched_runners = []
+    matched_instance_ids = set()
     for runner in github_runners:
         runner_name = runner.get("name", "")
         for inst_id in aws_instance_ids:
@@ -112,25 +113,35 @@ def main():
                     "runner_name": runner_name,
                     "status": runner.get("status")
                 })
+                matched_instance_ids.add(inst_id)
                 break
 
+    # 1. Idle/Offline matched runners
     idle_offline_instances = []
     for runner in matched_runners:
         if runner["status"].lower() in ["offline", "idle"]:
             idle_offline_instances.append(runner["instance_id"])
 
-    print(f"Idle/Offline AWS runners to terminate: {idle_offline_instances}")
+    # 2. Orphaned AWS instances (not in GitHub runner list)
+    orphan_instances = [inst_id for inst_id in aws_instance_ids if inst_id not in matched_instance_ids]
 
-    if idle_offline_instances:
-        terminate_instances(idle_offline_instances)
+    # Combine both sets
+    instances_to_terminate = list(set(idle_offline_instances + orphan_instances))
+
+    print(f"Idle/Offline AWS runners to terminate: {idle_offline_instances}")
+    print(f"Orphan AWS instances to terminate (not in GitHub): {orphan_instances}")
+    print(f"Final list of instances to terminate: {instances_to_terminate}")
+
+    if instances_to_terminate:
+        terminate_instances(instances_to_terminate)
         if not DRY_RUN:
-            subject = "Terminated Idle/Offline Github Runners"
-            message = "The following AWS instances were terminated due to idle/offline state:\n"
-            for inst_id in idle_offline_instances:
+            subject = "Terminated Idle/Orphaned Github Runners"
+            message = "The following AWS instances were terminated:\n"
+            for inst_id in instances_to_terminate:
                 message += f"{inst_id}\n"
             send_sns_notification(subject, message)
     else:
-        print("No idle or offline runners found for termination.")
+        print("No idle, offline, or orphaned instances found for termination.")
 
 
 if __name__ == "__main__":
