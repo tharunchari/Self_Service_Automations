@@ -31,6 +31,8 @@ jobs:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           gh repo list "$ORG_NAME" --limit 1000 --json name -q '.[] | .name' > repos.txt
+          echo "Repositories collected for org $ORG_NAME:"
+          cat repos.txt
 
       - name: Check PRs and build report
         env:
@@ -45,8 +47,8 @@ jobs:
           AGE_LIMIT=$((90 * 60)) # 1 hour 30 minutes in seconds
 
           while read repo; do
-            prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title)
-            if [ -z "$prs" ] || [ "$prs" = "null" ] || [ "$prs" = "[]" ]; then
+            prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title 2>/dev/null)
+            if [ -z "$prs" ] || ! echo "$prs" | jq empty 2>/dev/null; then
               continue
             fi
             echo "$prs" | jq -c '.[] // empty' | while read pr; do
@@ -56,12 +58,10 @@ jobs:
               created_ts=$(date -d "$created" +%s)
               age_secs=$(( NOW - created_ts ))
               if [ $age_secs -ge $AGE_LIMIT ]; then
-                checks_json=$(gh pr view $number --repo "$ORG_NAME/$repo" --json commits)
-                # Defensive: skip if no commits or jq error
-                if [ -z "$checks_json" ] || [ "$checks_json" = "null" ]; then
+                checks_json=$(gh pr view $number --repo "$ORG_NAME/$repo" --json commits 2>/dev/null)
+                if [ -z "$checks_json" ] || ! echo "$checks_json" | jq empty 2>/dev/null; then
                   continue
                 fi
-                # Get statusCheckRollup or skip if not present
                 checks=$(echo "$checks_json" | jq '.commits|last|.commit.statusCheckRollup // empty')
                 if [ -z "$checks" ] || [ "$checks" = "null" ]; then
                   continue
