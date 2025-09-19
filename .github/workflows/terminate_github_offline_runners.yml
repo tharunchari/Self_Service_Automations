@@ -33,5 +33,8 @@ jobs:
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
+#      - name: Run GitHub runner monitor script
+#        run: python3 PYTHON_Script/terminate_github_offline_runners-advanced-dry_run.py
+
       - name: Run GitHub runner monitor script
-        run: python3 PYTHON_Script/terminate_github_offline_runners-advanced-dry_run.py
+        run: python3 PYTHON_Script/terminate_github_offline_runners-dry_run.py
