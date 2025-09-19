@@ -1,7 +1,8 @@
 import boto3
 import requests
-import datetime
-from dateutil import tz
+import os
+from datetime import datetime, timezone
+from dateutil import parser as date_parser
 
 # ---------- CONFIG ----------
 AWS_REGION = "us-east-1"
