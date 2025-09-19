@@ -1,14 +1,14 @@
 import boto3
 import requests
+from datetime import datetime, timedelta, timezone
 import os
-from datetime import datetime, timezone
 from dateutil import parser as date_parser
 
 # ---------- CONFIG ----------
 AWS_REGION = "us-east-1"
-INSTANCE_NAME_TAG = "Github_Self_Hosted_Runner"
+INSTANCE_NAME_TAG = "GitHub-Runner"
 GITHUB_ORG = "vitechsystems"
-GITHUB_TOKEN = os.environ.get("CLASSIC_PAT")  # Classic PAT from workflow env
+GITHUB_TOKEN = "your_github_token"
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd:70782ed6-97d0-4386-95c0-2e5890ec5c37"
 DRY_RUN = True   # <<--- Set to False to actually terminate
 # ----------------------------
@@ -18,8 +18,8 @@ sns = boto3.client("sns", region_name=AWS_REGION)
 
 def get_old_instances():
     """Get EC2 instances with Name tag = INSTANCE_NAME_TAG and older than 60 mins"""
-    now = datetime.datetime.now(tz.UTC)
-    cutoff = now - datetime.timedelta(minutes=60)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=60)
 
     resp = ec2.describe_instances(
         Filters=[{"Name": "tag:Name", "Values": [INSTANCE_NAME_TAG]}]
@@ -81,6 +81,7 @@ def main():
     for name, runner in matched.items():
         status = runner["status"].lower()
         busy = runner.get("busy", False)
+        print(f"Runner {name} → Status: {status}, Busy: {busy}")
         if status != "online" or not busy:
             bad_instances.append(name)
 
