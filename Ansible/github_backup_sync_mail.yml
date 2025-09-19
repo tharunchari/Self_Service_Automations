@@ -8,7 +8,7 @@
  
   tasks:
     - name: GitHub commits (vitechsystems)
-      shell: git ls-remote https://{{ github_password_2 }}@github.com/vitechsystems/SIFO.git | awk '{print $1}' | head -n 1
+      shell: git ls-remote https://{{ github_password_1 }}@github.com/vitechsystems/SIFO.git | awk '{print $1}' | head -n 1
       register: hello
 
     - debug:
