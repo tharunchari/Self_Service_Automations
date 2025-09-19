@@ -1,8 +1,8 @@
 name: "Terminate_Runners_Status"
 on:
-  schedule:
+ # schedule:
    # - cron: "5,40 * * * *" # This will run the workflow every 2 hours
-     - cron: "0 */2 * * *"
+ #    - cron: "0 */2 * * *"
  
   workflow_dispatch:
 
