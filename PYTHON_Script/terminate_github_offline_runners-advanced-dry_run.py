@@ -84,12 +84,26 @@ def get_idle_or_offline_runners(matched_runners):
         resp = requests.get(url, headers=headers)
         resp.raise_for_status()
         runner_details = resp.json()
-        last_seen_str = runner_details.get("last_online_at") or runner_details.get("last_activity_at")
-        if last_seen_str:
+
+        # Try to find last seen timestamp
+        last_seen_str = (
+            runner_details.get("last_online_at")
+            or runner_details.get("last_activity_at")
+            or runner_details.get("created_at")
+        )
+
+        if not last_seen_str:
+            print(f"⚠️ No timestamp found for runner {runner_name} ({instance_id}), skipping.")
+            continue
+
+        try:
             last_seen = date_parser.parse(last_seen_str)
-        else:
-            last_seen = date_parser.parse(runner_details.get("created_at"))
+        except Exception as e:
+            print(f"⚠️ Failed to parse timestamp for runner {runner_name} ({instance_id}): {last_seen_str}, error={e}")
+            continue
+
         idle_time = (now - last_seen).total_seconds()
+
         if status == "online" and busy:
             print(f"Skipping busy runner {runner_name} ({instance_id})")
             continue
@@ -101,6 +115,7 @@ def get_idle_or_offline_runners(matched_runners):
         elif status == "offline" and idle_time > 300:
             idle_or_offline.append((instance_id, runner_name, status, idle_time))
     return idle_or_offline
+
 
 def terminate_instances(instance_ids):
     if DRY_RUN:
