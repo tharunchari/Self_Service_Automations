@@ -1,4 +1,4 @@
-name: Shai-Hulud NPM Supply Chain IoC Scanner
+name: Shai-Hulud NPM Supply Chain IoC Scanner (with Cleanup)
 
 on:
   workflow_dispatch:
@@ -10,10 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
+      - name: Checkout scanning repo
+        uses: actions/checkout@v4
+
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gh jq git
+          sudo apt-get install -y gh jq git base64
 
       - name: Authenticate with GitHub CLI
         run: gh auth login --with-token <<< "${{ secrets.PROD_FINE_GRAINED_PAT }}"
@@ -21,35 +24,116 @@ jobs:
       - name: Get all repositories in org
         id: get-repos
         run: |
-          gh repo list vitechsystems --limit 1000 --json name -q '.[].name' > repos.txt
+          gh repo list vitechsystems --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' > repos_and_desc.txt
+          cut -d"|" -f1 repos_and_desc.txt > repos.txt
+
+      - name: Use wiz_results.txt as IoC list
+        run: |
+          cp wiz_results.txt ioc_packages.txt
 
       - name: Scan all branches in all repos
         run: |
           set -eo pipefail
-          mkdir results
+          mkdir -p results
+          MALICIOUS_HASHES="46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
+
+          for linedesc in $(cat repos_and_desc.txt); do
+            repo=$(echo "$linedesc" | cut -d"|" -f1)
+            desc=$(echo "$linedesc" | cut -d"|" -f2-)
+            # Check for suspicious repo names and descriptions
+            if [[ "$repo" =~ [Ss]hai[-]?Hulud ]]; then
+              echo "!!! Repo $repo flagged: name contains Shai-Hulud" >> results/org-wide-repo-check.txt
+            fi
+            if [[ "$repo" =~ -migration$ ]] && [[ "$desc" == *Shai-Hulud*Migration* ]]; then
+              echo "!!! Repo $repo flagged: migration repo with Shai-Hulud description" >> results/org-wide-repo-check.txt
+            fi
+          done
+
           while read repo; do
             echo "Scanning repo: $repo"
-            # Get all branches
             gh api repos/vitechsystems/$repo/branches --paginate | jq -r '.[].name' > branches.txt
             while read branch; do
               echo "  Scanning branch: $branch"
               rm -rf tmprepo
-              git clone --depth 1 --branch "$branch" "https://github.com/vitechsystems/$repo.git" tmprepo || continue
-              cd tmprepo
-              echo "## Results for $repo@$branch" > "../results/${repo}__${branch}.txt"
-              # 1. Check for compromised package versions in package.json and lock files
-              if [ -f package.json ]; then
-                jq -r '.dependencies,.devDependencies // {} | to_entries[] | "\(.key):\(.value)"' package.json > deps.txt || true
-                grep -E '@ctrl/tinycolor:4\.1\.[012]|@ctrl/deluge:1\.2\.0|angulartics2:14\.1\.2|koa2-swagger-ui:5\.11\.[12]' deps.txt && echo "!!! Compromised NPM package found in package.json" >> "../results/${repo}__${branch}.txt"
+              if ! git clone --depth 1 --branch "$branch" "https://github.com/vitechsystems/$repo.git" tmprepo; then
+                continue
               fi
-              # 2. Grep lock files for same
-              grep -E '@ctrl/tinycolor@4\.1\.[012]|@ctrl/deluge@1\.2\.0|angulartics2@14\.1\.2|koa2-swagger-ui@5\.11\.[12]' package-lock.json yarn.lock pnpm-lock.yaml 2>/dev/null && echo "!!! Compromised NPM package found in lock file" >> "../results/${repo}__${branch}.txt"
-              # 3. Check for suspicious postinstall scripts
-              grep -A 3 '"postinstall"' package.json 2>/dev/null | grep -E 'curl|wget|node -e|eval' && echo "!!! Suspicious postinstall script found" >> "../results/${repo}__${branch}.txt"
-              # 4. Check for suspicious domains or webhook endpoints
-              grep -rE 'webhook\.site|npmjs\.help' . && echo "!!! Suspicious domain found in source files" >> "../results/${repo}__${branch}.txt"
-              # 5. Check for known wallet addresses or obfuscated code
-              grep -rE '0xFc4a4858bafef54D1b1d7697bfb5c52F4c166976|javascript-obfuscator' . && echo "!!! Suspect wallet or obfuscation detected" >> "../results/${repo}__${branch}.txt"
+              cd tmprepo
+              RESULT_FILE="../results/${repo}__${branch}.txt"
+              echo "## Results for $repo@$branch" > "$RESULT_FILE"
+              FOUND=0
+              # 1. Compromised npm packages (package.json)
+              if [ -f package.json ]; then
+                jq -r '.dependencies,.devDependencies,.peerDependencies // {} | to_entries[] | "\(.key),\(.value)"' package.json > deps.txt || true
+                while IFS=, read -r pkg ver; do
+                  if grep -q "^$pkg,$ver$" deps.txt; then
+                    echo "!!! Compromised NPM package found: $pkg,$ver" >> "$RESULT_FILE"
+                    FOUND=1
+                  fi
+                done < ../ioc_packages.txt
+              fi
+              # 2. Compromised npm packages (lock files)
+              for lockf in package-lock.json yarn.lock pnpm-lock.yaml; do
+                if [ -f "$lockf" ]; then
+                  while IFS=, read -r pkg ver; do
+                    if grep -q "$pkg.*$ver" "$lockf"; then
+                      echo "!!! Compromised NPM package found in lock file: $pkg,$ver" >> "$RESULT_FILE"
+                      FOUND=1
+                    fi
+                  done < ../ioc_packages.txt
+                fi
+              done
+              # 3. Suspicious postinstall script
+              if [ -f package.json ]; then
+                if grep -A 3 '"postinstall"' package.json 2>/dev/null | grep -E 'curl|wget|node -e|eval'; then
+                  echo "!!! Suspicious postinstall script found" >> "$RESULT_FILE"
+                  FOUND=1
+                fi
+              fi
+              # 4. Suspicious domains/webhooks
+              if grep -rE 'webhook\.site|npmjs\.help' .; then
+                echo "!!! Suspicious domain found in source files" >> "$RESULT_FILE"
+                FOUND=1
+              fi
+              # 5. Attacker wallet/obfuscated code
+              if grep -rE '0xFc4a4858bafef54D1b1d7697bfb5c52F4c166976|javascript-obfuscator' .; then
+                echo "!!! Suspect wallet or obfuscation detected" >> "$RESULT_FILE"
+                FOUND=1
+              fi
+              # 6. Malicious workflow files
+              if find .github/workflows -name 'shai-hulud-workflow.yml' 2>/dev/null | grep -q .; then
+                echo "!!! Malicious workflow file shai-hulud-workflow.yml found" >> "$RESULT_FILE"
+                FOUND=1
+              fi
+              # 7. Branch named shai-hulud
+              if [[ "$branch" =~ shai[-]?hulud ]]; then
+                echo "!!! Branch named shai-hulud found" >> "$RESULT_FILE"
+                FOUND=1
+              fi
+              # 8. Trufflehog/secret scanning activity
+              if grep -r -i 'trufflehog' .; then
+                echo "!!! Trufflehog/secret scanning activity detected" >> "$RESULT_FILE"
+                FOUND=1
+              fi
+              # 9. Malicious file hashes
+              while read file; do
+                hash=$(sha256sum "$file" | awk '{print $1}')
+                if [[ "$hash" == "$MALICIOUS_HASHES" ]]; then
+                  echo "!!! Malicious file hash found: $file ($hash)" >> "$RESULT_FILE"
+                  FOUND=1
+                fi
+              done < <(find . -type f -name "*.js" 2>/dev/null)
+              # 10. data.json double base64 check
+              if [ -f data.json ]; then
+                if head -c 100 data.json | grep -Eq '^[A-Za-z0-9+/=]{20,}$'; then
+                  echo "!!! data.json found, contents look like base64. Possible exfiltrated secrets." >> "$RESULT_FILE"
+                  FOUND=1
+                fi
+              fi
+              # Always write a summary if nothing found
+              if [ $FOUND -eq 0 ]; then
+                echo "No Shai-Hulud IoCs or suspicious activity found in this branch." >> "$RESULT_FILE"
+              fi
               cd ..
               rm -rf tmprepo
             done < branches.txt
@@ -60,3 +144,9 @@ jobs:
         with:
           name: shai-hulud-scan-results
           path: results/
+
+      - name: Clean working directory
+        if: always()
+        run: |
+          cd $GITHUB_WORKSPACE
+          rm -rf *
