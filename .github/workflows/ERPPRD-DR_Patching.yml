@@ -126,7 +126,7 @@ jobs:
         run: |
           aws sns publish \
             --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-            --message "$(echo -e "**Attention: ERPPRD_PROD will be undergoing a patch at this same time on the upcoming Saturday.**\n\nPlease take action." \
+            --message "$(echo -e "**Attention: ERPPRD_PROD will be undergoing a patch at this same time on the upcoming Saturday.**\n\nPlease take action.")" \
             --subject "ERPPRD-PROD Upcomming Patching Notification"
 
   execute-job-manual:
