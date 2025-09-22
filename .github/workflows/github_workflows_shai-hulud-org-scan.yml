@@ -2,8 +2,8 @@ name: Shai-Hulud NPM Supply Chain IoC Scanner (with Cleanup)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 3 * * *' # Every day at 3 AM UTC
+ # schedule:
+  #  - cron: '0 3 * * *' # Every day at 3 AM UTC
 
 jobs:
   scan-org-npm-ioc:
@@ -16,7 +16,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gh jq git base64
+          sudo apt-get install -y gh jq git
 
       - name: Authenticate with GitHub CLI
         run: gh auth login --with-token <<< "${{ secrets.PROD_FINE_GRAINED_PAT }}"
