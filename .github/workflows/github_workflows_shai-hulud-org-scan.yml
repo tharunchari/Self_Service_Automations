@@ -139,6 +139,34 @@ jobs:
             done < branches.txt
           done < repos.txt
 
+      - name: Ensure results is never empty
+        run: |
+          if [ ! "$(ls -A results/)" ]; then
+            {
+              echo "=== Shai-Hulud Scan Summary ==="
+              echo ""
+              echo "Scanned repositories and branches:"
+              total_repos=0
+              total_branches=0
+              while read repo; do
+                echo "- $repo"
+                gh api repos/vitechsystems/$repo/branches --paginate | jq -r '.[].name' > branches_tmp.txt
+                branch_count=0
+                while read branch; do
+                  echo "    - $branch"
+                  branch_count=$((branch_count+1))
+                done < branches_tmp.txt
+                total_branches=$((total_branches+branch_count))
+                total_repos=$((total_repos+1))
+              done < repos.txt
+              echo ""
+              echo "Total repositories scanned: $total_repos"
+              echo "Total branches scanned: $total_branches"
+              echo ""
+              echo "No Shai-Hulud IoCs or suspicious activity found in any branch."
+            } > results/scan_summary.txt
+          fi
+
       - name: Upload scan results as artifact
         uses: actions/upload-artifact@v4
         with:
