@@ -1,0 +1,62 @@
+name: Shai-Hulud NPM Supply Chain IoC Scanner
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *' # Every day at 3 AM UTC
+
+jobs:
+  scan-org-npm-ioc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh jq git
+
+      - name: Authenticate with GitHub CLI
+        run: gh auth login --with-token <<< "${{ secrets.PROD_FINE_GRAINED_PAT }}"
+
+      - name: Get all repositories in org
+        id: get-repos
+        run: |
+          gh repo list vitechsystems --limit 1000 --json name -q '.[].name' > repos.txt
+
+      - name: Scan all branches in all repos
+        run: |
+          set -eo pipefail
+          mkdir results
+          while read repo; do
+            echo "Scanning repo: $repo"
+            # Get all branches
+            gh api repos/vitechsystems/$repo/branches --paginate | jq -r '.[].name' > branches.txt
+            while read branch; do
+              echo "  Scanning branch: $branch"
+              rm -rf tmprepo
+              git clone --depth 1 --branch "$branch" "https://github.com/vitechsystems/$repo.git" tmprepo || continue
+              cd tmprepo
+              echo "## Results for $repo@$branch" > "../results/${repo}__${branch}.txt"
+              # 1. Check for compromised package versions in package.json and lock files
+              if [ -f package.json ]; then
+                jq -r '.dependencies,.devDependencies // {} | to_entries[] | "\(.key):\(.value)"' package.json > deps.txt || true
+                grep -E '@ctrl/tinycolor:4\.1\.[012]|@ctrl/deluge:1\.2\.0|angulartics2:14\.1\.2|koa2-swagger-ui:5\.11\.[12]' deps.txt && echo "!!! Compromised NPM package found in package.json" >> "../results/${repo}__${branch}.txt"
+              fi
+              # 2. Grep lock files for same
+              grep -E '@ctrl/tinycolor@4\.1\.[012]|@ctrl/deluge@1\.2\.0|angulartics2@14\.1\.2|koa2-swagger-ui@5\.11\.[12]' package-lock.json yarn.lock pnpm-lock.yaml 2>/dev/null && echo "!!! Compromised NPM package found in lock file" >> "../results/${repo}__${branch}.txt"
+              # 3. Check for suspicious postinstall scripts
+              grep -A 3 '"postinstall"' package.json 2>/dev/null | grep -E 'curl|wget|node -e|eval' && echo "!!! Suspicious postinstall script found" >> "../results/${repo}__${branch}.txt"
+              # 4. Check for suspicious domains or webhook endpoints
+              grep -rE 'webhook\.site|npmjs\.help' . && echo "!!! Suspicious domain found in source files" >> "../results/${repo}__${branch}.txt"
+              # 5. Check for known wallet addresses or obfuscated code
+              grep -rE '0xFc4a4858bafef54D1b1d7697bfb5c52F4c166976|javascript-obfuscator' . && echo "!!! Suspect wallet or obfuscation detected" >> "../results/${repo}__${branch}.txt"
+              cd ..
+              rm -rf tmprepo
+            done < branches.txt
+          done < repos.txt
+
+      - name: Upload scan results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shai-hulud-scan-results
+          path: results/
