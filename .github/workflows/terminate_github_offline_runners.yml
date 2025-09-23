@@ -1,9 +1,9 @@
 name: "Terminate Github Self Hosted Offline Runners"
 
 on:
-  schedule:
-    # This will run the workflow every 2 hours
-    - cron: "0 */1 * * *"
+#  schedule:
+#   # This will run the workflow every 2 hours
+#    - cron: "0 */1 * * *"
   workflow_dispatch:
 
 jobs:
