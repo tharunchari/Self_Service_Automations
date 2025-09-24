@@ -1,8 +1,8 @@
 name: Stuck PRs Email Report (Self-Hosted, Robust, Universal Trigger)
 
 on:
- # schedule:
-  #  - cron: "0 * * * *"
+  schedule:
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
