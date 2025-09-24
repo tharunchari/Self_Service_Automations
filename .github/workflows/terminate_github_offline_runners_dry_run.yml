@@ -1,0 +1,35 @@
+name: "Terminate Github Self Hosted Offline Runners Dry Run"
+
+on:
+  schedule:
+    # Run every hour at minute 0
+    - cron: "0 */1 * * *"
+  workflow_dispatch:
+
+jobs:
+  Terminate_Runners:
+    runs-on: ubuntu-latest
+    
+    env:
+      PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install boto3 requests python-dateutil
+
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Run GitHub runner monitor script
+        run: python3 PYTHON_Script/terminate_github_offline_runners_advanced.py --dry-run=True
