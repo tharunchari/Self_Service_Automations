@@ -151,19 +151,31 @@ jobs:
 
               author=$(jq -r '.author.login // "unknown"' <<< "$pr_json")
               state=$(jq -r '.state' <<< "$pr_json")
-              reviewers=$(jq -r 'if has("reviewRequests") then (try [.reviewRequests.nodes[].requestedReviewer.login // .reviewRequests.nodes[].requestedReviewer.name // ""] | map(select(length > 0)) | join(", ")) else "" end' <<< "$pr_json")
 
-              # Get all pending status checks' names
+              # Robustly extract reviewers (object with nodes[] or array)
+              reviewers=$(jq -r '
+                if has("reviewRequests") then
+                  if (.reviewRequests | type == "object" and .reviewRequests.nodes) then
+                    ([.reviewRequests.nodes[].requestedReviewer.login // .reviewRequests.nodes[].requestedReviewer.name // ""] | map(select(length > 0)) | join(", "))
+                  elif (.reviewRequests | type == "array") then
+                    ([.reviewRequests[].requestedReviewer.login // .reviewRequests[].requestedReviewer.name // ""] | map(select(length > 0)) | join(", "))
+                  else "" end
+                else "" end
+              ' <<< "$pr_json")
+
+              # Count pending status checks
               pending_total=$(jq 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING")) | length' <<< "$pr_json")
 
               if [ "$pending_total" -eq 0 ]; then
                 # No pending status checks. Check if code review is still required.
                 reviewers_pending=$(jq -r '
                   if has("reviewRequests") then
-                    ([.reviewRequests.nodes[].requestedReviewer.login // .reviewRequests.nodes[].requestedReviewer.name // ""] | map(select(length > 0)) | length)
-                  else
-                    0
-                  end
+                    if (.reviewRequests | type == "object" and .reviewRequests.nodes) then
+                      ([.reviewRequests.nodes[].requestedReviewer.login // .reviewRequests.nodes[].requestedReviewer.name // ""] | map(select(length > 0)) | length)
+                    elif (.reviewRequests | type == "array") then
+                      ([.reviewRequests[].requestedReviewer.login // .reviewRequests[].requestedReviewer.name // ""] | map(select(length > 0)) | length)
+                    else 0 end
+                  else 0 end
                 ' <<< "$pr_json")
                 if [ "$reviewers_pending" -gt 0 ]; then
                   echo "PR #$number only pending code reviewer approval, skipping."
