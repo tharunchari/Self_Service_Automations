@@ -2,8 +2,8 @@ name: "Terminate Github Self Hosted Offline Runners"
 
 on:
   schedule:
-#   # This will run the workflow every 2 hours
-    - cron: "0 */1 * * *"
+    # Run every hour at minute 5 (e.g., 01:05, 02:05, 03:05...)
+    - cron: "5 */1 * * *"
   workflow_dispatch:
 
 jobs:
@@ -32,4 +32,4 @@ jobs:
           aws-region: us-east-1
 
       - name: Run GitHub runner monitor script
-        run: python3 PYTHON_Script/terminate_github_offline_runners_advanced.py
+        run: python3 PYTHON_Script/terminate_github_offline_runners_advanced.py --dry-run=False
