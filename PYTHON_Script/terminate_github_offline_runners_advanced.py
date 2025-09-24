@@ -1,6 +1,7 @@
 import boto3
 import requests
 import os
+import argparse
 from datetime import datetime, timezone
 
 # ==============================
@@ -10,11 +11,21 @@ AWS_REGION = "us-east-1"
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
 GITHUB_ORG = "vitechsystems"
 GITHUB_TOKEN = os.environ.get("PROD_FINE_GRAINED_PAT")  # Classic PAT from workflow env
-DRY_RUN = False  # Change to False to actually terminate instances
 THRESHOLD_MINUTES = 60
 TAG_KEY = "Name"
 TAG_VALUE = "Github_Self_Hosted_Runner"
 # ==============================
+
+# CLI argument parsing
+parser = argparse.ArgumentParser(description="Terminate idle/offline GitHub self-hosted runners")
+parser.add_argument(
+    "--dry-run",
+    type=str,
+    default="True",
+    help="Set to True for dry run (no termination, only notifications). Set to False to actually terminate."
+)
+args = parser.parse_args()
+DRY_RUN = args.dry_run.lower() == "true"
 
 
 def send_sns_notification(subject, message):
@@ -87,7 +98,7 @@ def terminate_instances(instance_ids, dry_run=DRY_RUN):
 
 def main():
     if not GITHUB_TOKEN:
-        print("Error: CLASSIC_PAT environment variable not set!")
+        print("Error: PROD_FINE_GRAINED_PAT environment variable not set!")
         return
 
     if DRY_RUN:
@@ -141,34 +152,39 @@ def main():
     if instances_to_terminate:
         terminate_instances(instances_to_terminate)
 
-        if not DRY_RUN:
-            subject = "Terminated Offline/Orphaned Github Runners"
-            message = "Self-hosted GitHub runners running for more than 60 minutes have been terminated.\n\n\n"
+        subject = ""
+        message = ""
 
-            if idle_offline_instances:
-                message += "Idle or Offline runners:\n\n"
-                for inst_id in idle_offline_instances:
-                    inst = aws_instance_map.get(inst_id)
-                    if inst:
-                        message += f"Instance ID: {inst_id}\n"
-                        message += f"Launch Time: {inst['LaunchTime']}\n"
-                        message += f"Running Time: {inst['RunningTime']}\n\n"
+        if DRY_RUN:
+            subject = "⚠️ Dry Run: Offline/Orphaned Github Runners"
+            message = "The following instances would be terminated in 5 minutes (dry run mode).\n\n"
+        else:
+            subject = "✅ Terminated Offline/Orphaned Github Runners"
+            message = "The following self-hosted GitHub runners running for more than 60 minutes have been terminated.\n\n"
 
-            if orphan_instances:
-                message += "Orphaned runner / failed registration:\n\n"
-                for inst_id in orphan_instances:
-                    inst = aws_instance_map.get(inst_id)
-                    if inst:
-                        message += f"Instance ID: {inst_id}\n"
-                        message += f"Launch Time: {inst['LaunchTime']}\n"
-                        message += f"Running Time: {inst['RunningTime']}\n\n\n"
+        if idle_offline_instances:
+            message += "Idle or Offline runners:\n\n"
+            for inst_id in idle_offline_instances:
+                inst = aws_instance_map.get(inst_id)
+                if inst:
+                    message += f"Instance ID: {inst_id}\n"
+                    message += f"Launch Time: {inst['LaunchTime']}\n"
+                    message += f"Running Time: {inst['RunningTime']}\n\n"
 
-            message += "Thanks,\nv3atlassianops"
+        if orphan_instances:
+            message += "Orphaned runner / failed registration:\n\n"
+            for inst_id in orphan_instances:
+                inst = aws_instance_map.get(inst_id)
+                if inst:
+                    message += f"Instance ID: {inst_id}\n"
+                    message += f"Launch Time: {inst['LaunchTime']}\n"
+                    message += f"Running Time: {inst['RunningTime']}\n\n"
 
-            send_sns_notification(subject, message)
+        message += "Thanks,\nv3atlassianops"
+
+        send_sns_notification(subject, message)
     else:
         print("No idle, offline, or orphaned instances found for termination.")
-
 
 
 if __name__ == "__main__":
