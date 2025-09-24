@@ -78,7 +78,7 @@ jobs:
           echo "Repositories collected for org $ORG_NAME:"
           cat repos.txt
 
-      - name: Check PRs and build report (pre-merge/issue-approved aware, 1hr threshold)
+      - name: Check PRs and build report (pending status checks only)
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -154,21 +154,24 @@ jobs:
               reviewers=$(jq -r 'if has("reviewRequests") then (try [.reviewRequests.nodes[].requestedReviewer.login // .reviewRequests.nodes[].requestedReviewer.name // ""] | map(select(length > 0)) | join(", ")) else "" end' <<< "$pr_json")
 
               # Get all pending status checks' names
-              pending_checks=$(jq -r 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING") | .name)' <<< "$pr_json")
-
-              # Count all pending checks
               pending_total=$(jq 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING")) | length' <<< "$pr_json")
-              # Count only those whose name matches pre-merge/issue-approved (case-insensitive)
-              pending_approved=$(jq 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING" and (.name | test("pre-merge/issue-approved"; "i")))) | length' <<< "$pr_json")
 
               if [ "$pending_total" -eq 0 ]; then
-                echo "PR #$number has no pending checks, skipping."
-                continue
-              fi
-
-              if [ "$pending_total" -eq "$pending_approved" ]; then
-                echo "PR #$number only pending pre-merge/issue-approved, skipping."
-                continue
+                # No pending status checks. Check if code review is still required.
+                reviewers_pending=$(jq -r '
+                  if has("reviewRequests") then
+                    ([.reviewRequests.nodes[].requestedReviewer.login // .reviewRequests.nodes[].requestedReviewer.name // ""] | map(select(length > 0)) | length)
+                  else
+                    0
+                  end
+                ' <<< "$pr_json")
+                if [ "$reviewers_pending" -gt 0 ]; then
+                  echo "PR #$number only pending code reviewer approval, skipping."
+                  continue
+                else
+                  echo "PR #$number has no pending checks or reviews, skipping."
+                  continue
+                fi
               fi
 
               # Join pending check names for reporting
@@ -194,7 +197,7 @@ jobs:
             echo "  </style>"
             echo "</head>"
             echo "<body>"
-            echo "<p>The following PRs were detected as stuck (open over 1 hour with pending status checks, ignoring pre-merge/issue-approved):</p>"
+            echo "<p>The following PRs were detected as stuck (open over 1 hour with pending status checks):</p>"
             echo "<table>"
             echo "  <tr>"
             echo "    <th>Repo Name</th>"
