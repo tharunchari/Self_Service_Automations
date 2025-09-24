@@ -13,7 +13,7 @@ jobs:
     steps:
       - id: check
         run: |
-          # Replace with your logic. This always proceeds.
+          
           echo "should_proceed=true" >> $GITHUB_OUTPUT
 
   start-runner-scheduled:
@@ -32,7 +32,7 @@ jobs:
       ORG_NAME: vitechsystems
       SES_FROM: v3atlassianops@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
-      SES_SUBJECT: '[PRODUCTION] PRs Detected With Stuck Status Checks'
+      SES_SUBJECT: 'Vitechsystem Org PRs Detected With Stuck Status Checks'
     steps:
       - name: Install dependencies
         run: |
