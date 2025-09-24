@@ -1,8 +1,8 @@
 name: Stuck PRs Email Report (No Close, No Reopen)
 
 on:
-  schedule:
-    - cron: "0 * * * *"
+  #schedule:
+  #  - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
