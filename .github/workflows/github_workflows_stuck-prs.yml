@@ -1,8 +1,8 @@
-name: Stuck PRs Email Report (Self-Hosted, Robust, Start/Stop Runner)
+name: Stuck PRs Email Report (Self-Hosted, Robust, Universal Trigger)
 
 on:
-  #schedule:
-  #  - cron: "0 * * * *"
+  schedule:
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -13,26 +13,27 @@ jobs:
     steps:
       - id: check
         run: |
-          
+          # If you want gating logic for scheduled runs, set should_proceed here.
+          # For manual runs, proceed always.
           echo "should_proceed=true" >> $GITHUB_OUTPUT
 
-  start-runner-scheduled:
-    if: github.event_name == 'schedule' && needs.check-schedule.result == 'success' && needs.check-schedule.outputs.should_proceed == 'true'
+  start-runner:
     needs: check-schedule
+    if: needs.check-schedule.outputs.should_proceed == 'true'
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
 
-  execute-job-scheduled:
-    if: github.event_name == 'schedule' && needs.check-schedule.result == 'success' && needs.check-schedule.outputs.should_proceed == 'true'
-    needs: [check-schedule, start-runner-scheduled]
+  execute-job:
+    needs: [check-schedule, start-runner]
+    if: needs.check-schedule.outputs.should_proceed == 'true'
     runs-on: [self-hosted, Internal_Tools_Automation_Server]
     env:
       ORG_NAME: vitechsystems
       SES_FROM: v3atlassianops@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
-      SES_SUBJECT: 'Vitechsystem Org PRs Detected With Stuck Status Checks'
+      SES_SUBJECT: 'Vitechsystems Org PRs Detected With Stuck Status Checks'
     steps:
       - name: Install dependencies
         run: |
@@ -54,13 +55,9 @@ jobs:
           echo "Repositories collected for org $ORG_NAME:"
           cat repos.txt
 
-      - name: Check PRs and build report (improved with retries, robust reviewers, debug)
+      - name: Check PRs and build report (retry, robust reviewers, debug)
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-          ORG_NAME: ${{ env.ORG_NAME }}
-          SES_FROM: ${{ env.SES_FROM }}
-          SES_TO: ${{ env.SES_TO }}
-          SES_SUBJECT: ${{ env.SES_SUBJECT }}
         run: |
           set -e
 
@@ -84,7 +81,7 @@ jobs:
           NOW=$(date -u +%s)
           DELIM=$'\x1e'
           declare -a STUCK_PRS
-          AGE_LIMIT=$((90 * 60)) # 1 hour 30 minutes in seconds
+          AGE_LIMIT=$((90 * 60))
 
           while read repo; do
             echo "==== Checking repository: $repo ===="
@@ -203,18 +200,9 @@ jobs:
             echo "No stuck PRs found, no email sent."
           fi
 
-  execute-job-manual:
-    if: github.event_name != 'schedule'
-    runs-on: [self-hosted, Internal_Tools_Automation_Server]
-    steps:
-      - name: No-op
-        run: echo "Manual run, no operation"
-
   stop-runner:
-    needs: [execute-job-scheduled, execute-job-manual]
-    if: |
-      needs.execute-job-scheduled.result != 'skipped' ||
-      needs.execute-job-manual.result != 'skipped'
+    needs: [execute-job]
+    if: always()
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
