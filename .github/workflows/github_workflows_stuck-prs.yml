@@ -1,4 +1,4 @@
-name: Stuck PRs Email Report (Robust Pending Checks Detection)
+name: Stuck PRs Email Report (Robust, Debug)
 
 on:
   workflow_dispatch:
@@ -30,17 +30,31 @@ jobs:
       SES_TO: v3atlassianops@vitechinc.com
       SES_SUBJECT: 'Vitechsystems Org PRs Detected With Stuck Status Checks'
     steps:
-      - name: Install jq and gh (Amazon Linux)
+      - name: Install jq and gh (Amazon Linux/Ubuntu)
         run: |
-          if ! command -v jq > /dev/null 2>&1; then sudo yum install -y jq; fi
+          if ! command -v jq > /dev/null 2>&1; then
+            if command -v yum > /dev/null 2>&1; then
+              sudo yum install -y jq
+            else
+              sudo apt-get update && sudo apt-get install -y jq
+            fi
+          fi
+
           if ! command -v gh > /dev/null 2>&1; then
             ARCH=$(uname -m)
             GH_VERSION="2.48.0"
             GH_ARCH="amd64"; [ "$ARCH" = "aarch64" ] && GH_ARCH="arm64"
-            curl -LO https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_${GH_ARCH}.rpm
-            sudo yum localinstall -y gh_${GH_VERSION}_linux_${GH_ARCH}.rpm
-            rm -f gh_${GH_VERSION}_linux_${GH_ARCH}.rpm
+            if command -v yum > /dev/null 2>&1; then
+              curl -LO https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_${GH_ARCH}.rpm
+              sudo yum localinstall -y gh_${GH_VERSION}_linux_${GH_ARCH}.rpm
+              rm -f gh_${GH_VERSION}_linux_${GH_ARCH}.rpm
+            else
+              curl -LO https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_${GH_ARCH}.deb
+              sudo dpkg -i gh_${GH_VERSION}_linux_${GH_ARCH}.deb
+              rm -f gh_${GH_VERSION}_linux_${GH_ARCH}.deb
+            fi
           fi
+
           jq --version
           gh --version
 
@@ -55,6 +69,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
+          export GH_TOKEN="${GH_TOKEN}"
           gh repo list "$ORG_NAME" --limit 1000 --json name -q '.[] | .name' > repos.txt
           echo "Repositories collected for org $ORG_NAME:"
           cat repos.txt
@@ -64,31 +79,34 @@ jobs:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           set -e
-
-          retry_gh() {
-            local n=0; local max=5; local delay=10
-            while [ $n -lt $max ]; do
-              "$@" && break || { n=$((n+1)); echo "Command failed. Attempt $n/$max:"; sleep $delay; }
-            done
-            [ $n -eq $max ] && echo "Command failed after $max attempts." && return 1
-          }
+          export GH_TOKEN="${GH_TOKEN}" # Make sure all subshells receive it
 
           NOW=$(date -u +%s)
           DELIM=$'\x1e'
           declare -a STUCK_PRS
           AGE_LIMIT=$((60 * 60)) # 1 hour in seconds
 
+          echo "Contents of repos.txt:"
+          cat repos.txt
+
           while read repo; do
             echo "==== Checking repository: $repo ===="
+            echo "Running: gh pr list --repo \"$ORG_NAME/$repo\" --state open --json number,createdAt,title"
+
             prs=""
-            if ! prs=$(retry_gh gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title); then
+            if ! prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title 2>&1); then
               echo "::warning:: Could not fetch PR list for $repo"
+              echo "Error: $prs"
               continue
             fi
+
             echo "---- Raw gh pr list output ----"
             echo "$prs"
-            [ -z "$prs" ] || ! jq empty <<< "$prs" > /dev/null 2>&1 && {
-              echo "::warning:: Not valid JSON from gh pr list for $repo"; continue; }
+
+            if [ -z "$prs" ] || ! jq empty <<< "$prs" > /dev/null 2>&1; then
+              echo "::warning:: Not valid JSON from gh pr list for $repo"
+              continue
+            fi
             pr_count=$(jq 'length' <<< "$prs")
             for i in $(seq 0 $((pr_count - 1))); do
               pr=$(jq ".[$i]" <<< "$prs")
@@ -107,19 +125,21 @@ jobs:
               fi
 
               pr_json=""
-              if ! pr_json=$(retry_gh gh pr view $number --repo "$ORG_NAME/$repo" --json number,title,author,createdAt,state,reviewRequests,commits); then
+              if ! pr_json=$(gh pr view $number --repo "$ORG_NAME/$repo" --json number,title,author,createdAt,state,reviewRequests,commits 2>&1); then
                 echo "::warning:: Could not fetch PR view for $repo PR #$number"
+                echo "Error: $pr_json"
                 continue
               fi
               echo "---- Raw gh pr view output for PR #$number ----"
               echo "$pr_json"
-              [ -z "$pr_json" ] || ! jq empty <<< "$pr_json" > /dev/null 2>&1 && {
-                echo "::warning:: Not valid JSON from gh pr view for $repo PR #$number"; continue; }
+              if [ -z "$pr_json" ] || ! jq empty <<< "$pr_json" > /dev/null 2>&1; then
+                echo "::warning:: Not valid JSON from gh pr view for $repo PR #$number"
+                continue
+              fi
 
               author=$(jq -r '.author.login // "unknown"' <<< "$pr_json")
               state=$(jq -r '.state' <<< "$pr_json")
 
-              # Robustly extract reviewers (object with nodes[] or array)
               reviewers=$(jq -r '
                 if has("reviewRequests") then
                   if (.reviewRequests | type == "object" and .reviewRequests.nodes) then
@@ -130,22 +150,24 @@ jobs:
                 else "" end
               ' <<< "$pr_json")
 
-              # --- Robust pending check detection ---
               # 1. Try statusCheckRollup from last commit
               pending_total=$(jq 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING")) | length' <<< "$pr_json")
               pending_names=$(jq -r 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING") | .name) | join(", ")' <<< "$pr_json")
 
               # 2. If statusCheckRollup missing or empty, fallback to gh pr checks
               if [[ "$pending_total" -eq 0 || -z "$pending_names" ]]; then
-                checks_json=$(retry_gh gh pr checks $number --repo "$ORG_NAME/$repo" --json name,status)
+                checks_json=$(gh pr checks $number --repo "$ORG_NAME/$repo" --json name,status 2>&1)
                 echo "---- gh pr checks output for PR #$number ----"
                 echo "$checks_json"
+                if ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
+                  echo "::warning:: Not valid JSON from gh pr checks for $repo PR #$number"
+                  continue
+                fi
                 pending_total=$(jq '[.[] | select(.status == "pending")] | length' <<< "$checks_json")
                 pending_names=$(jq -r '[.[] | select(.status == "pending") | .name] | join(", ")' <<< "$checks_json")
               fi
 
               if [ "$pending_total" -eq 0 ]; then
-                # No pending status checks. Check if code review is still required.
                 reviewers_pending=$(jq -r '
                   if has("reviewRequests") then
                     if (.reviewRequests | type == "object" and .reviewRequests.nodes) then
