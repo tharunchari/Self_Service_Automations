@@ -92,7 +92,8 @@ jobs:
             echo "Running: gh pr list --repo \"$ORG_NAME/$repo\" --state open --json number,createdAt,title"
 
             prs=""
-            if ! prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title 2>&1); then
+            prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title 2>&1)
+            if [ $? -ne 0 ]; then
               echo "::warning:: Could not fetch PR list for $repo"
               echo "Error: $prs"
               continue
@@ -126,6 +127,7 @@ jobs:
               checks_json=$(gh pr checks $number --repo "$ORG_NAME/$repo" --json name,status 2>&1)
               if ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
                 echo "::warning:: Not valid JSON from gh pr checks for $repo PR #$number"
+                echo "Raw gh pr checks output: $checks_json"
                 continue
               fi
               pending_total=$(jq '[.[] | select(.status == "pending")] | length' <<< "$checks_json")
