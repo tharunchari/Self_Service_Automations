@@ -1,8 +1,6 @@
-name: Stuck PRs Email Report (Self-Hosted, Robust, Universal Trigger)
+name: Stuck PRs Email Report (Robust Pending Checks Detection)
 
 on:
-  #schedule:
-  #  - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -12,9 +10,7 @@ jobs:
       should_proceed: ${{ steps.check.outputs.should_proceed }}
     steps:
       - id: check
-        run: |
-          # Always proceed for both manual and scheduled runs.
-          echo "should_proceed=true" >> $GITHUB_OUTPUT
+        run: echo "should_proceed=true" >> $GITHUB_OUTPUT
 
   start-runner:
     needs: check-schedule
@@ -36,30 +32,15 @@ jobs:
     steps:
       - name: Install jq and gh (Amazon Linux)
         run: |
-          # Install jq from default repo
-          if ! command -v jq > /dev/null 2>&1; then
-            sudo yum install -y jq
-          fi
-
-          # Install gh (GitHub CLI) if not present
+          if ! command -v jq > /dev/null 2>&1; then sudo yum install -y jq; fi
           if ! command -v gh > /dev/null 2>&1; then
-            # For Amazon Linux 2 and AL2023
             ARCH=$(uname -m)
             GH_VERSION="2.48.0"
-            if [ "$ARCH" = "x86_64" ]; then
-              GH_ARCH="amd64"
-            elif [ "$ARCH" = "aarch64" ]; then
-              GH_ARCH="arm64"
-            else
-              echo "Unknown architecture $ARCH for gh CLI, exiting."
-              exit 1
-            fi
-
+            GH_ARCH="amd64"; [ "$ARCH" = "aarch64" ] && GH_ARCH="arm64"
             curl -LO https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_${GH_ARCH}.rpm
             sudo yum localinstall -y gh_${GH_VERSION}_linux_${GH_ARCH}.rpm
             rm -f gh_${GH_VERSION}_linux_${GH_ARCH}.rpm
           fi
-
           jq --version
           gh --version
 
@@ -78,27 +59,18 @@ jobs:
           echo "Repositories collected for org $ORG_NAME:"
           cat repos.txt
 
-      - name: Check PRs and build report (pending status checks only)
+      - name: Check PRs and build report (robust pending status checks)
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           set -e
 
           retry_gh() {
-            local n=0
-            local max=5
-            local delay=10
+            local n=0; local max=5; local delay=10
             while [ $n -lt $max ]; do
-              "$@" && break || {
-                n=$((n+1))
-                echo "Command failed. Attempt $n/$max:"
-                sleep $delay;
-              }
+              "$@" && break || { n=$((n+1)); echo "Command failed. Attempt $n/$max:"; sleep $delay; }
             done
-            if [ $n -eq $max ]; then
-              echo "Command failed after $max attempts."
-              return 1
-            fi
+            [ $n -eq $max ] && echo "Command failed after $max attempts." && return 1
           }
 
           NOW=$(date -u +%s)
@@ -108,7 +80,6 @@ jobs:
 
           while read repo; do
             echo "==== Checking repository: $repo ===="
-
             prs=""
             if ! prs=$(retry_gh gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title); then
               echo "::warning:: Could not fetch PR list for $repo"
@@ -116,10 +87,8 @@ jobs:
             fi
             echo "---- Raw gh pr list output ----"
             echo "$prs"
-            if [ -z "$prs" ] || ! jq empty <<< "$prs" > /dev/null 2>&1; then
-              echo "::warning:: Not valid JSON from gh pr list for $repo"
-              continue
-            fi
+            [ -z "$prs" ] || ! jq empty <<< "$prs" > /dev/null 2>&1 && {
+              echo "::warning:: Not valid JSON from gh pr list for $repo"; continue; }
             pr_count=$(jq 'length' <<< "$prs")
             for i in $(seq 0 $((pr_count - 1))); do
               pr=$(jq ".[$i]" <<< "$prs")
@@ -144,10 +113,8 @@ jobs:
               fi
               echo "---- Raw gh pr view output for PR #$number ----"
               echo "$pr_json"
-              if [ -z "$pr_json" ] || ! jq empty <<< "$pr_json" > /dev/null 2>&1; then
-                echo "::warning:: Not valid JSON from gh pr view for $repo PR #$number"
-                continue
-              fi
+              [ -z "$pr_json" ] || ! jq empty <<< "$pr_json" > /dev/null 2>&1 && {
+                echo "::warning:: Not valid JSON from gh pr view for $repo PR #$number"; continue; }
 
               author=$(jq -r '.author.login // "unknown"' <<< "$pr_json")
               state=$(jq -r '.state' <<< "$pr_json")
@@ -163,8 +130,19 @@ jobs:
                 else "" end
               ' <<< "$pr_json")
 
-              # Count pending status checks
+              # --- Robust pending check detection ---
+              # 1. Try statusCheckRollup from last commit
               pending_total=$(jq 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING")) | length' <<< "$pr_json")
+              pending_names=$(jq -r 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING") | .name) | join(", ")' <<< "$pr_json")
+
+              # 2. If statusCheckRollup missing or empty, fallback to gh pr checks
+              if [[ "$pending_total" -eq 0 || -z "$pending_names" ]]; then
+                checks_json=$(retry_gh gh pr checks $number --repo "$ORG_NAME/$repo" --json name,status)
+                echo "---- gh pr checks output for PR #$number ----"
+                echo "$checks_json"
+                pending_total=$(jq '[.[] | select(.status == "pending")] | length' <<< "$checks_json")
+                pending_names=$(jq -r '[.[] | select(.status == "pending") | .name] | join(", ")' <<< "$checks_json")
+              fi
 
               if [ "$pending_total" -eq 0 ]; then
                 # No pending status checks. Check if code review is still required.
@@ -186,11 +164,7 @@ jobs:
                 fi
               fi
 
-              # Join pending check names for reporting
-              pending_names=$(jq -r 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING") | .name) | join(", ")' <<< "$pr_json")
-
               echo "PR #$number pending checks: $pending_names"
-
               STUCK_PRS+=( "${repo}${DELIM}${number}${DELIM}${pr_url}${DELIM}${title}${DELIM}${author}${DELIM}${created}${DELIM}${pending_names}${DELIM}${state}${DELIM}${reviewers}" )
             done
           done < repos.txt
