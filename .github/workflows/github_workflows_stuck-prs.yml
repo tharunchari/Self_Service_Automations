@@ -1,4 +1,4 @@
-name: Stuck PRs Email Report (Robust, Debug)
+name: Stuck PRs Email Report (Always Use gh pr checks)
 
 on:
   workflow_dispatch:
@@ -74,13 +74,11 @@ jobs:
           echo "Repositories collected for org $ORG_NAME:"
           cat repos.txt
 
-      - name: Check PRs and build report (robust pending status checks)
+      - name: Check PRs and build report (always use gh pr checks)
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
-          set -e
           export GH_TOKEN="${GH_TOKEN}" # Make sure all subshells receive it
-
           NOW=$(date -u +%s)
           DELIM=$'\x1e'
           declare -a STUCK_PRS
@@ -124,66 +122,39 @@ jobs:
                 continue
               fi
 
-              pr_json=""
-              if ! pr_json=$(gh pr view $number --repo "$ORG_NAME/$repo" --json number,title,author,createdAt,state,reviewRequests,commits 2>&1); then
-                echo "::warning:: Could not fetch PR view for $repo PR #$number"
-                echo "Error: $pr_json"
+              # Always use gh pr checks for pending status detection
+              checks_json=$(gh pr checks $number --repo "$ORG_NAME/$repo" --json name,status 2>&1)
+              if ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
+                echo "::warning:: Not valid JSON from gh pr checks for $repo PR #$number"
                 continue
               fi
-              echo "---- Raw gh pr view output for PR #$number ----"
-              echo "$pr_json"
-              if [ -z "$pr_json" ] || ! jq empty <<< "$pr_json" > /dev/null 2>&1; then
-                echo "::warning:: Not valid JSON from gh pr view for $repo PR #$number"
-                continue
-              fi
-
-              author=$(jq -r '.author.login // "unknown"' <<< "$pr_json")
-              state=$(jq -r '.state' <<< "$pr_json")
-
-              reviewers=$(jq -r '
-                if has("reviewRequests") then
-                  if (.reviewRequests | type == "object" and .reviewRequests.nodes) then
-                    ([.reviewRequests.nodes[].requestedReviewer.login // .reviewRequests.nodes[].requestedReviewer.name // ""] | map(select(length > 0)) | join(", "))
-                  elif (.reviewRequests | type == "array") then
-                    ([.reviewRequests[].requestedReviewer.login // .reviewRequests[].requestedReviewer.name // ""] | map(select(length > 0)) | join(", "))
-                  else "" end
-                else "" end
-              ' <<< "$pr_json")
-
-              # 1. Try statusCheckRollup from last commit
-              pending_total=$(jq 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING")) | length' <<< "$pr_json")
-              pending_names=$(jq -r 'try .commits[-1].commit.statusCheckRollup // [] | map(select(.state == "PENDING") | .name) | join(", ")' <<< "$pr_json")
-
-              # 2. If statusCheckRollup missing or empty, fallback to gh pr checks
-              if [[ "$pending_total" -eq 0 || -z "$pending_names" ]]; then
-                checks_json=$(gh pr checks $number --repo "$ORG_NAME/$repo" --json name,status 2>&1)
-                echo "---- gh pr checks output for PR #$number ----"
-                echo "$checks_json"
-                if ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
-                  echo "::warning:: Not valid JSON from gh pr checks for $repo PR #$number"
-                  continue
-                fi
-                pending_total=$(jq '[.[] | select(.status == "pending")] | length' <<< "$checks_json")
-                pending_names=$(jq -r '[.[] | select(.status == "pending") | .name] | join(", ")' <<< "$checks_json")
-              fi
+              pending_total=$(jq '[.[] | select(.status == "pending")] | length' <<< "$checks_json")
+              pending_names=$(jq -r '[.[] | select(.status == "pending") | .name] | join(", ")' <<< "$checks_json")
 
               if [ "$pending_total" -eq 0 ]; then
-                reviewers_pending=$(jq -r '
+                echo "PR #$number has no pending checks, skipping."
+                continue
+              fi
+
+              # Optionally fetch PR author and reviewers for the report
+              pr_json=$(gh pr view $number --repo "$ORG_NAME/$repo" --json author,reviewRequests,title,createdAt,state 2>&1)
+              if ! jq empty <<< "$pr_json" > /dev/null 2>&1; then
+                echo "Warning: Could not fetch PR view for $repo PR #$number"
+                author="unknown"
+                reviewers=""
+                state="unknown"
+              else
+                author=$(jq -r '.author.login // "unknown"' <<< "$pr_json")
+                state=$(jq -r '.state // "unknown"' <<< "$pr_json")
+                reviewers=$(jq -r '
                   if has("reviewRequests") then
                     if (.reviewRequests | type == "object" and .reviewRequests.nodes) then
-                      ([.reviewRequests.nodes[].requestedReviewer.login // .reviewRequests.nodes[].requestedReviewer.name // ""] | map(select(length > 0)) | length)
+                      ([.reviewRequests.nodes[].requestedReviewer.login // .reviewRequests.nodes[].requestedReviewer.name // ""] | map(select(length > 0)) | join(", "))
                     elif (.reviewRequests | type == "array") then
-                      ([.reviewRequests[].requestedReviewer.login // .reviewRequests[].requestedReviewer.name // ""] | map(select(length > 0)) | length)
-                    else 0 end
-                  else 0 end
+                      ([.reviewRequests[].requestedReviewer.login // .reviewRequests[].requestedReviewer.name // ""] | map(select(length > 0)) | join(", "))
+                    else "" end
+                  else "" end
                 ' <<< "$pr_json")
-                if [ "$reviewers_pending" -gt 0 ]; then
-                  echo "PR #$number only pending code reviewer approval, skipping."
-                  continue
-                else
-                  echo "PR #$number has no pending checks or reviews, skipping."
-                  continue
-                fi
               fi
 
               echo "PR #$number pending checks: $pending_names"
