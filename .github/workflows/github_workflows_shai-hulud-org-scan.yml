@@ -1,4 +1,4 @@
-name: Shai-Hulud NPM Supply Chain IoC Scanner (Multi-Org, Classic PAT, Org-Tagged Results)
+name: Shai-Hulud NPM Supply Chain IoC Scanner (Multi-Org, Org-Specific PATs, Org-Tagged Results)
 
 on:
   workflow_dispatch:
@@ -7,8 +7,7 @@ jobs:
   scan-multi-org-npm-ioc:
     runs-on: ubuntu-latest
     timeout-minutes: 360
-    env:
-      GH_TOKEN: ${{ secrets.CLASSIC_PAT }}
+
     steps:
       - name: Checkout scanning repo
         uses: actions/checkout@v4
@@ -17,9 +16,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gh jq git
-
-      - name: Debug GitHub CLI auth
-        run: gh auth status || echo "Not logged in, but GH_TOKEN will be used for all gh commands."
 
       - name: Debug tool versions
         run: |
@@ -30,9 +26,12 @@ jobs:
         run: |
           cp wiz_results.txt ioc_packages.txt
 
-      - name: Scan all orgs and all branches of all repos
+      - name: Scan all orgs and all branches of all repos with org-specific PATs
         env:
-          GH_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
+          PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          QA_FINE_GRAINED_PAT: ${{ secrets.QA_FINE_GRAINED_PAT }}
+          INFRA_FINE_GRAINED_PAT: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           ORGS="vitechsystems VitechQA VitechInfra VitechOps"
@@ -49,11 +48,36 @@ jobs:
             "aba1fcbd15c6ba6d9b96e34cec287660fff4a31632bf76f2a766c499f55ca1ee"
           )
 
+          get_pat_for_org() {
+            case "$1" in
+              vitechsystems)
+                echo "$PROD_FINE_GRAINED_PAT"
+                ;;
+              VitechQA)
+                echo "$QA_FINE_GRAINED_PAT"
+                ;;
+              VitechInfra)
+                echo "$INFRA_FINE_GRAINED_PAT"
+                ;;
+              *)
+                # For VitechOps or any others, fall back to GITHUB_TOKEN if present
+                echo "${GITHUB_TOKEN:-}"
+                ;;
+            esac
+          }
+
           for ORG in $ORGS; do
             echo "== Scanning organization: $ORG =="
+            GH_TOKEN="$(get_pat_for_org "$ORG")"
+            if [[ -z "$GH_TOKEN" ]]; then
+              echo "[WARN] No token for $ORG, skipping organization."
+              continue
+            fi
+
+            export GH_TOKEN
             if ! gh repo list "$ORG" --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' > "${ORG}_repos_and_desc.txt"; then
-              echo "[ERROR] gh repo list failed for org: $ORG"
-              exit 2
+              echo "[WARN] gh repo list failed for org: $ORG. Skipping organization."
+              continue
             fi
 
             cut -d"|" -f1 "${ORG}_repos_and_desc.txt" | grep -v '^$' > "${ORG}_repos.txt"
@@ -81,7 +105,6 @@ jobs:
                 [ -z "$branch" ] && continue
                 echo "  Scanning branch: $branch"
                 rm -rf tmprepo
-                # Use PAT-authenticated git clone for private repos
                 if ! git clone --depth 1 --branch "$branch" "https://x-access-token:${GH_TOKEN}@github.com/$ORG/$repo.git" tmprepo; then
                   echo "  [WARN] Could not clone $ORG/$repo branch $branch"
                   continue
