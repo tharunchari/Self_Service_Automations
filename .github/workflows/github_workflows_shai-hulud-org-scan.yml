@@ -17,10 +17,10 @@ jobs:
           sudo apt-get install -y gh jq git
 
       - name: Debug GitHub CLI auth
-        run: gh auth status
-
-      - name: Debug GitHub API rate limit
-        run: gh api rate_limit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh auth status || echo "Not logged in, but will use --github-token for all gh commands."
 
       - name: Debug tool versions
         run: |
@@ -32,6 +32,8 @@ jobs:
           cp wiz_results.txt ioc_packages.txt
 
       - name: Scan all orgs and all branches of all repos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           ORGS="vitechsystems VitechQA VitechInfra VitechOps"
@@ -50,10 +52,8 @@ jobs:
 
           for ORG in $ORGS; do
             echo "== Scanning organization: $ORG =="
-            if ! gh repo list "$ORG" --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' > "${ORG}_repos_and_desc.txt"; then
+            if ! gh repo list "$ORG" --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' --github-token "$GITHUB_TOKEN" > "${ORG}_repos_and_desc.txt"; then
               echo "[ERROR] gh repo list failed for org: $ORG"
-              gh auth status || true
-              gh api rate_limit || true
               exit 2
             fi
 
@@ -75,7 +75,7 @@ jobs:
             while IFS= read -r repo; do
               [ -z "$repo" ] && continue
               echo "Scanning repo: $ORG/$repo"
-              gh api "repos/$ORG/$repo/branches" --paginate | jq -r '.[].name' | grep -v '^$' > branches.txt
+              gh api "repos/$ORG/$repo/branches" --paginate --github-token "$GITHUB_TOKEN" | jq -r '.[].name' | grep -v '^$' > branches.txt
               echo "[DEBUG] Branch list for $ORG/$repo:"
               cat branches.txt || echo "[NONE]"
               while IFS= read -r branch; do
