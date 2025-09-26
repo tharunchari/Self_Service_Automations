@@ -1,4 +1,4 @@
-name: Shai-Hulud NPM Supply Chain IoC Scanner (Multi-Org, Org-Tagged Results)
+name: Shai-Hulud NPM Supply Chain IoC Scanner (Multi-Org, Robust, Org-Tagged Results)
 
 on:
   workflow_dispatch:
@@ -23,34 +23,33 @@ jobs:
         run: |
           cp wiz_results.txt ioc_packages.txt
 
-      - name: Scan all orgs and branches
+      - name: Scan all orgs and all branches of all repos
         run: |
           set -eo pipefail
           ORGS="vitechsystems VitechQA VitechInfra VitechOps"
           mkdir -p results
           MALICIOUS_HASHLIST=(
-              "de0e25a3e6c1e1e5998b306b7141b3dc4c0088da9d7bb47c1c00c91e6e4f85d6"
-              "81d2a004a1bca6ef87a1caf7d0e0b355ad1764238e40ff6d1b1cb77ad4f595c3"
-              "83a650ce44b2a9854802a7fb4c202877815274c129af49e6c2d1d5d5d55c501e"
-              "4b2399646573bb737c4969563303d8ee2e9ddbd1b271f1ca9e35ea78062538db"
-              "dc67467a39b70d1cd4c1f7f7a459b35058163592f4a9e8fb4dffcbba98ef210c"
-              "46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
-              "b74caeaa75e077c99f7d44f46daaf9796a3be43ecf24f2a1fd381844669da777"
-              "86532ed94c5804e1ca32fa67257e1bb9de628e3e48a1f56e67042dc055effb5b"
-              "aba1fcbd15c6ba6d9b96e34cec287660fff4a31632bf76f2a766c499f55ca1ee"
+            "de0e25a3e6c1e1e5998b306b7141b3dc4c0088da9d7bb47c1c00c91e6e4f85d6"
+            "81d2a004a1bca6ef87a1caf7d0e0b355ad1764238e40ff6d1b1cb77ad4f595c3"
+            "83a650ce44b2a9854802a7fb4c202877815274c129af49e6c2d1d5d5d55c501e"
+            "4b2399646573bb737c4969563303d8ee2e9ddbd1b271f1ca9e35ea78062538db"
+            "dc67467a39b70d1cd4c1f7f7a459b35058163592f4a9e8fb4dffcbba98ef210c"
+            "46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
+            "b74caeaa75e077c99f7d44f46daaf9796a3be43ecf24f2a1fd381844669da777"
+            "86532ed94c5804e1ca32fa67257e1bb9de628e3e48a1f56e67042dc055effb5b"
+            "aba1fcbd15c6ba6d9b96e34cec287660fff4a31632bf76f2a766c499f55ca1ee"
           )
 
           for ORG in $ORGS; do
             echo "== Scanning organization: $ORG =="
-            gh repo list $ORG --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' > "${ORG}_repos_and_desc.txt"
-            cut -d"|" -f1 "${ORG}_repos_and_desc.txt" > "${ORG}_repos.txt"
+            gh repo list "$ORG" --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' > "${ORG}_repos_and_desc.txt"
+            cut -d"|" -f1 "${ORG}_repos_and_desc.txt" | grep -v '^$' > "${ORG}_repos.txt"
             echo "[DEBUG] Repo list for $ORG:"
-            cat "${ORG}_repos.txt"
+            cat "${ORG}_repos.txt" || echo "[NONE]"
 
             # Org-wide repo name/desc checks
-            while read linedesc; do
-              repo=$(echo "$linedesc" | cut -d"|" -f1)
-              desc=$(echo "$linedesc" | cut -d"|" -f2-)
+            while IFS='|' read -r repo desc; do
+              [ -z "$repo" ] && continue
               if [[ "$repo" =~ [Ss]hai[-]?Hulud ]]; then
                 echo "!!! Repo $ORG/$repo flagged: name contains Shai-Hulud" >> results/${ORG}__org-wide-repo-check.txt
               fi
@@ -59,14 +58,13 @@ jobs:
               fi
             done < "${ORG}_repos_and_desc.txt"
 
-            # Per repo/branch scan
-            while read repo; do
+            while IFS= read -r repo; do
               [ -z "$repo" ] && continue
               echo "Scanning repo: $ORG/$repo"
-              gh api repos/$ORG/$repo/branches --paginate | jq -r '.[].name' > branches.txt
+              gh api "repos/$ORG/$repo/branches" --paginate | jq -r '.[].name' | grep -v '^$' > branches.txt
               echo "[DEBUG] Branch list for $ORG/$repo:"
-              cat branches.txt
-              while read branch; do
+              cat branches.txt || echo "[NONE]"
+              while IFS= read -r branch; do
                 [ -z "$branch" ] && continue
                 echo "  Scanning branch: $branch"
                 rm -rf tmprepo
@@ -157,36 +155,6 @@ jobs:
               done < branches.txt
             done < "${ORG}_repos.txt"
           done
-
-      - name: Ensure results is never empty
-        run: |
-          if [ ! "$(ls -A results/)" ]; then
-            {
-              echo "=== Shai-Hulud Scan Summary ==="
-              echo ""
-              echo "Scanned organizations, repositories and branches:"
-              for ORG in vitechsystems VitechQA VitechInfra VitechOps; do
-                echo "Org: $ORG"
-                total_repos=0
-                total_branches=0
-                while read repo; do
-                  echo "- $repo"
-                  gh api repos/$ORG/$repo/branches --paginate | jq -r '.[].name' > branches_tmp.txt
-                  branch_count=0
-                  while read branch; do
-                    echo "    - $branch"
-                    branch_count=$((branch_count+1))
-                  done < branches_tmp.txt
-                  total_branches=$((total_branches+branch_count))
-                  total_repos=$((total_repos+1))
-                done < "${ORG}_repos.txt"
-                echo "Total repositories: $total_repos"
-                echo "Total branches: $total_branches"
-              done
-              echo ""
-              echo "No Shai-Hulud IoCs or suspicious activity found in any branch."
-            } > results/scan_summary.txt
-          fi
 
       - name: Upload scan results as artifact
         uses: actions/upload-artifact@v4
