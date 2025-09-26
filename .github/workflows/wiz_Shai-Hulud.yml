@@ -19,7 +19,7 @@ jobs:
           sudo apt-get install -y gh jq git
 
       - name: Authenticate with GitHub CLI
-        run: gh auth login --with-token <<< "${{ secrets.PROD_FINE_GRAINED_PAT }}"
+        run: gh auth login --with-token <<< "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"
 
       - name: Get all repositories in org
         id: get-repos
