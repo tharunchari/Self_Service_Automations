@@ -1,9 +1,9 @@
-name: Shai-Hulud NPM 
+name: Shai-Hulud NPM
 
 on:
   workflow_dispatch:
- # schedule:
-  #  - cron: '0 3 * * *' # Every day at 3 AM UTC
+  # schedule:
+  #   - cron: '0 3 * * *' # Every day at 3 AM UTC
 
 jobs:
   scan-org-npm-ioc:
@@ -28,8 +28,7 @@ jobs:
           cut -d"|" -f1 repos_and_desc.txt > repos.txt
 
       - name: Use wiz_results.txt as IoC list
-        run: |
-          cp wiz_results.txt ioc_packages.txt
+        run: cp wiz_results.txt ioc_packages.txt
 
       - name: Scan all branches in all repos
         run: |
@@ -45,12 +44,12 @@ jobs:
             "b74caeaa75e077c99f7d44f46daaf9796a3be43ecf24f2a1fd381844669da777"
             "86532ed94c5804e1ca32fa67257e1bb9de628e3e48a1f56e67042dc055effb5b"
             "aba1fcbd15c6ba6d9b96e34cec287660fff4a31632bf76f2a766c499f55ca1ee"
-          )          
+          )
 
           for linedesc in $(cat repos_and_desc.txt); do
             repo=$(echo "$linedesc" | cut -d"|" -f1)
             desc=$(echo "$linedesc" | cut -d"|" -f2-)
-            # Check for suspicious repo names and descriptions
+
             if [[ "$repo" =~ [Ss]hai[-]?Hulud ]]; then
               echo "!!! Repo $repo flagged: name contains Shai-Hulud" >> results/org-wide-repo-check.txt
             fi
@@ -62,17 +61,20 @@ jobs:
           while read repo; do
             echo "Scanning repo: $repo"
             gh api repos/vitechsystems/$repo/branches --paginate | jq -r '.[].name' > branches.txt
+
             while read branch; do
               echo "  Scanning branch: $branch"
               rm -rf tmprepo
-              if ! git clone --depth 1 --branch "$branch" "https://github.com/vitechsystems/$repo.git" tmprepo; then
+              if ! gh repo clone vitechsystems/$repo tmprepo -- --branch "$branch" --depth 1; then
+                echo "    Failed to clone $repo@$branch"
                 continue
               fi
+
               cd tmprepo
               RESULT_FILE="../results/${repo}__${branch}.txt"
               echo "## Results for $repo@$branch" > "$RESULT_FILE"
               FOUND=0
-              # 1. Compromised npm packages (package.json)
+
               if [ -f package.json ]; then
                 jq -r '.dependencies,.devDependencies,.peerDependencies // {} | to_entries[] | "\(.key),\(.value)"' package.json > deps.txt || true
                 while IFS=, read -r pkg ver; do
@@ -82,7 +84,7 @@ jobs:
                   fi
                 done < ../ioc_packages.txt
               fi
-              # 2. Compromised npm packages (lock files)
+
               for lockf in package-lock.json yarn.lock pnpm-lock.yaml; do
                 if [ -f "$lockf" ]; then
                   while IFS=, read -r pkg ver; do
@@ -93,24 +95,24 @@ jobs:
                   done < ../ioc_packages.txt
                 fi
               done
-              # 3. Suspicious postinstall script
+
               if [ -f package.json ]; then
                 if grep -A 3 '"postinstall"' package.json 2>/dev/null | grep -E 'curl|wget|node -e|eval'; then
                   echo "!!! Suspicious postinstall script found" >> "$RESULT_FILE"
                   FOUND=1
                 fi
               fi
-              # 4. Suspicious domains/webhooks
+
               if grep -rE 'webhook\.site|npmjs\.help' .; then
                 echo "!!! Suspicious domain found in source files" >> "$RESULT_FILE"
                 FOUND=1
               fi
-              # 5. Attacker wallet/obfuscated code
+
               if grep -rE '0xFc4a4858bafef54D1b1d7697bfb5c52F4c166976|javascript-obfuscator' .; then
                 echo "!!! Suspect wallet or obfuscation detected" >> "$RESULT_FILE"
                 FOUND=1
               fi
-              # 6. Malicious workflow files
+
               if find .github/workflows -name 'shai-hulud-workflow.yml' 2>/dev/null | grep -q .; then
                 for wf_file in $(find .github/workflows -name 'shai-hulud-workflow.yml' 2>/dev/null); do
                   wf_hash=$(sha256sum "$wf_file" | awk '{print $1}')
@@ -118,41 +120,43 @@ jobs:
                     if [[ "$wf_hash" == "$malicious_hash" ]]; then
                       echo "!!! Malicious workflow file $wf_file with hash $wf_hash found" >> "$RESULT_FILE"
                       FOUND=1
-                      break 2  # Exit both loops after first match
+                      break 2
                     fi
                   done
                 done
               fi
 
-              # 7. Branch named shai-hulud
               if [[ "$branch" =~ shai[-]?hulud ]]; then
                 echo "!!! Branch named shai-hulud found" >> "$RESULT_FILE"
                 FOUND=1
               fi
-              # 8. Trufflehog/secret scanning activity
+
               if grep -r -i 'trufflehog' .; then
                 echo "!!! Trufflehog/secret scanning activity detected" >> "$RESULT_FILE"
                 FOUND=1
               fi
-              # 9. Malicious file hashes
+
               while read file; do
                 hash=$(sha256sum "$file" | awk '{print $1}')
-                if [[ "$hash" == "$MALICIOUS_HASHES" ]]; then
-                  echo "!!! Malicious file hash found: $file ($hash)" >> "$RESULT_FILE"
-                  FOUND=1
-                fi
+                for malicious_hash in "${MALICIOUS_HASHLIST[@]}"; do
+                  if [[ "$hash" == "$malicious_hash" ]]; then
+                    echo "!!! Malicious file hash found: $file ($hash)" >> "$RESULT_FILE"
+                    FOUND=1
+                  fi
+                done
               done < <(find . -type f -name "*.js" 2>/dev/null)
-              # 10. data.json double base64 check
+
               if [ -f data.json ]; then
                 if head -c 100 data.json | grep -Eq '^[A-Za-z0-9+/=]{20,}$'; then
                   echo "!!! data.json found, contents look like base64. Possible exfiltrated secrets." >> "$RESULT_FILE"
                   FOUND=1
                 fi
               fi
-              # Always write a summary if nothing found
+
               if [ $FOUND -eq 0 ]; then
                 echo "No Shai-Hulud IoCs or suspicious activity found in this branch." >> "$RESULT_FILE"
               fi
+
               cd ..
               rm -rf tmprepo
             done < branches.txt
