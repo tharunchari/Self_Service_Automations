@@ -44,6 +44,8 @@ jobs:
             echo "== Scanning organization: $ORG =="
             gh repo list $ORG --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' > "${ORG}_repos_and_desc.txt"
             cut -d"|" -f1 "${ORG}_repos_and_desc.txt" > "${ORG}_repos.txt"
+            echo "[DEBUG] Repo list for $ORG:"
+            cat "${ORG}_repos.txt"
 
             # Org-wide repo name/desc checks
             while read linedesc; do
@@ -59,12 +61,17 @@ jobs:
 
             # Per repo/branch scan
             while read repo; do
+              [ -z "$repo" ] && continue
               echo "Scanning repo: $ORG/$repo"
               gh api repos/$ORG/$repo/branches --paginate | jq -r '.[].name' > branches.txt
+              echo "[DEBUG] Branch list for $ORG/$repo:"
+              cat branches.txt
               while read branch; do
+                [ -z "$branch" ] && continue
                 echo "  Scanning branch: $branch"
                 rm -rf tmprepo
                 if ! git clone --depth 1 --branch "$branch" "https://github.com/$ORG/$repo.git" tmprepo; then
+                  echo "  [WARN] Could not clone $ORG/$repo branch $branch"
                   continue
                 fi
                 cd tmprepo
