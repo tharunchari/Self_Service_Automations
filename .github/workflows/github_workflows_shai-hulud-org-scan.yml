@@ -105,12 +105,15 @@ jobs:
                 [ -z "$branch" ] && continue
                 echo "  Scanning branch: $branch"
                 rm -rf tmprepo
+                # Sanitize repo and branch name for filename
+                SAFE_REPO=$(echo "$repo" | tr '/' '_')
+                SAFE_BRANCH=$(echo "$branch" | tr '/' '_')
+                RESULT_FILE="../results/${ORG}__${SAFE_REPO}__${SAFE_BRANCH}.txt"
                 if ! git clone --depth 1 --branch "$branch" "https://x-access-token:${GH_TOKEN}@github.com/$ORG/$repo.git" tmprepo; then
                   echo "  [WARN] Could not clone $ORG/$repo branch $branch"
                   continue
                 fi
                 cd tmprepo
-                RESULT_FILE="../results/${ORG}__${repo}__${branch}.txt"
                 echo "## Results for $ORG/$repo@$branch" > "$RESULT_FILE"
                 FOUND=0
                 # 1. Compromised npm packages (package.json)
