@@ -1,209 +1,99 @@
-name: Shai-Hulud NPM Supply Chain IoC Scanner (Multi-Org, Org-Specific PATs, Org-Tagged Results)
+name: Shai-Hulud NPM IoC Scanner (API Only, Fast, Top-Level Files)
 
 on:
   workflow_dispatch:
 
 jobs:
-  scan-multi-org-npm-ioc:
+  scan-org-npm-ioc-api-only:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-
+    timeout-minutes: 120
     steps:
-      - name: Checkout scanning repo
-        uses: actions/checkout@v4
-
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gh jq git
+          sudo apt-get install -y gh jq
 
-      - name: Debug tool versions
-        run: |
-          gh --version
-          jq --version
+      - name: Prepare IoC list
+        run: cp wiz_results.txt ioc_packages.txt
 
-      - name: Use wiz_results.txt as IoC list
-        run: |
-          cp wiz_results.txt ioc_packages.txt
-
-      - name: Scan all orgs and all branches of all repos with org-specific PATs
+      - name: Fast API-only scan
         env:
-          PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-          QA_FINE_GRAINED_PAT: ${{ secrets.QA_FINE_GRAINED_PAT }}
-          INFRA_FINE_GRAINED_PAT: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           set -euo pipefail
-          ORGS="vitechsystems VitechQA VitechInfra VitechOps"
+          ORG="vitechsystems"
           mkdir -p results
-          MALICIOUS_HASHLIST=(
-            "de0e25a3e6c1e1e5998b306b7141b3dc4c0088da9d7bb47c1c00c91e6e4f85d6"
-            "81d2a004a1bca6ef87a1caf7d0e0b355ad1764238e40ff6d1b1cb77ad4f595c3"
-            "83a650ce44b2a9854802a7fb4c202877815274c129af49e6c2d1d5d5d55c501e"
-            "4b2399646573bb737c4969563303d8ee2e9ddbd1b271f1ca9e35ea78062538db"
-            "dc67467a39b70d1cd4c1f7f7a459b35058163592f4a9e8fb4dffcbba98ef210c"
-            "46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
-            "b74caeaa75e077c99f7d44f46daaf9796a3be43ecf24f2a1fd381844669da777"
-            "86532ed94c5804e1ca32fa67257e1bb9de628e3e48a1f56e67042dc055effb5b"
-            "aba1fcbd15c6ba6d9b96e34cec287660fff4a31632bf76f2a766c499f55ca1ee"
-          )
+          MALICIOUS_HASHES="46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09"
 
-          get_pat_for_org() {
-            case "$1" in
-              vitechsystems)
-                echo "$PROD_FINE_GRAINED_PAT"
-                ;;
-              VitechQA)
-                echo "$QA_FINE_GRAINED_PAT"
-                ;;
-              VitechInfra)
-                echo "$INFRA_FINE_GRAINED_PAT"
-                ;;
-              *)
-                # For VitechOps or any others, fall back to GITHUB_TOKEN if present
-                echo "${GITHUB_TOKEN:-}"
-                ;;
-            esac
-          }
+          # List repos
+          gh repo list "$ORG" --limit 1000 --json name -q '.[].name' > repos.txt
 
-          for ORG in $ORGS; do
-            echo "== Scanning organization: $ORG =="
-            GH_TOKEN="$(get_pat_for_org "$ORG")"
-            if [[ -z "$GH_TOKEN" ]]; then
-              echo "[WARN] No token for $ORG, skipping organization."
-              continue
-            fi
+          # For each repo...
+          while read repo; do
+            echo "Scanning repo: $repo"
+            gh api repos/$ORG/$repo/branches --paginate | jq -r '.[].name' > branches.txt
 
-            export GH_TOKEN
-            if ! gh repo list "$ORG" --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' > "${ORG}_repos_and_desc.txt"; then
-              echo "[WARN] gh repo list failed for org: $ORG. Skipping organization."
-              continue
-            fi
+            while read branch; do
+              echo "  Scanning branch: $branch"
+              SAFE_BRANCH=$(echo "$branch" | tr '/' '_')
+              RESULT_FILE="results/${repo}__${SAFE_BRANCH}_api.txt"
+              echo "## Results for $repo@$branch" > "$RESULT_FILE"
+              FOUND=0
 
-            cut -d"|" -f1 "${ORG}_repos_and_desc.txt" | grep -v '^$' > "${ORG}_repos.txt"
-            echo "[DEBUG] Repo list for $ORG:"
-            cat "${ORG}_repos.txt" || echo "[NONE]"
-
-            # Org-wide repo name/desc checks
-            while IFS='|' read -r repo desc; do
-              [ -z "$repo" ] && continue
-              if [[ "$repo" =~ [Ss]hai[-]?Hulud ]]; then
-                echo "!!! Repo $ORG/$repo flagged: name contains Shai-Hulud" >> results/${ORG}__org-wide-repo-check.txt
-              fi
-              if [[ "$repo" =~ -migration$ ]] && [[ "$desc" == *Shai-Hulud*Migration* ]]; then
-                echo "!!! Repo $ORG/$repo flagged: migration repo with Shai-Hulud description" >> results/${ORG}__org-wide-repo-check.txt
-              fi
-            done < "${ORG}_repos_and_desc.txt"
-
-            while IFS= read -r repo; do
-              [ -z "$repo" ] && continue
-              echo "Scanning repo: $ORG/$repo"
-              gh api "repos/$ORG/$repo/branches" --paginate | jq -r '.[].name' | grep -v '^$' > branches.txt
-              echo "[DEBUG] Branch list for $ORG/$repo:"
-              cat branches.txt || echo "[NONE]"
-              while IFS= read -r branch; do
-                [ -z "$branch" ] && continue
-                echo "  Scanning branch: $branch"
-                rm -rf tmprepo
-                # Sanitize repo and branch name for filename
-                SAFE_REPO=$(echo "$repo" | tr '/' '_')
-                SAFE_BRANCH=$(echo "$branch" | tr '/' '_')
-                RESULT_FILE="../results/${ORG}__${SAFE_REPO}__${SAFE_BRANCH}.txt"
-                if ! git clone --depth 1 --branch "$branch" "https://x-access-token:${GH_TOKEN}@github.com/$ORG/$repo.git" tmprepo; then
-                  echo "  [WARN] Could not clone $ORG/$repo branch $branch"
-                  continue
+              # 1. Top-level package.json
+              if gh api repos/$ORG/$repo/contents/package.json?ref=$branch --jq .content 2>/dev/null | base64 -d > pkg.json 2>/dev/null; then
+                jq -r '.dependencies,.devDependencies,.peerDependencies // {} | to_entries[] | "\(.key),\(.value)"' pkg.json > deps.txt
+                while IFS=, read -r pkg ver; do
+                  if grep -q "^$pkg,$ver$" deps.txt; then
+                    echo "!!! Compromised NPM package found: $pkg,$ver" >> "$RESULT_FILE"
+                    FOUND=1
+                  fi
+                done < ioc_packages.txt
+                # Suspicious postinstall
+                if grep -A 3 '"postinstall"' pkg.json | grep -E 'curl|wget|node -e|eval'; then
+                  echo "!!! Suspicious postinstall script found" >> "$RESULT_FILE"
+                  FOUND=1
                 fi
-                cd tmprepo
-                echo "## Results for $ORG/$repo@$branch" > "$RESULT_FILE"
-                FOUND=0
-                # 1. Compromised npm packages (package.json)
-                if [ -f package.json ]; then
-                  jq -r '.dependencies,.devDependencies,.peerDependencies // {} | to_entries[] | "\(.key),\(.value)"' package.json > deps.txt || true
+              fi
+              # 2. package-lock.json, yarn.lock, pnpm-lock.yaml
+              for lockf in package-lock.json yarn.lock pnpm-lock.yaml; do
+                if gh api repos/$ORG/$repo/contents/$lockf?ref=$branch --jq .content 2>/dev/null | base64 -d > lockfile 2>/dev/null; then
                   while IFS=, read -r pkg ver; do
-                    if grep -q "^$pkg,$ver$" deps.txt; then
-                      echo "!!! Compromised NPM package found: $pkg,$ver" >> "$RESULT_FILE"
+                    if grep -q "$pkg.*$ver" lockfile; then
+                      echo "!!! Compromised NPM package found in lock file: $pkg,$ver" >> "$RESULT_FILE"
                       FOUND=1
                     fi
-                  done < ../ioc_packages.txt
+                  done < ioc_packages.txt
                 fi
-                # 2. Compromised npm packages (lock files)
-                for lockf in package-lock.json yarn.lock pnpm-lock.yaml; do
-                  if [ -f "$lockf" ]; then
-                    while IFS=, read -r pkg ver; do
-                      if grep -q "$pkg.*$ver" "$lockf"; then
-                        echo "!!! Compromised NPM package found in lock file: $pkg,$ver" >> "$RESULT_FILE"
-                        FOUND=1
-                      fi
-                    done < ../ioc_packages.txt
-                  fi
-                done
-                # 3. Suspicious postinstall script
-                if [ -f package.json ]; then
-                  if grep -A 3 '"postinstall"' package.json 2>/dev/null | grep -E 'curl|wget|node -e|eval'; then
-                    echo "!!! Suspicious postinstall script found" >> "$RESULT_FILE"
-                    FOUND=1
-                  fi
-                fi
-                # 4. Suspicious domains/webhooks
-                if grep -rE 'webhook\.site|npmjs\.help' .; then
-                  echo "!!! Suspicious domain found in source files" >> "$RESULT_FILE"
-                  FOUND=1
-                fi
-                # 5. Attacker wallet/obfuscated code
-                if grep -rE '0xFc4a4858bafef54D1b1d7697bfb5c52F4c166976|javascript-obfuscator' .; then
-                  echo "!!! Suspect wallet or obfuscation detected" >> "$RESULT_FILE"
-                  FOUND=1
-                fi
-                # 6. Malicious workflow files
-                if find .github/workflows -name 'shai-hulud-workflow.yml' 2>/dev/null | grep -q .; then
-                  echo "!!! Malicious workflow file shai-hulud-workflow.yml found" >> "$RESULT_FILE"
-                  FOUND=1
-                fi
-                # 7. Branch named shai-hulud
-                if [[ "$branch" =~ shai[-]?hulud ]]; then
-                  echo "!!! Branch named shai-hulud found" >> "$RESULT_FILE"
-                  FOUND=1
-                fi
-                # 8. Trufflehog/secret scanning activity
-                if grep -r -i 'trufflehog' .; then
-                  echo "!!! Trufflehog/secret scanning activity detected" >> "$RESULT_FILE"
-                  FOUND=1
-                fi
-                # 9. Malicious file hashes
-                for file in $(find . -type f -name "*.js" 2>/dev/null); do
-                  hash=$(sha256sum "$file" | awk '{print $1}')
-                  for BAD_HASH in "${MALICIOUS_HASHLIST[@]}"; do
-                    if [[ "$hash" == "$BAD_HASH" ]]; then
-                      echo "!!! Malicious file hash found: $file ($hash)" >> "$RESULT_FILE"
+              done
+              # 3. .github/workflows/*.yml and .yaml (API only - list dir + get files)
+              if gh api repos/$ORG/$repo/contents/.github/workflows?ref=$branch --jq '.[] | select(.type=="file") | .name' 2>/dev/null | grep -E '\.ya?ml$' > workflows.txt 2>/dev/null; then
+                while read wfile; do
+                  if gh api repos/$ORG/$repo/contents/.github/workflows/$wfile?ref=$branch --jq .content 2>/dev/null | base64 -d > wf.yml 2>/dev/null; then
+                    if grep -E 'shai-hulud|webhook\.site|npmjs\.help|0xFc4a4858bafef54D1b1d7697bfb5c52F4c166976|javascript-obfuscator|trufflehog' wf.yml; then
+                      echo "!!! Suspicious content in workflow $wfile" >> "$RESULT_FILE"
                       FOUND=1
                     fi
-                  done
-                done
-                # 10. data.json double base64 check
-                if [ -f data.json ]; then
-                  if head -c 100 data.json | grep -Eq '^[A-Za-z0-9+/=]{20,}$'; then
-                    echo "!!! data.json found, contents look like base64. Possible exfiltrated secrets." >> "$RESULT_FILE"
-                    FOUND=1
                   fi
+                done < workflows.txt
+              fi
+              # 4. Top-level data.json (possible exfil)
+              if gh api repos/$ORG/$repo/contents/data.json?ref=$branch --jq .content 2>/dev/null | base64 -d > dt.json 2>/dev/null; then
+                if head -c 100 dt.json | grep -Eq '^[A-Za-z0-9+/=]{20,}$'; then
+                  echo "!!! data.json found, contents look like base64. Possible exfiltrated secrets." >> "$RESULT_FILE"
+                  FOUND=1
                 fi
-                # Always write a summary if nothing found
-                if [ $FOUND -eq 0 ]; then
-                  echo "No Shai-Hulud IoCs or suspicious activity found in this branch." >> "$RESULT_FILE"
-                fi
-                cd ..
-                rm -rf tmprepo
-              done < branches.txt
-            done < "${ORG}_repos.txt"
-          done
+              fi
+              # Always write a summary if nothing found
+              if [ $FOUND -eq 0 ]; then
+                echo "No Shai-Hulud IoCs or suspicious activity found in this branch (API-only scan)." >> "$RESULT_FILE"
+              fi
+              rm -f pkg.json deps.txt lockfile workflows.txt wf.yml dt.json
+            done < branches.txt
+          done < repos.txt
 
       - name: Upload scan results as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: shai-hulud-scan-results
+          name: shai-hulud-scan-results-api
           path: results/
-
-      - name: Clean working directory
-        if: always()
-        run: |
-          cd $GITHUB_WORKSPACE
-          rm -rf *
