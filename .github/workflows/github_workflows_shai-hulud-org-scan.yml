@@ -16,10 +16,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh jq git
 
-      - name: Authenticate with GitHub CLI (using GITHUB_TOKEN)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Debug GitHub CLI auth
         run: gh auth status
 
