@@ -16,8 +16,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh jq git
 
-      - name: Authenticate with GitHub CLI
-        run: gh auth login --with-token <<< "${{ secrets.CLASSIC_PAT }}"
+      - name: Authenticate with GitHub CLI (using GITHUB_TOKEN)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "${GITHUB_TOKEN}" | gh auth login --with-token
+
+      - name: Debug GitHub CLI auth
+        run: gh auth status
+
+      - name: Debug GitHub API rate limit
+        run: gh api rate_limit
+
+      - name: Debug tool versions
+        run: |
+          gh --version
+          jq --version
 
       - name: Use wiz_results.txt as IoC list
         run: |
@@ -25,7 +39,7 @@ jobs:
 
       - name: Scan all orgs and all branches of all repos
         run: |
-          set -eo pipefail
+          set -euo pipefail
           ORGS="vitechsystems VitechQA VitechInfra VitechOps"
           mkdir -p results
           MALICIOUS_HASHLIST=(
@@ -42,7 +56,13 @@ jobs:
 
           for ORG in $ORGS; do
             echo "== Scanning organization: $ORG =="
-            gh repo list "$ORG" --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' > "${ORG}_repos_and_desc.txt"
+            if ! gh repo list "$ORG" --limit 1000 --json name,description -q '.[] | .name + "|" + (.description // "")' > "${ORG}_repos_and_desc.txt"; then
+              echo "[ERROR] gh repo list failed for org: $ORG"
+              gh auth status || true
+              gh api rate_limit || true
+              exit 2
+            fi
+
             cut -d"|" -f1 "${ORG}_repos_and_desc.txt" | grep -v '^$' > "${ORG}_repos.txt"
             echo "[DEBUG] Repo list for $ORG:"
             cat "${ORG}_repos.txt" || echo "[NONE]"
