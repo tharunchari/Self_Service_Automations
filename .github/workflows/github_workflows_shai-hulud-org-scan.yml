@@ -32,7 +32,7 @@ jobs:
 
       - name: Scan all orgs and all branches of all repos
         env:
-          GH_TOKEN: ${{ secrets.CLASSIC_PAT }}
+          GH_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
         run: |
           set -euo pipefail
           ORGS="vitechsystems VitechQA VitechInfra VitechOps"
