@@ -74,15 +74,25 @@ jobs:
             fi
           done
  
-      - name: Step 5 - Create an AMI from the instance
+      - name: Step 5 - Stop the EC2 instance
+        run: |
+          aws ec2 stop-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ vars.AWS_REGION }}
+          echo "Waiting for instance to stop..."
+          aws ec2 wait instance-stopped --instance-ids ${{ env.INSTANCE_ID }} --region ${{ vars.AWS_REGION }}
+
+      - name: Workflow sleep until EC2 is available to use
+        run: sleep 150
+
+      - name: Step 6 - Create an AMI from the stopped instance
         id: create_ami
         run: |
-          AMI_ID=$(aws ec2 create-image --instance-id ${{ env.INSTANCE_ID }} --name "Github_Self_Hosted_Runner_AMI-$(date +%Y-%m-%d_%H-%M)" --no-reboot \
+          AMI_ID=$(aws ec2 create-image --instance-id ${{ env.INSTANCE_ID }} \
+            --name "Github_Self_Hosted_Runner_AMI-$(date +%Y-%m-%d_%H-%M)" \
             --tag-specifications 'ResourceType=image,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner_Amazon_Linux_AMI},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github},{Key=provision-method,Value=cli}]' \
             --query 'ImageId' --output text)
           echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
 
-      - name: Step 6 - Workflow sleep until AMI is available to use
+      - name: Step 7 - Workflow sleep until AMI is available to use
         id: wait_for_ami
         run: |
           while true; do
@@ -95,22 +105,22 @@ jobs:
             echo "AMI is still pending. Waiting for 100 seconds..."
             sleep 100
           done
- 
-      - name: Step 7 - Retrieve Current AMI ID from GitHub
+
+      - name: Step 8 - Retrieve Current AMI ID from GitHub
         run: |
           export CURRENT_AMI_ID=$(curl -s -X GET https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             -H "Accept: application/vnd.github+json" | jq -r '.value')
           echo "CURRENT_AMI_ID=$CURRENT_AMI_ID" >> $GITHUB_ENV
- 
-      - name: Step 8 - Update the new AMI ID in GitHub organization variables
+
+      - name: Step 9 - Update the new AMI ID in GitHub organization variables
         run: |
           curl -X PATCH https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             -H "Accept: application/vnd.github+json" \
             -d '{"value": "${{ env.AMI_ID }}"}'
- 
-      - name: Step 9 - Send AMI Details via SNS
+
+      - name: Step 10 - Send AMI Details via SNS
         run: |
           MESSAGE=$(printf "New Amazon Linux AMI created on $(date +%Y-%m-%d) for GitHub Runner. \nCurrent AMI ID: ${{ env.CURRENT_AMI_ID }}\nNew AMI ID: ${{ env.AMI_ID }}\nAttention may be required.")
           aws sns publish \
@@ -120,7 +130,7 @@ jobs:
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
 
-
-      - name: Step 10 - Terminate Self Hosted Runner instance
+      - name: Step 11 - Terminate Self Hosted Runner instance
         run: |
           aws ec2 terminate-instances --instance-ids "${{ env.INSTANCE_ID }}" --region ${{ vars.AWS_REGION }}
+
