@@ -1,4 +1,4 @@
-name: Dependency Extractor (No Install)
+name: shai-hulud-npm Extractor
 
 on:
   workflow_dispatch:
