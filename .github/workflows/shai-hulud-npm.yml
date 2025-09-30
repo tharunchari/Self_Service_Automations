@@ -19,7 +19,7 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Extract dependencies (with install)
+      - name: Extract dependencies (npm install + fallback)
         env:
           GH_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -37,28 +37,49 @@ jobs:
 
             cd "cloned_repos/$repo_name" || continue
 
-            if [[ -f package.json ]]; then
-              echo "📦 Installing dependencies for $repo_name..."
-              npm install --legacy-peer-deps --include=dev || echo "⚠️ npm install failed, continuing anyway..."
+            # Find all package.json files (including monorepo packages)
+            mapfile -t package_files < <(find . -name 'package.json' -not -path '*/node_modules/*')
 
-              echo "🔍 Extracting installed dependencies for $repo_name..."
-              npm ls --all --json > deps.json || echo "⚠️ npm ls failed for $repo_name"
+            for pkg in "${package_files[@]}"; do
+              pkg_dir=$(dirname "$pkg")
+              echo "📦 Installing in: $pkg_dir"
 
-              if jq -e '.dependencies' deps.json > /dev/null 2>&1; then
-                jq -r '
-                  def walk_deps(deps):
-                    to_entries[] | "\(.key):\(.value.version)" +
-                    (if (.value.dependencies) then "\n" + (.value.dependencies | walk_deps) else "" end);
-                  if .dependencies then .dependencies | walk_deps else empty end
-                ' deps.json | sort -u | while read -r dep; do
-                  echo "$repo_name packages $dep" >> ../../../dependencies_output.txt
-                done
-              else
-                echo "⚠️ No usable dependencies found for $repo_name"
+              cd "$pkg_dir" || continue
+
+              if [[ -f package.json ]]; then
+                npm install --legacy-peer-deps --include=dev || echo "⚠️ npm install failed in $pkg_dir"
+
+                echo "🔍 Extracting installed dependencies in $pkg_dir..."
+
+                if npm ls --all --json > deps.json 2>/dev/null; then
+                  if jq -e '.dependencies' deps.json > /dev/null 2>&1; then
+                    jq -r '
+                      def walk_deps:
+                        to_entries[]
+                        | "\(.key):\(.value.version)"
+                        + (if (.value.dependencies) then "\n" + (.value.dependencies | walk_deps) else "" end);
+                      .dependencies | walk_deps
+                    ' deps.json | sort -u | while read -r dep; do
+                      echo "$repo_name packages $dep" >> ../../../../dependencies_output.txt
+                    done
+                  else
+                    echo "⚠️ No usable dependencies found (empty)"
+                  fi
+                else
+                  echo "⚠️ npm ls failed — falling back to package.json"
+
+                  jq -r '
+                    .dependencies // {} + .devDependencies // {}
+                    | to_entries[]
+                    | "\(.key):\(.value)"
+                  ' package.json | sort -u | while read -r dep; do
+                    echo "$repo_name packages $dep" >> ../../../../dependencies_output.txt
+                  done
+                fi
               fi
-            else
-              echo "⚠️ No package.json found in $repo_name"
-            fi
+
+              cd - >/dev/null || continue
+            done
 
             cd ../../
           done < repos.txt
