@@ -19,7 +19,7 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Extract only installed dependencies
+      - name: Extract dependencies (with install)
         env:
           GH_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -37,10 +37,12 @@ jobs:
 
             cd "cloned_repos/$repo_name" || continue
 
-            if [[ -f package.json && -d node_modules ]]; then
-              echo "🔍 Found node_modules for $repo_name, extracting..."
+            if [[ -f package.json ]]; then
+              echo "📦 Installing dependencies for $repo_name..."
+              npm install --legacy-peer-deps --include=dev || echo "⚠️ npm install failed, continuing anyway..."
 
-              npm ls --all --json > deps.json || true
+              echo "🔍 Extracting installed dependencies for $repo_name..."
+              npm ls --all --json > deps.json || echo "⚠️ npm ls failed for $repo_name"
 
               if jq -e '.dependencies' deps.json > /dev/null 2>&1; then
                 jq -r '
@@ -52,10 +54,10 @@ jobs:
                   echo "$repo_name packages $dep" >> ../../../dependencies_output.txt
                 done
               else
-                echo "⚠️ No usable dependencies found for $repo_name, skipping jq."
+                echo "⚠️ No usable dependencies found for $repo_name"
               fi
             else
-              echo "⚠️ No node_modules in $repo_name, skipping extraction."
+              echo "⚠️ No package.json found in $repo_name"
             fi
 
             cd ../../
