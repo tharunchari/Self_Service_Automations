@@ -1,4 +1,4 @@
-name: Dependency Extractor (Shell with PAT)
+name: shai-hulud-npm Extractor
 
 on:
   workflow_dispatch:
