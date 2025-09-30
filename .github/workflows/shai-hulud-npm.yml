@@ -19,22 +19,22 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Extract dependencies with PAT auth
+      - name: Extract dependencies from repos
         env:
           GH_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
-          mkdir cloned_repos
+          mkdir -p cloned_repos
           > dependencies_output.txt
 
           while IFS= read -r repo_url; do
             [[ -z "$repo_url" ]] && continue
 
-            # Get repo slug: owner/repo
-            repo_slug=$(echo "$repo_url" | sed -E 's|https://github.com/||' | sed 's|\.git$||')
-            repo_name=$(basename "$repo_slug")
+            repo_name=$(basename "$repo_url" .git)
+            echo "Cloning $repo_name..."
 
-            echo "Cloning $repo_name using PAT..."
-            git clone --depth=1 "https://${GH_PAT}@github.com/${repo_slug}" "cloned_repos/$repo_name" || continue
+            # Inject PAT into the URL for authenticated clone
+            authed_url="${repo_url/https:\/\/github.com\//https:\/\/${GH_PAT}@github.com/}"
+            git clone --depth=1 "$authed_url" "cloned_repos/$repo_name" || { echo " Failed to clone $repo_name"; continue; }
 
             cd "cloned_repos/$repo_name" || continue
 
@@ -54,13 +54,13 @@ jobs:
                 echo "$repo_name packages $dep" >> ../../../dependencies_output.txt
               done
             else
-              echo "No package.json in $repo_name, skipping."
+              echo "No package.json found in $repo_name, skipping."
             fi
 
             cd ../../
           done < repos.txt
 
-      - name: Upload output file
+      - name: Upload dependency output
         uses: actions/upload-artifact@v4
         with:
           name: dependencies-output
