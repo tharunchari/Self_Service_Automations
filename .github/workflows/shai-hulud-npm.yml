@@ -1,0 +1,67 @@
+name: Dependency Extractor (Shell with PAT)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  extract-dependencies:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Extract dependencies with PAT auth
+        env:
+          GH_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+        run: |
+          mkdir cloned_repos
+          > dependencies_output.txt
+
+          while IFS= read -r repo_url; do
+            [[ -z "$repo_url" ]] && continue
+
+            # Get repo slug: owner/repo
+            repo_slug=$(echo "$repo_url" | sed -E 's|https://github.com/||' | sed 's|\.git$||')
+            repo_name=$(basename "$repo_slug")
+
+            echo "Cloning $repo_name using PAT..."
+            git clone --depth=1 "https://${GH_PAT}@github.com/${repo_slug}" "cloned_repos/$repo_name" || continue
+
+            cd "cloned_repos/$repo_name" || continue
+
+            if [[ -f package.json ]]; then
+              echo "Installing dependencies for $repo_name..."
+              npm install --legacy-peer-deps --include=dev > /dev/null 2>&1 || true
+
+              echo "Extracting dependencies for $repo_name..."
+              npm ls --all --json > deps.json || true
+
+              jq -r '
+                def walk_deps(deps):
+                  to_entries[] | "\(.key):\(.value.version)" +
+                  (if (.value.dependencies) then "\n" + (.value.dependencies | walk_deps) else "" end);
+                if .dependencies then .dependencies | walk_deps else empty end
+              ' deps.json | sort -u | while read -r dep; do
+                echo "$repo_name packages $dep" >> ../../../dependencies_output.txt
+              done
+            else
+              echo "No package.json in $repo_name, skipping."
+            fi
+
+            cd ../../
+          done < repos.txt
+
+      - name: Upload output file
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependencies-output
+          path: dependencies_output.txt
