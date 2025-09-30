@@ -35,3 +35,6 @@ https://github.com/vitechsystems/pull-request-analytics.git
 https://github.com/vitechsystems/acttesting.git
 https://github.com/vitechsystems/BackportHack.git
 https://github.com/vitechsystems/changed-files.git
+https://github.com/vitechsystems/LFG.git
+https://github.com/vitechsystems/LFG_PRODUCT_L5.git
+https://github.com/vitechsystems/LFG_VIL.git
