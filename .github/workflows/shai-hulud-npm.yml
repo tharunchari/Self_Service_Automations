@@ -1,4 +1,4 @@
-name: shai-hulud-npm Extractor
+name: Dependency Extractor (No Install)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Extract dependencies from repos
+      - name: Extract only installed dependencies
         env:
           GH_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -30,31 +30,32 @@ jobs:
             [[ -z "$repo_url" ]] && continue
 
             repo_name=$(basename "$repo_url" .git)
-            echo "Cloning $repo_name..."
+            echo "🔄 Cloning $repo_name..."
 
-            # Inject PAT into the URL for authenticated clone
             authed_url="${repo_url/https:\/\/github.com\//https:\/\/${GH_PAT}@github.com/}"
-            git clone --depth=1 "$authed_url" "cloned_repos/$repo_name" || { echo " Failed to clone $repo_name"; continue; }
+            git clone --depth=1 "$authed_url" "cloned_repos/$repo_name" || { echo "❌ Failed to clone $repo_name"; continue; }
 
             cd "cloned_repos/$repo_name" || continue
 
-            if [[ -f package.json ]]; then
-              echo "Installing dependencies for $repo_name..."
-              npm install --legacy-peer-deps --include=dev > /dev/null 2>&1 || true
+            if [[ -f package.json && -d node_modules ]]; then
+              echo "🔍 Found node_modules for $repo_name, extracting..."
 
-              echo "Extracting dependencies for $repo_name..."
               npm ls --all --json > deps.json || true
 
-              jq -r '
-                def walk_deps(deps):
-                  to_entries[] | "\(.key):\(.value.version)" +
-                  (if (.value.dependencies) then "\n" + (.value.dependencies | walk_deps) else "" end);
-                if .dependencies then .dependencies | walk_deps else empty end
-              ' deps.json | sort -u | while read -r dep; do
-                echo "$repo_name packages $dep" >> ../../../dependencies_output.txt
-              done
+              if jq -e '.dependencies' deps.json > /dev/null 2>&1; then
+                jq -r '
+                  def walk_deps(deps):
+                    to_entries[] | "\(.key):\(.value.version)" +
+                    (if (.value.dependencies) then "\n" + (.value.dependencies | walk_deps) else "" end);
+                  if .dependencies then .dependencies | walk_deps else empty end
+                ' deps.json | sort -u | while read -r dep; do
+                  echo "$repo_name packages $dep" >> ../../../dependencies_output.txt
+                done
+              else
+                echo "⚠️ No usable dependencies found for $repo_name, skipping jq."
+              fi
             else
-              echo "No package.json found in $repo_name, skipping."
+              echo "⚠️ No node_modules in $repo_name, skipping extraction."
             fi
 
             cd ../../
