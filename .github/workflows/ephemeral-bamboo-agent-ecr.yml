@@ -2,8 +2,8 @@ name: ephemeral-Bamboo-Agent-build
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '30 5 1 * *'
+ # schedule:
+  #  - cron: '30 5 1 * *'
 
 jobs:
   start-runner:
