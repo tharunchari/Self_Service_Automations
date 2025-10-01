@@ -1,0 +1,24 @@
+name: Clone Specific Branch
+ 
+on:
+  workflow_dispatch:
+    inputs:
+      repo_name:
+        description: 'Repository name'
+        required: true
+        default: 'CoreAdmin'
+      branch_name:
+        description: 'Branch name'
+        required: true
+        default: 'TRSRETIREQA_DEMO_L6'
+ 
+jobs:
+  clone_repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        run: |
+          echo "Repository: ${{ github.event.inputs.repo_name }}"
+          echo "Branch: ${{ github.event.inputs.branch_name }}"
+          git clone --single-branch --branch ${{ github.event.inputs.branch_name }} \
+https://github.com/vitechsystems/${{ github.event.inputs.repo_name }}.git
