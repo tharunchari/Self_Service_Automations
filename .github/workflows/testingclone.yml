@@ -21,4 +21,4 @@ jobs:
           echo "Repository: ${{ github.event.inputs.repo_name }}"
           echo "Branch: ${{ github.event.inputs.branch_name }}"
           git clone --single-branch --branch ${{ github.event.inputs.branch_name }} \
-https://github.com/vitechsystems/${{ github.event.inputs.repo_name }}.git
+          https://github.com/vitechsystems/${{ github.event.inputs.repo_name }}.git
