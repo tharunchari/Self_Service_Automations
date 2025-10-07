@@ -5,7 +5,7 @@ on:
  
 jobs:
   GitHub_Backup:
-    runs-on: Internal_Tools_Automation_Server_2
+    runs-on: ubuntu-24.04
     
     env:
       GITHUB_TOKEN_1: ${{ secrets.PROD_FINE_GRAINED_PAT }}
