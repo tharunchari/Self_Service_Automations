@@ -24,7 +24,7 @@ jobs:
           python-version: '3.x'
 
       - name: Install dependencies
-        run: pip install boto3 requests python-dateutil
+        run: pip install boto3 requests python-dateutil tabulate
 
       - name: Set up AWS CLI
         uses: aws-actions/configure-aws-credentials@v4
