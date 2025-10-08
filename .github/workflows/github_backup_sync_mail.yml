@@ -10,9 +10,9 @@ jobs:
     env:
       GITHUB_TOKEN_1: ${{ secrets.PROD_FINE_GRAINED_PAT }}
       GITHUB_TOKEN_2: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
-      GITHUB_USERNAME: github-bamboo_vitech
-      CODECOMMIT_USERNAME: ${{ secrets.AWS_CODECOMMIT_USERNAME }}
-      CODECOMMIT_PASSWORD: ${{ secrets.AWS_CODECOMMIT_PASSWORD }}
+#      GITHUB_USERNAME: github-bamboo_vitech
+#      CODECOMMIT_USERNAME: ${{ secrets.AWS_CODECOMMIT_USERNAME }}
+#      CODECOMMIT_PASSWORD: ${{ secrets.AWS_CODECOMMIT_PASSWORD }}
 
     steps:
       - name: Checkout code
