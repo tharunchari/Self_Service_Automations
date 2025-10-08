@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-github_codecommit_compare.py
+github_codecommit_compare_html.py
 
 Compare latest commit SHA on default branch between GitHub and AWS CodeCommit
-for two orgs: vitechsystems and vitechinfra. Output only mismatches in a
-single SNS email (two tables: vitechsystems then vitechinfra).
+for two orgs: vitechsystems and vitechinfra. Output mismatches in a
+beautiful HTML-formatted SNS email (two tables: vitechsystems then vitechinfra).
 
 Config at top. Secrets via environment variables.
 """
@@ -14,38 +14,33 @@ import sys
 import time
 import requests
 import boto3
+import datetime
+import json
 from botocore.exceptions import ClientError
 
-# Optional niceties: tabulate (if available)
 try:
     from tabulate import tabulate
 except Exception:
     tabulate = None
 
-
-# ------------------ CONFIGURATION (Edit here) ------------------
-AWS_REGION = "us-west-2"
-AWS_REGION_SNS = "us-east-1"
+# ------------------ CONFIGURATION ------------------
+AWS_REGION = "us-west-2"          # for CodeCommit
+AWS_REGION_SNS = "us-east-1"      # for SNS mail
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
+
 GITHUB_ORG_1 = "vitechsystems"
 GITHUB_ORG_2 = "vitechinfra"
-# Repos to exclude from vitechsystems (same as your ansible)
 EXCLUDED_REPOS_VITECHSYSTEMS = ["CoreAdmin", "Nextgen"]
 
-# Dry run: if True -> do not send SNS; just print output
 DRY_RUN = False
+# ----------------------------------------------------
 
-# ------------------ SECRETS / ENV (set these in your workflow) ----------
-GITHUB_TOKEN_1 = os.getenv("GITHUB_TOKEN_1")  # token for org1 (or same token)
-GITHUB_TOKEN_2 = os.getenv("GITHUB_TOKEN_2")  # token for org2
-# AWS creds should be provided via environment or instance profile for boto3
-# (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION) or role.
+GITHUB_TOKEN_1 = os.getenv("GITHUB_TOKEN_1")
+GITHUB_TOKEN_2 = os.getenv("GITHUB_TOKEN_2")
 
-# ------------------ SETTINGS ------------------
 GITHUB_API_BASE = "https://api.github.com"
-REQUEST_TIMEOUT = 15  # seconds for HTTP calls
+REQUEST_TIMEOUT = 15
 PER_PAGE = 100
-# ---------------------------------------------------------------------
 
 
 def exit_if_missing_credentials():
@@ -54,16 +49,12 @@ def exit_if_missing_credentials():
         missing.append("GITHUB_TOKEN_1")
     if not GITHUB_TOKEN_2:
         missing.append("GITHUB_TOKEN_2")
-    # boto3 will use environment / instance role; we only warn if AWS_REGION missing
-    if not AWS_REGION:
-        missing.append("AWS_REGION")
     if missing:
         print(f"Missing required environment variables: {', '.join(missing)}")
         sys.exit(1)
 
 
 def get_github_repos(org, token):
-    """Return list of repo names for a GitHub org (paginated)."""
     repos = []
     headers = {
         "Authorization": f"token {token}",
@@ -76,57 +67,46 @@ def get_github_repos(org, token):
         try:
             resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT)
         except Exception as e:
-            print(f"[ERROR] Request to GitHub failed for org={org} page={page}: {e}")
+            print(f"[ERROR] GitHub request failed for org={org} page={page}: {e}")
             break
 
         if resp.status_code != 200:
-            print(f"[ERROR] GitHub API returned {resp.status_code} for {org} (page {page}): {resp.text[:400]}")
+            print(f"[ERROR] GitHub API returned {resp.status_code} for {org} page={page}")
             break
 
         try:
             data = resp.json()
         except ValueError:
-            print(f"[ERROR] Failed to JSON-decode GitHub response for {org} (page {page}).")
+            print(f"[ERROR] Invalid JSON for {org} page={page}")
             break
 
-        if not isinstance(data, list):
-            print(f"[ERROR] Unexpected GitHub response type for {org} page {page}: {type(data)} - {data}")
-            break
-
-        if not data:
-            # no more pages
+        if not isinstance(data, list) or not data:
             break
 
         repos.extend([r.get("name") for r in data if r.get("name")])
         if len(data) < PER_PAGE:
             break
         page += 1
-        time.sleep(0.1)  # small throttle
+        time.sleep(0.1)
 
     return repos
 
 
 def get_github_default_branch_and_sha(org, repo, token):
-    """Return (default_branch, sha) for the default branch of a GitHub repo.
-       On error returns (None, "Error: ...")"""
     headers = {
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json",
         "User-Agent": "v3atlassianops-script"
     }
+
     repo_url = f"{GITHUB_API_BASE}/repos/{org}/{repo}"
     try:
         r = requests.get(repo_url, headers=headers, timeout=REQUEST_TIMEOUT)
+        if r.status_code != 200:
+            return None, f"Error: {r.status_code}"
+        repo_data = r.json()
     except Exception as e:
         return None, f"Error: {e}"
-
-    if r.status_code != 200:
-        return None, f"Error: {r.status_code} {r.text.splitlines()[0][:200]}"
-
-    try:
-        repo_data = r.json()
-    except ValueError:
-        return None, "Error: invalid JSON from repo API"
 
     default_branch = repo_data.get("default_branch")
     if not default_branch:
@@ -135,141 +115,124 @@ def get_github_default_branch_and_sha(org, repo, token):
     commit_url = f"{GITHUB_API_BASE}/repos/{org}/{repo}/commits/{default_branch}"
     try:
         cr = requests.get(commit_url, headers=headers, timeout=REQUEST_TIMEOUT)
+        if cr.status_code != 200:
+            return default_branch, f"Error: {cr.status_code}"
+        commit_data = cr.json()
     except Exception as e:
         return default_branch, f"Error: {e}"
 
-    if cr.status_code != 200:
-        return default_branch, f"Error: {cr.status_code} {cr.text.splitlines()[0][:200]}"
-
-    try:
-        commit_data = cr.json()
-    except ValueError:
-        return default_branch, "Error: invalid JSON from commit API"
-
-    sha = commit_data.get("sha") or commit_data.get("commit", {}).get("sha") or "UnknownSHA"
+    sha = commit_data.get("sha") or "UnknownSHA"
     return default_branch, sha
 
 
 def get_codecommit_default_branch_and_sha(repo_name, aws_region):
-    """Return (default_branch, commitId) for CodeCommit repo using boto3.
-       On error return (None, 'Error: ...')"""
     client = boto3.client("codecommit", region_name=aws_region)
     try:
         repo_resp = client.get_repository(repositoryName=repo_name)
     except ClientError as e:
-        return None, f"Error: {e.response.get('Error', {}).get('Message', str(e))}"
+        return None, f"Error: {e.response['Error'].get('Message', str(e))}"
     except Exception as e:
         return None, f"Error: {e}"
 
     metadata = repo_resp.get("repositoryMetadata", {})
     default_branch = metadata.get("defaultBranch")
     if not default_branch:
-        # no default branch set
         return None, "NoDefaultBranch"
 
-    # now fetch branch info
     try:
         br = client.get_branch(repositoryName=repo_name, branchName=default_branch)
-    except ClientError as e:
-        return default_branch, f"Error: {e.response.get('Error', {}).get('Message', str(e))}"
+        commit_id = br.get("branch", {}).get("commitId", "UnknownCommitId")
     except Exception as e:
         return default_branch, f"Error: {e}"
-
-    commit_id = br.get("branch", {}).get("commitId")
-    if not commit_id:
-        return default_branch, "UnknownCommitId"
 
     return default_branch, commit_id
 
 
-def build_table_text(title, rows):
-    """Build nice text table. Uses tabulate if available, else produces markdown-style table."""
+def build_html_table(title, rows):
+    """Return HTML section for mismatches."""
     if not rows:
-        return f"\n=== {title} ===\nNo mismatches found.\n"
+        return f"<h4>{title}</h4><p>No mismatches found.</p>"
 
-    headers = ["Repository", "GitHub Commit (sha)", "CodeCommit Commit (sha)"]
     if tabulate:
-        return f"\n=== {title} ===\n" + tabulate(rows, headers=headers, tablefmt="github") + "\n"
-    # fallback format: markdown-like
-    lines = []
-    lines.append(f"\n=== {title} ===")
-    # header
-    header_line = "| " + " | ".join(headers) + " |"
-    sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
-    lines.append(header_line)
-    lines.append(sep_line)
-    for r in rows:
-        lines.append("| " + " | ".join(str(x) for x in r) + " |")
-    lines.append("")  # trailing newline
-    return "\n".join(lines)
+        table_html = tabulate(rows, headers=["Repository", "GitHub Commit (sha)", "CodeCommit Commit (sha)"], tablefmt="html")
+    else:
+        # fallback basic HTML table
+        table_html = "<table border='1' cellspacing='0' cellpadding='5'><tr><th>Repository</th><th>GitHub Commit (sha)</th><th>CodeCommit Commit (sha)</th></tr>"
+        for repo, gh, cc in rows:
+            table_html += f"<tr><td>{repo}</td><td>{gh}</td><td>{cc}</td></tr>"
+        table_html += "</table>"
+
+    return f"<h4>{title}</h4>{table_html}"
 
 
-def send_sns_message(subject, message, topic_arn, aws_region):
-    sns = boto3.client("sns", region_name=aws_region)
+def send_sns_html(subject, html_body):
+    sns_client = boto3.client("sns", region_name=AWS_REGION_SNS)
+
     try:
-        resp = sns.publish(TopicArn=topic_arn, Subject=subject, Message=message)
-        return resp
+        message = json.dumps({
+            "default": "GitHub vs CodeCommit HTML report",
+            "email": html_body
+        })
+
+        sns_client.publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=subject,
+            Message=message,
+            MessageStructure="json"
+        )
+        print("✅ SNS HTML notification sent successfully")
     except Exception as e:
-        print(f"[ERROR] Failed to send SNS: {e}")
-        return None
+        print("❌ Failed to send SNS notification:", str(e))
 
 
 def main():
     exit_if_missing_credentials()
     print("Starting GitHub <-> CodeCommit commit comparison...")
-    # 1) Fetch repos
-    print(f"Fetching repos for {GITHUB_ORG_1} ...")
+
     repos1 = get_github_repos(GITHUB_ORG_1, GITHUB_TOKEN_1)
-    # filter excluded
     repos1_filtered = [r for r in repos1 if r not in EXCLUDED_REPOS_VITECHSYSTEMS]
-    print(f"Found {len(repos1)} repos in {GITHUB_ORG_1}, {len(repos1_filtered)} after exclusions.")
 
-    print(f"Fetching repos for {GITHUB_ORG_2} ...")
     repos2 = get_github_repos(GITHUB_ORG_2, GITHUB_TOKEN_2)
-    # keep only unique repos in org2 not present in org1
     repos2_unique = [r for r in repos2 if r not in repos1_filtered]
-    print(f"Found {len(repos2)} repos in {GITHUB_ORG_2}, {len(repos2_unique)} unique after excluding org1 repos.")
 
-    # 2) Compare commits per repo for org1
     mismatches_org1 = []
     for repo in repos1_filtered:
-        print(f"[{GITHUB_ORG_1}] checking repo: {repo}")
         gh_branch, gh_sha = get_github_default_branch_and_sha(GITHUB_ORG_1, repo, GITHUB_TOKEN_1)
         cc_branch, cc_sha = get_codecommit_default_branch_and_sha(repo, AWS_REGION)
-        # consider mismatch if strings differ
         if gh_sha != cc_sha:
             mismatches_org1.append([repo, gh_sha, cc_sha])
 
-    # 3) Compare commits per repo for org2_unique
     mismatches_org2 = []
     for repo in repos2_unique:
-        print(f"[{GITHUB_ORG_2}] checking repo: {repo}")
         gh_branch, gh_sha = get_github_default_branch_and_sha(GITHUB_ORG_2, repo, GITHUB_TOKEN_2)
         cc_branch, cc_sha = get_codecommit_default_branch_and_sha(repo, AWS_REGION)
         if gh_sha != cc_sha:
             mismatches_org2.append([repo, gh_sha, cc_sha])
 
-    # 4) Build message
-    header = f"GitHub vs CodeCommit Commit Comparison Report\nGenerated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    table1 = build_table_text(f"{GITHUB_ORG_1} (mismatches)", mismatches_org1)
-    table2 = build_table_text(f"{GITHUB_ORG_2} (mismatches - unique to org2)", mismatches_org2)
-    footer = "\nThanks,\nv3atlassianops\n"
-    message_body = header + table1 + "\n" + table2 + footer
+    # ----- Build HTML -----
+    generated_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; color: #222;">
+        <h3>GitHub vs CodeCommit Commit Comparison Report</h3>
+        <p><b>Generated:</b> {generated_time}</p>
+        {build_html_table(GITHUB_ORG_1 + " (mismatches)", mismatches_org1)}
+        <br>
+        {build_html_table(GITHUB_ORG_2 + " (mismatches - unique to org2)", mismatches_org2)}
+        <br>
+        <p>Thanks,<br><b>v3atlassianops</b></p>
+    </body>
+    </html>
+    """
 
-    print("\n----- REPORT -----\n")
-    print(message_body)
-    print("\n----- END REPORT -----\n")
+    print("----- HTML REPORT -----")
+    print(html_body)
+    print("------------------------")
 
-    # 5) Send SNS (or dry-run)
     if DRY_RUN:
-        print("[DRY RUN] Not sending SNS message. Set DRY_RUN = False to send.")
+        print("[DRY RUN] Not sending SNS message.")
     else:
-        print("Sending SNS message...")
-        resp = send_sns_message("GitHub vs CodeCommit Commit Comparison Report", message_body, SNS_TOPIC_ARN, AWS_REGION_SNS)
-        if resp:
-            print("SNS publish response:", resp)
-        else:
-            print("SNS publish failed.")
+        send_sns_html("GitHub vs CodeCommit Commit Comparison Report", html_body)
 
 
 if __name__ == "__main__":
