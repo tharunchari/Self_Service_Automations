@@ -14,6 +14,8 @@ import sys
 import time
 import requests
 import boto3
+import datetime
+import json
 from botocore.exceptions import ClientError
 
 # Optional niceties: tabulate (if available)
@@ -21,7 +23,6 @@ try:
     from tabulate import tabulate
 except Exception:
     tabulate = None
-
 
 # ------------------ CONFIGURATION (Edit here) ------------------
 AWS_REGION = "us-west-2"
@@ -204,7 +205,7 @@ def build_table_text(title, rows):
     return "\n".join(lines)
 
 
-def send_sns_notification(subject, vitechsystems_table, vitechinfra_table):
+def send_sns_notification(subject, vitechsystems_html, vitechinfra_html):
     sns_client = boto3.client("sns", region_name=AWS_REGION_SNS)
 
     html_message = f"""
@@ -214,10 +215,10 @@ def send_sns_notification(subject, vitechsystems_table, vitechinfra_table):
         <p>Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
 
         <h4>=== vitechsystems (mismatches) ===</h4>
-        {vitechsystems_table}
+        {vitechsystems_html}
 
         <h4>=== vitechinfra (mismatches - unique to org2) ===</h4>
-        {vitechinfra_table}
+        {vitechinfra_html}
 
         <br>
         <p>Thanks,<br>v3atlasianops</p>
@@ -226,25 +227,26 @@ def send_sns_notification(subject, vitechsystems_table, vitechinfra_table):
     """
 
     try:
-        sns_client.publish(
+        response = sns_client.publish(
             TopicArn=SNS_TOPIC_ARN,
             Subject=subject,
-            Message="GitHub vs CodeCommit Comparison Report (HTML version attached below)",
-            MessageStructure="json",
-            MessageAttributes={},
             Message=json.dumps({
                 "default": "See HTML version below",
                 "email": html_message
-            })
+            }),
+            MessageStructure="json"
         )
         print("✅ SNS HTML notification sent successfully")
+        return response
     except Exception as e:
         print("❌ Failed to send SNS notification:", str(e))
+        return None
 
 
 def main():
     exit_if_missing_credentials()
     print("Starting GitHub <-> CodeCommit commit comparison...")
+
     # 1) Fetch repos
     print(f"Fetching repos for {GITHUB_ORG_1} ...")
     repos1 = get_github_repos(GITHUB_ORG_1, GITHUB_TOKEN_1)
@@ -277,12 +279,16 @@ def main():
         if gh_sha != cc_sha:
             mismatches_org2.append([repo, gh_sha, cc_sha])
 
-    # 4) Build message
-    from tabulate import tabulate
-
-    vitechsystems_html = tabulate(vitechsystems_data, headers=["Repository", "GitHub Commit (sha)", "CodeCommit Commit (sha)"], tablefmt="html")
-    vitechinfra_html = tabulate(vitechinfra_data, headers=["Repository", "GitHub Commit (sha)", "CodeCommit Commit (sha)"], tablefmt="html")
-
+    # 4) Build message tables
+    if tabulate:
+        vitechsystems_html = tabulate(mismatches_org1, headers=["Repository", "GitHub Commit (sha)", "CodeCommit Commit (sha)"], tablefmt="html")
+        vitechinfra_html = tabulate(mismatches_org2, headers=["Repository", "GitHub Commit (sha)", "CodeCommit Commit (sha)"], tablefmt="html")
+        message_body = tabulate(mismatches_org1, headers=["Repository", "GitHub Commit (sha)", "CodeCommit Commit (sha)"], tablefmt="github") + "\n" + \
+                       tabulate(mismatches_org2, headers=["Repository", "GitHub Commit (sha)", "CodeCommit Commit (sha)"], tablefmt="github")
+    else:
+        vitechsystems_html = build_table_text("vitechsystems", mismatches_org1)
+        vitechinfra_html = build_table_text("vitechinfra", mismatches_org2)
+        message_body = build_table_text("vitechsystems", mismatches_org1) + build_table_text("vitechinfra", mismatches_org2)
 
     print("\n----- REPORT -----\n")
     print(message_body)
