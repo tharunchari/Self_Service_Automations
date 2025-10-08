@@ -29,10 +29,10 @@ SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
 GITHUB_ORG_1 = "vitechsystems"
 GITHUB_ORG_2 = "vitechinfra"
 # Repos to exclude from vitechsystems (same as your ansible)
-EXCLUDED_REPOS_VITECHSYSTEMS = ["CoreAdmin", "Nextgen", "CPF_PRODUCT_L5"]
+EXCLUDED_REPOS_VITECHSYSTEMS = ["CoreAdmin", "Nextgen"]
 
 # Dry run: if True -> do not send SNS; just print output
-DRY_RUN = True
+DRY_RUN = False
 
 # ------------------ SECRETS / ENV (set these in your workflow) ----------
 GITHUB_TOKEN_1 = os.getenv("GITHUB_TOKEN_1")  # token for org1 (or same token)
