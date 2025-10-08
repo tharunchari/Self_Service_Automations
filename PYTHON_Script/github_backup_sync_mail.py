@@ -25,6 +25,7 @@ except Exception:
 
 # ------------------ CONFIGURATION (Edit here) ------------------
 AWS_REGION = "us-west-2"
+AWS_REGION_SNS = "us-east-1"
 SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
 GITHUB_ORG_1 = "vitechsystems"
 GITHUB_ORG_2 = "vitechinfra"
@@ -264,7 +265,7 @@ def main():
         print("[DRY RUN] Not sending SNS message. Set DRY_RUN = False to send.")
     else:
         print("Sending SNS message...")
-        resp = send_sns_message("GitHub vs CodeCommit Commit Comparison Report", message_body, SNS_TOPIC_ARN, AWS_REGION)
+        resp = send_sns_message("GitHub vs CodeCommit Commit Comparison Report", message_body, SNS_TOPIC_ARN, AWS_REGION_SNS)
         if resp:
             print("SNS publish response:", resp)
         else:
