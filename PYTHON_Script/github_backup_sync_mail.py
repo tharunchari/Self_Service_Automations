@@ -123,7 +123,7 @@ def build_html_table(title, rows):
         return html + "<p>No mismatches found ✅</p>"
     html += """
     <table>
-      <tr><th>Repository</th><th>GitHub</th><th>CodeCommit</th></tr>
+      <tr><th>Repository</th><th>GitHub Commit ID</th><th>CodeCommit Commit ID</th></tr>
     """
     for repo, gh, cc in rows:
         gh_short = gh[:7] if gh else "-"
@@ -147,8 +147,8 @@ def build_html_body(org1_rows, org2_rows):
     </style>
     """
     header = f"<h2>GitHub vs CodeCommit Commit Comparison Report</h2><p>Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}</p>"
-    table1 = build_html_table(f"{GITHUB_ORG_1} (mismatches)", org1_rows)
-    table2 = build_html_table(f"{GITHUB_ORG_2} (mismatches - unique to org2)", org2_rows)
+    table1 = build_html_table(f"{GITHUB_ORG_1} - Mismatched Repos (Latest Commits)", org1_rows)
+    table2 = build_html_table(f"{GITHUB_ORG_2} - Mismatched Repos (Latest Commits)", org2_rows)
     footer = "<p style='font-size:12px;color:#888;'>Sent automatically via GitHub Actions using AWS SES</p>"
     return f"<html><head>{style}</head><body>{header}{table1}{table2}{footer}</body></html>"
 
@@ -195,7 +195,7 @@ def main():
             mismatches2.append([repo, gh_sha, cc_sha])
 
     html_body = build_html_body(mismatches1, mismatches2)
-    subject = "GitHub vs CodeCommit Commit Comparison Report"
+    subject = "GitHub Backup: GitHub vs CodeCommit Commit Comparison Report"
 
     if DRY_RUN:
         print("----- DRY RUN -----")
