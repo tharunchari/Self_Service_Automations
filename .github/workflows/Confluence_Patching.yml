@@ -338,9 +338,21 @@ jobs:
               echo "<p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>" >> email_body.html
               echo "<table>" >> email_body.html
               echo "  <tr><th>Instance ID</th><th>Instance IP</th><th>Before Patching Version</th><th>After Patching Version</th><th>Alive Status</th></tr>" >> email_body.html
-              echo "  <tr><td>${INSTANCE_ID}</td><td>${INSTANCE_PRIVATE_IP}</td><td>${BEFORE_VERSION}</td><td>${AFTER_VERSION}</td><td class='status-alive'>✅ ALIVE</td></tr>" >> email_body.html
+              
+              # ✅ Make Instance ID cell green
+              echo "  <tr>" >> email_body.html
+              echo "    <td>${INSTANCE_ID}</td>" >> email_body.html
+              echo "    <td style='background-color: #d4edda;'>${INSTANCE_PRIVATE_IP}</td>" >> email_body.html
+              echo "    <td style='background-color: #d4edda;'>${BEFORE_VERSION}</td>" >> email_body.html
+              echo "    <td style='background-color: #d4edda;'>${AFTER_VERSION}</td>" >> email_body.html
+              echo "    <td class='status-alive' style='background-color: #d4edda;'>✅ ALIVE</td>" >> email_body.html
+              echo "  </tr>" >> email_body.html
+
+              
               echo "</table>" >> email_body.html
+              echo "<p style='margin-top: 30px; font-size: 12px; color: #888;'>Sent by GitHub Actions via AWS SES</p>" >> email_body.html
               echo "</body></html>" >> email_body.html
+
 
               EMAIL_BODY=$(cat email_body.html | jq -Rs .)
       
@@ -404,4 +416,4 @@ jobs:
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully.Please reach out to v3atlassianops@vitechinc.com for any issues.\n\n **Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
+            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully ${{ env.URL }}.Please reach out to v3atlassianops@vitechinc.com for any issues.\n\n **Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
