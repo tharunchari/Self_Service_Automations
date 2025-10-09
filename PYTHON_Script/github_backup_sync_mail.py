@@ -183,24 +183,37 @@ def get_codecommit_default_branch_and_sha(repo_name, aws_region):
 
 
 def build_table_text(title, rows):
-    """Build nice text table. Uses tabulate if available, else produces markdown-style table."""
+    """Build nice plain text table with only first 7 chars of commit ID, extra space between tables."""
     if not rows:
         return f"\n=== {title} ===\nNo mismatches found.\n"
 
-    headers = ["Repository", "GitHub Commit (sha)", "CodeCommit Commit (sha)"]
-    if tabulate:
-        return f"\n=== {title} ===\n" + tabulate(rows, headers=headers, tablefmt="github") + "\n"
-    # fallback format: markdown-like
+    # Prepare headers and widths
+    headers = ["Repository", "GitHub", "CodeCommit"]
+    col_widths = [
+        max(len(headers[0]), max(len(str(r[0])) for r in rows) if rows else 0),
+        max(len(headers[1]), 7),
+        max(len(headers[2]), 7)
+    ]
+
+    # Build table lines
     lines = []
     lines.append(f"\n=== {title} ===")
-    # header
-    header_line = "| " + " | ".join(headers) + " |"
-    sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
-    lines.append(header_line)
+    # Header row
+    header_fmt = "| {0:<{w0}} | {1:<{w1}} | {2:<{w2}} |".format(
+        headers[0], headers[1], headers[2], w0=col_widths[0], w1=col_widths[1], w2=col_widths[2]
+    )
+    sep_line = "|{0}|".format("-" * (col_widths[0] + 2) + "|" + "-" * (col_widths[1] + 2) + "|" + "-" * (col_widths[2] + 2) + "|")
+    lines.append(header_fmt)
     lines.append(sep_line)
+    # Data rows
     for r in rows:
-        lines.append("| " + " | ".join(str(x) for x in r) + " |")
-    lines.append("")  # trailing newline
+        repo = str(r[0])
+        gh_sha = str(r[1])[:7] if len(str(r[1])) >= 7 else str(r[1])
+        cc_sha = str(r[2])[:7] if len(str(r[2])) >= 7 else str(r[2])
+        lines.append("| {0:<{w0}} | {1:<{w1}} | {2:<{w2}} |".format(
+            repo, gh_sha, cc_sha, w0=col_widths[0], w1=col_widths[1], w2=col_widths[2]
+        ))
+    lines.append("")  # trailing newline for spacing after table
     return "\n".join(lines)
 
 
@@ -253,8 +266,8 @@ def main():
     header = f"GitHub vs CodeCommit Commit Comparison Report\nGenerated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     table1 = build_table_text(f"{GITHUB_ORG_1} (mismatches)", mismatches_org1)
     table2 = build_table_text(f"{GITHUB_ORG_2} (mismatches - unique to org2)", mismatches_org2)
-    footer = "\nThanks,\nv3atlassianops\n"
-    message_body = header + table1 + "\n" + table2 + footer
+    footer = "Thanks,\nv3atlassianops\n"
+    message_body = header + table1 + "\n" + table2 + "\n" + footer
 
     print("\n----- REPORT -----\n")
     print(message_body)
