@@ -1,11 +1,12 @@
-name: Monthly Confluence Patch Schedule
+name: |
+  Monthly Confluence Patch Schedule - ${{ github.event.schedule || 'manual' }}
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 8-14 * 4'    # 2nd Thursday (8th-14th) at 2AM UTC for confluencedr
-    - cron: '0 10 8-14 * 5'   # 2nd Friday (8th-14th) at 10AM UTC for prod notification
-    - cron: '0 2 9-15 * 6'    # 2nd Saturday (9th-15th) at 2AM UTC for prod patching
+    - cron: '0 2 8-14 * 4'    # 2nd Thursday (8th-14th) at 2AM UTC
+    - cron: '0 10 8-14 * 5'   # 2nd Friday (8th-14th) at 10AM UTC
+    - cron: '0 2 9-15 * 6'    # 2nd Saturday (9th-15th) at 2AM UTC
 
 permissions:
   id-token: write
@@ -16,6 +17,7 @@ jobs:
   check_2nd_thursday:
     name: Check if today is the 2nd Thursday of the month
     runs-on: ubuntu-latest
+    if: github.event.schedule == '0 2 8-14 * 4' || github.event_name == 'workflow_dispatch'
     outputs:
       is_2nd_thursday: ${{ steps.check.outputs.is_2nd_thursday }}
     steps:
@@ -23,7 +25,8 @@ jobs:
         run: |
           day_of_month=$(date -u +'%d')
           weekday=$(date -u +'%u')
-          # 2nd Thursday: Day 8-14 and weekday == 4 (Thursday)
+          echo "Day of month: $day_of_month"
+          echo "Weekday: $weekday"
           if [ "$weekday" -eq 4 ] && [ "$day_of_month" -ge 8 ] && [ "$day_of_month" -le 14 ]; then
             echo "is_2nd_thursday=true" >> $GITHUB_OUTPUT
           else
@@ -70,6 +73,7 @@ jobs:
   check_2nd_friday:
     name: Check if today is the 2nd Friday of the month
     runs-on: ubuntu-latest
+    if: github.event.schedule == '0 10 8-14 * 5' || github.event_name == 'workflow_dispatch'
     outputs:
       is_2nd_friday: ${{ steps.check.outputs.is_2nd_friday }}
     steps:
@@ -77,7 +81,8 @@ jobs:
         run: |
           day_of_month=$(date -u +'%d')
           weekday=$(date -u +'%u')
-          # 2nd Friday: Day 8-14 and weekday == 5 (Friday)
+          echo "Day of month: $day_of_month"
+          echo "Weekday: $weekday"
           if [ "$weekday" -eq 5 ] && [ "$day_of_month" -ge 8 ] && [ "$day_of_month" -le 14 ]; then
             echo "is_2nd_friday=true" >> $GITHUB_OUTPUT
           else
@@ -106,6 +111,7 @@ jobs:
   check_2nd_saturday:
     name: Check if today is the 2nd Saturday of the month
     runs-on: ubuntu-latest
+    if: github.event.schedule == '0 2 9-15 * 6' || github.event_name == 'workflow_dispatch'
     outputs:
       is_2nd_saturday: ${{ steps.check.outputs.is_2nd_saturday }}
     steps:
@@ -113,7 +119,8 @@ jobs:
         run: |
           day_of_month=$(date -u +'%d')
           weekday=$(date -u +'%u')
-          # 2nd Saturday: Day 9-15 and weekday == 6 (Saturday)
+          echo "Day of month: $day_of_month"
+          echo "Weekday: $weekday"
           if [ "$weekday" -eq 6 ] && [ "$day_of_month" -ge 9 ] && [ "$day_of_month" -le 15 ]; then
             echo "is_2nd_saturday=true" >> $GITHUB_OUTPUT
           else
