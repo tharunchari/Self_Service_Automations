@@ -128,7 +128,7 @@ def build_html_table(title, rows):
     for repo, gh, cc in rows:
         gh_short = gh[:7] if gh else "-"
         cc_short = cc[:7] if cc else "-"
-        html += f"<tr><td>{repo}</td><td>{gh_short}</td><td>{cc_short}</td></tr>"
+        html += f"<tr><td>{repo}</td><td>{gh}</td><td>{cc}</td></tr>"
     html += "</table><br>"
     return html
 
