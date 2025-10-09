@@ -27,7 +27,7 @@ GITHUB_ORG_1 = "vitechsystems"
 GITHUB_ORG_2 = "vitechinfra"
 
 EXCLUDED_REPOS_VITECHSYSTEMS = ["CoreAdmin", "Nextgen"]
-DRY_RUN = True  # ✅ set False to actually send email
+DRY_RUN = False  # ✅ set False to actually send email
 
 # ---------------- ENVIRONMENT VARIABLES ----------------
 GITHUB_TOKEN_1 = os.getenv("GITHUB_TOKEN_1")
