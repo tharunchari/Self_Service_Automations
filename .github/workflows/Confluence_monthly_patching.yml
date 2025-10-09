@@ -1,5 +1,4 @@
-name: |
-  Monthly Confluence Patch Schedule - ${{ github.event.schedule || 'manual' }}
+name: Monthly Confluence Patch Schedule
 
 on:
   workflow_dispatch:
