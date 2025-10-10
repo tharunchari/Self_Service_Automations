@@ -26,7 +26,7 @@ SES_TO = "v3atlassianops@vitechinc.com"
 GITHUB_ORG_1 = "vitechsystems"
 GITHUB_ORG_2 = "vitechinfra"
 
-EXCLUDED_REPOS_VITECHSYSTEMS = ["CoreAdmin", "Nextgen"]
+EXCLUDED_REPOS_VITECHSYSTEMS = ["hello-world", "github-runner-testing"]
 DRY_RUN = False  # ✅ set False to actually send email
 
 # ---------------- ENVIRONMENT VARIABLES ----------------
