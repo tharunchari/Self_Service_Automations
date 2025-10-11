@@ -83,14 +83,14 @@ jobs:
 
       - name: Set AWS region
         run: |
-          echo "AWS_REGION=${{ github.event.inputs.environment == 'confluence' && 'us-east-1' || 'us-west-2' }}" >> $GITHUB_ENV
+          #echo "AWS_REGION=${{ github.event.inputs.environment == 'confluence' && 'us-east-1' || 'us-west-2' }}" >> $GITHUB_ENV
           
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}  
+          aws-region: us-east-1
 
       - name: Send pre-patching notification via SNS
         run: |
