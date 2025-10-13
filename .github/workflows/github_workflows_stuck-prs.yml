@@ -112,9 +112,15 @@ jobs:
 
               # Get check runs
               echo "Fetching check runs for $repo PR #$number (commit: $commit_sha)"
-              checks_json=$(gh api repos/$ORG_NAME/$repo/commits/$commit_sha/check-runs -H "Accept: application/vnd.github.v3+json" 2>&1)
+              if ! checks_json=$(gh api repos/$ORG_NAME/$repo/commits/$commit_sha/check-runs -H "Accept: application/vnd.github.v3+json" 2>&1); then
+                echo "::warning:: Failed to fetch check runs for $repo PR #$number"
+                echo "gh api error: $checks_json"
+                continue
+              fi
+              
               if ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
-                echo "::warning:: Could not fetch or parse check runs for PR #$number in $repo"
+                echo "::warning:: Invalid JSON received when fetching check runs for $repo PR #$number"
+                echo "Raw response: $checks_json"
                 continue
               fi
 
