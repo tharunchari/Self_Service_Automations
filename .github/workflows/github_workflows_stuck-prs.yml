@@ -32,6 +32,7 @@ jobs:
     steps:
       - name: Install jq and gh (Amazon Linux/Ubuntu)
         run: |
+          set -e
           if ! command -v jq > /dev/null 2>&1; then
             if command -v yum > /dev/null 2>&1; then
               sudo yum install -y jq
@@ -74,38 +75,26 @@ jobs:
           echo "Repositories collected for org $ORG_NAME:"
           cat repos.txt
 
-      - name: Check PRs and build report (always use gh pr checks)
+      - name: Check PRs and build report (safe error handling)
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
-          export GH_TOKEN="${GH_TOKEN}" # Make sure all subshells receive it
+          set +e  # Allow non-zero exit codes to be handled manually
+          export GH_TOKEN="${GH_TOKEN}"
           NOW=$(date -u +%s)
           DELIM=$'\x1e'
           declare -a STUCK_PRS
-          AGE_LIMIT=$((60 * 60)) # 1 hour in seconds
-
-          echo "Contents of repos.txt:"
-          cat repos.txt
+          AGE_LIMIT=$((60 * 60)) # 1 hour
 
           while read repo; do
             echo "==== Checking repository: $repo ===="
-            echo "Running: gh pr list --repo \"$ORG_NAME/$repo\" --state open --json number,createdAt,title"
-
-            prs=""
             prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title 2>&1)
-            if [ $? -ne 0 ]; then
-              echo "::warning:: Could not fetch PR list for $repo"
-              echo "Error: $prs"
+            if [ $? -ne 0 ] || ! jq empty <<< "$prs" > /dev/null 2>&1; then
+              echo "::warning:: Failed to fetch PR list for $repo"
+              echo "$prs"
               continue
             fi
 
-            echo "---- Raw gh pr list output ----"
-            echo "$prs"
-
-            if [ -z "$prs" ] || ! jq empty <<< "$prs" > /dev/null 2>&1; then
-              echo "::warning:: Not valid JSON from gh pr list for $repo"
-              continue
-            fi
             pr_count=$(jq 'length' <<< "$prs")
             for i in $(seq 0 $((pr_count - 1))); do
               pr=$(jq ".[$i]" <<< "$prs")
@@ -119,29 +108,28 @@ jobs:
               echo "PR #$number created at $created ($created_ts), age: $age_secs seconds"
 
               if [ $age_secs -lt $AGE_LIMIT ]; then
-                echo "PR #$number is not old enough (age $age_secs < $AGE_LIMIT), skipping."
+                echo "PR #$number is too new, skipping."
                 continue
               fi
 
-              # Always use gh pr checks for pending status detection
               checks_json=$(gh pr checks $number --repo "$ORG_NAME/$repo" --json name,status 2>&1)
-              if ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
-                echo "::warning:: Not valid JSON from gh pr checks for $repo PR #$number"
-                echo "Raw gh pr checks output: $checks_json"
+              if [ $? -ne 0 ] || ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
+                echo "::warning:: Could not fetch or parse PR checks for $repo #$number"
+                echo "$checks_json"
                 continue
               fi
+
               pending_total=$(jq '[.[] | select(.status == "pending")] | length' <<< "$checks_json")
               pending_names=$(jq -r '[.[] | select(.status == "pending") | .name] | join(", ")' <<< "$checks_json")
 
               if [ "$pending_total" -eq 0 ]; then
-                echo "PR #$number has no pending checks, skipping."
+                echo "PR #$number has no pending checks."
                 continue
               fi
 
-              # Optionally fetch PR author and reviewers for the report
               pr_json=$(gh pr view $number --repo "$ORG_NAME/$repo" --json author,reviewRequests,title,createdAt,state 2>&1)
-              if ! jq empty <<< "$pr_json" > /dev/null 2>&1; then
-                echo "Warning: Could not fetch PR view for $repo PR #$number"
+              if [ $? -ne 0 ] || ! jq empty <<< "$pr_json" > /dev/null 2>&1; then
+                echo "::warning:: Failed to fetch PR metadata for $repo #$number"
                 author="unknown"
                 reviewers=""
                 state="unknown"
@@ -159,49 +147,24 @@ jobs:
                 ' <<< "$pr_json")
               fi
 
-              echo "PR #$number pending checks: $pending_names"
+              echo "PR #$number has pending checks: $pending_names"
               STUCK_PRS+=( "${repo}${DELIM}${number}${DELIM}${pr_url}${DELIM}${title}${DELIM}${author}${DELIM}${created}${DELIM}${pending_names}${DELIM}${state}${DELIM}${reviewers}" )
             done
           done < repos.txt
 
           {
-            echo "<html>"
-            echo "<head>"
-            echo "  <style>"
-            echo "    body { background: #f4f6fb; color: #222; font-family: 'Segoe UI', Arial, sans-serif; }"
-            echo "    table { border-collapse: separate; border-spacing: 0; width: 100%; margin-top: 16px; }"
-            echo "    th, td { border: 1px solid #e1e4ea; padding: 12px 10px; }"
-            echo "    th { background: linear-gradient(90deg, #4f8cff 0%, #3f51b5 100%); color: #fff; font-weight: bold; }"
-            echo "    tr:nth-child(even) { background: #e3eafc; }"
-            echo "    tr:nth-child(odd) { background: #f4f6fb; }"
-            echo "    td { font-size: 15px; }"
-            echo "  </style>"
-            echo "</head>"
-            echo "<body>"
-            echo "<p>The following PRs were detected as stuck (open over 1 hour with pending status checks):</p>"
-            echo "<table>"
-            echo "  <tr>"
-            echo "    <th>Repo Name</th>"
-            echo "    <th>PR</th>"
-            echo "    <th>Title</th>"
-            echo "    <th>Author</th>"
-            echo "    <th>Created At</th>"
-            echo "    <th>Pending Checks</th>"
-            echo "    <th>Status</th>"
-            echo "    <th>Requested Reviewers</th>"
-            echo "  </tr>"
+            echo "<html><head><style>"
+            echo "body { font-family: Arial; background: #f4f6fb; color: #222; }"
+            echo "table { border-collapse: collapse; width: 100%; }"
+            echo "th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }"
+            echo "th { background: #4f8cff; color: white; }"
+            echo "tr:nth-child(even) { background: #e3eafc; }"
+            echo "</style></head><body>"
+            echo "<h3>Stuck PRs Detected (Older than 1 hour with pending checks)</h3>"
+            echo "<table><tr><th>Repo</th><th>PR</th><th>Title</th><th>Author</th><th>Created At</th><th>Pending Checks</th><th>Status</th><th>Reviewers</th></tr>"
             for pr in "${STUCK_PRS[@]}"; do
               IFS="$DELIM" read -r repo number pr_url title author created pending_names state reviewers <<< "$pr"
-              echo "  <tr>"
-              echo "    <td>${repo}</td>"
-              echo "    <td><a href=\"${pr_url}\">#${number}</a></td>"
-              echo "    <td>${title}</td>"
-              echo "    <td>${author}</td>"
-              echo "    <td>${created}</td>"
-              echo "    <td>${pending_names}</td>"
-              echo "    <td>${state}</td>"
-              echo "    <td>${reviewers}</td>"
-              echo "  </tr>"
+              echo "<tr><td>$repo</td><td><a href=\"$pr_url\">#$number</a></td><td>$title</td><td>$author</td><td>$created</td><td>$pending_names</td><td>$state</td><td>$reviewers</td></tr>"
             done
             echo "</table></body></html>"
           } > email_body.html
@@ -213,9 +176,9 @@ jobs:
               --from "$SES_FROM" \
               --destination "ToAddresses=$SES_TO" \
               --message "Subject={Data='$SES_SUBJECT'},Body={Html={Data=\"$EMAIL_BODY\"}}"
-            echo "Email sent via SES for stuck PRs"
+            echo "Email sent via SES"
           else
-            echo "No stuck PRs found, no email sent."
+            echo "No stuck PRs found."
           fi
 
   stop-runner:
