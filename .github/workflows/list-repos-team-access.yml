@@ -118,7 +118,7 @@ jobs:
           from email.mime.text import MIMEText
           from email.mime.application import MIMEApplication
 
-          sender = "<Github CoDev Repo Access Summary> do-not-reply@vitechinc.com"
+          sender = "<Github-CoDev-Repo-Access-Summary>do-not-reply@vitechinc.com"
           recipient = "mmuvvala@vitechinc.com"
           subject = "[GitHub Audit] vitechsystems – CoDev Repo Access Summary"
 
