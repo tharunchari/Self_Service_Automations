@@ -1,0 +1,25 @@
+name: "Update Webhooks in GitHub Repositories"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-webhooks:
+    runs-on: ubuntu-24.04
+    
+    env:
+      PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install boto3 requests
+
+      - name: Run GitHub runner monitor script
+        run: python3 PYTHON_Script/update_webhooks_advanced.py --dry-run=True
