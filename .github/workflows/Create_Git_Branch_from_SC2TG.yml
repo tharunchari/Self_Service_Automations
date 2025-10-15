@@ -144,8 +144,8 @@ jobs:
               else
                   echo "Error: Failed to push commit $commit" | tee -a "$LOG_FILE"
                   echo "This may be due to the chunk size being too large. Try reducing STEP_SIZE (e.g., $((STEP_SIZE / 2)))" | tee -a "$LOG_FILE"
-                  #exit 1
-                  continue
+                  exit 1
+                  #continue
               fi
           done
           echo "Performing final push to sync branch $BRANCH_NAME..." | tee -a "$LOG_FILE"
@@ -174,5 +174,6 @@ jobs:
       - name: Clean up workspace
         run: |
           rm -rf *
+
 
 
