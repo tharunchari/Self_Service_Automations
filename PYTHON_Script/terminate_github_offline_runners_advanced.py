@@ -14,6 +14,7 @@ GITHUB_TOKEN = os.environ.get("PROD_FINE_GRAINED_PAT")  # Classic PAT from workf
 THRESHOLD_MINUTES = 60
 TAG_KEY = "Name"
 TAG_VALUE = "Github_Self_Hosted_Runner"
+REPO_TAG_KEY = "RepoName"  # 👈 New configurable tag key to extract
 # ==============================
 
 # CLI argument parsing
@@ -45,21 +46,33 @@ def get_aws_instances(threshold_minutes=THRESHOLD_MINUTES, tag_key=TAG_KEY, tag_
     ec2_client = boto3.client("ec2", region_name=AWS_REGION)
     current_time = datetime.now(timezone.utc)
     instances = []
+
     response = ec2_client.describe_instances(Filters=[
         {"Name": f"tag:{tag_key}", "Values": [tag_value]},
         {"Name": "instance-state-name", "Values": ["running"]}
     ])
+
     for reservation in response["Reservations"]:
         for instance in reservation["Instances"]:
             instance_id = instance["InstanceId"]
             launch_time = instance["LaunchTime"]
             running_time = current_time - launch_time
+
+            # Extract RepoName tag (if present)
+            repo_name = None
+            for tag in instance.get("Tags", []):
+                if tag["Key"] == REPO_TAG_KEY:
+                    repo_name = tag["Value"]
+                    break
+
             if running_time.total_seconds() > threshold_minutes * 60:
                 instances.append({
                     "InstanceId": instance_id,
                     "LaunchTime": launch_time,
-                    "RunningTime": running_time
+                    "RunningTime": running_time,
+                    "RepoName": repo_name  # 👈 Store RepoName tag value
                 })
+
     return instances
 
 
@@ -112,7 +125,6 @@ def main():
     github_runners = get_github_org_runners(GITHUB_ORG, GITHUB_TOKEN)
     print(f"Total GitHub runners: {len(github_runners)}")
 
-    # Match AWS instance IDs with runner names
     matched_runners = []
     matched_instance_ids = set()
     for runner in github_runners:
@@ -129,20 +141,15 @@ def main():
                 matched_instance_ids.add(inst_id)
                 break
 
-    # 1. Idle/Offline matched runners
     idle_offline_instances = []
     for runner in matched_runners:
         status = runner.get("status", "").lower()
         busy = runner.get("busy", False)
-
-        # Offline OR Idle (online but not busy)
         if status == "offline" or (status == "online" and not busy):
             idle_offline_instances.append(runner["instance_id"])
 
-    # 2. Orphaned AWS instances (not in GitHub runner list)
     orphan_instances = [inst_id for inst_id in aws_instance_ids if inst_id not in matched_instance_ids]
 
-    # Combine both sets
     instances_to_terminate = list(set(idle_offline_instances + orphan_instances))
 
     print(f"Idle/Offline AWS runners to terminate: {idle_offline_instances}")
@@ -169,7 +176,11 @@ def main():
                 if inst:
                     message += f"Instance ID: {inst_id}\n"
                     message += f"Launch Time: {inst['LaunchTime']}\n"
-                    message += f"Running Time: {inst['RunningTime']}\n\n"
+                    message += f"Running Time: {inst['RunningTime']}\n"
+                    if inst.get("RepoName"):
+                        message += f"{REPO_TAG_KEY}: {inst['RepoName']}\n\n"
+                    else:
+                        message += f"{REPO_TAG_KEY}: N/A\n\n"
 
         if orphan_instances:
             message += "Orphaned runner / failed registration:\n\n"
@@ -178,7 +189,11 @@ def main():
                 if inst:
                     message += f"Instance ID: {inst_id}\n"
                     message += f"Launch Time: {inst['LaunchTime']}\n"
-                    message += f"Running Time: {inst['RunningTime']}\n\n"
+                    message += f"Running Time: {inst['RunningTime']}\n"
+                    if inst.get("RepoName"):
+                        message += f"{REPO_TAG_KEY}: {inst['RepoName']}\n\n"
+                    else:
+                        message += f"{REPO_TAG_KEY}: N/A\n\n"
 
         message += "Thanks,\nv3atlassianops"
 
