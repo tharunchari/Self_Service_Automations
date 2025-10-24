@@ -29,7 +29,7 @@ jobs:
       SES_FROM: do-not-reply@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
       SES_SUBJECT: 'Vitechsystems Org Open PRs >1hr Status Report'
-      GH_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
+      GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
     steps:
       - name: Install jq and gh
         run: |
@@ -130,7 +130,10 @@ jobs:
                 fi
               fi
 
-              checks_json=$(gh api repos/$ORG_NAME/$repo/commits/$commit_sha/check-runs -H "Accept: application/vnd.github.v3+json" 2>&1)
+              # --- Use curl instead of gh api for check runs ---
+              checks_json=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+                                    -H "Accept: application/vnd.github.v3+json" \
+                                    "https://api.github.com/repos/$ORG_NAME/$repo/commits/$commit_sha/check-runs")
               if echo "$checks_json" | grep -q "Resource not accessible by personal access token"; then
                 echo "WARNING: Checks API not accessible for $repo PR #$number"
                 pending_names="Checks unavailable"
