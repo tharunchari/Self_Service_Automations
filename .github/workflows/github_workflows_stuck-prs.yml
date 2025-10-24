@@ -29,7 +29,7 @@ jobs:
       SES_FROM: v3atlassianops@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
       SES_SUBJECT: 'Vitechsystems Org Open PRs >1hr Status Report'
-      GH_TOKEN: PROD_FINE_GRAINED_PAT # Use the standard runner token for all GH CLI usage
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Install jq and gh
         run: |
@@ -68,7 +68,6 @@ jobs:
         run: |
           set -xo pipefail
           trap 'echo "ERROR: Job failed at line $LINENO"; exit 1' ERR
-
           NOW=$(date -u +%s)
           DELIM=$'\x1e'
           declare -a PRS_STATUS
@@ -98,7 +97,6 @@ jobs:
               fi
               age_secs=$(( NOW - created_ts ))
               pr_url="https://github.com/$ORG_NAME/$repo/pull/$number"
-
               if [ $age_secs -lt $AGE_LIMIT ]; then
                 continue
               fi
@@ -120,7 +118,6 @@ jobs:
               else
                 review_status=$(jq -r '.reviewDecision // "unknown"' <<< "$pr_details")
                 merge_state=$(jq -r '.mergeStateStatus // "unknown"' <<< "$pr_details")
-
                 if [ "$review_status" = "REVIEW_REQUIRED" ]; then
                   review_label="Review required"
                 elif [ "$review_status" = "APPROVED" ]; then
@@ -192,10 +189,20 @@ jobs:
           } > email_body.html
 
           if [ ${#PRS_STATUS[@]} -gt 0 ]; then
+            cat > email_message.json <<EOF
+            {
+              "Subject": { "Data": "$SES_SUBJECT" },
+              "Body": {
+                "Html": {
+                  "Data": $(jq -Rs '.' < email_body.html)
+                }
+              }
+            }
+            EOF
             aws ses send-email \
               --from "$SES_FROM" \
               --destination "ToAddresses=$SES_TO" \
-              --message "Subject={Data='$SES_SUBJECT'},Body={Html={Data=\"$(cat email_body.html)\"}}"
+              --message file://email_message.json
             echo "Email sent via SES for open PRs >1hr"
           else
             echo "No open PRs >1hr found. Email not sent."
