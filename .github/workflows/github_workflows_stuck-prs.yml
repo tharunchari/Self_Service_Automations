@@ -189,16 +189,10 @@ jobs:
           } > email_body.html
 
           if [ ${#PRS_STATUS[@]} -gt 0 ]; then
-            cat > email_message.json <<EOF
-            {
-              "Subject": { "Data": "$SES_SUBJECT" },
-              "Body": {
-                "Html": {
-                  "Data": $(jq -Rs '.' < email_body.html)
-                }
-              }
-            }
-            EOF
+            html_body=$(cat email_body.html)
+            jq -n --arg subject "$SES_SUBJECT" --arg html "$html_body" \
+              '{Subject: {Data: $subject}, Body: {Html: {Data: $html}}}' > email_message.json
+
             aws ses send-email \
               --from "$SES_FROM" \
               --destination "ToAddresses=$SES_TO" \
