@@ -29,7 +29,7 @@ jobs:
       SES_FROM: v3atlassianops@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
       SES_SUBJECT: 'Vitechsystems Org Open PRs >1hr Status Report'
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the standard runner token for all GH CLI usage
+      GH_TOKEN: PROD_FINE_GRAINED_PAT # Use the standard runner token for all GH CLI usage
     steps:
       - name: Install jq and gh
         run: |
