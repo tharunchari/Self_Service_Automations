@@ -137,9 +137,15 @@ jobs:
                 fi
               fi
 
-              # Get check runs
+              # Get check runs (robust version)
               checks_json=$(gh api repos/$ORG_NAME/$repo/commits/$commit_sha/check-runs -H "Accept: application/vnd.github.v3+json" 2>&1)
-              if ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
+              if echo "$checks_json" | grep -q "Resource not accessible by personal access token"; then
+                echo "WARNING: Checks API not accessible for $repo PR #$number"
+                pending_names="Checks unavailable"
+                all_checks="Checks unavailable"
+                checks_icon="❓"
+              elif ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
+                echo "WARNING: Invalid JSON from checks API for $repo PR #$number"
                 pending_names="Checks unavailable"
                 all_checks="Checks unavailable"
                 checks_icon="❓"
