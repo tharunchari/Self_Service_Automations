@@ -26,7 +26,7 @@ jobs:
     runs-on: [self-hosted, Internal_Tools_Automation_Server]
     env:
       ORG_NAME: vitechsystems
-      SES_FROM: v3atlassianops@vitechinc.com
+      SES_FROM: do-not-reply@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
       SES_SUBJECT: 'Vitechsystems Org Open PRs >1hr Status Report'
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -59,10 +59,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Get all repos in org
+      - name: Get all repos in org and print
         run: |
           set -euo pipefail
           gh repo list "$ORG_NAME" --limit 1000 --json name -q '.[] | .name' > repos.txt
+          echo "==== List of repositories in $ORG_NAME ===="
+          cat repos.txt
+          echo "==========================================="
 
       - name: Check PRs and build status report
         run: |
@@ -101,7 +104,6 @@ jobs:
                 continue
               fi
 
-              # Get latest commit SHA
               pr_commits=$(gh pr view "$number" --repo "$ORG_NAME/$repo" --json commits 2>&1)
               commit_sha=$(jq -r '.commits[-1].oid // empty' <<< "$pr_commits" || echo "")
               if [ -z "$commit_sha" ]; then
@@ -109,7 +111,6 @@ jobs:
                 continue
               fi
 
-              # Get PR review status and checks
               pr_details=$(gh pr view "$number" --repo "$ORG_NAME/$repo" --json state,reviewDecision,reviewRequests,author,mergeable,mergeStateStatus 2>&1)
               if ! jq empty <<< "$pr_details" > /dev/null 2>&1; then
                 echo "WARNING: Failed to get PR details for $repo PR #$number"
@@ -129,7 +130,6 @@ jobs:
                 fi
               fi
 
-              # Get check runs (robust version)
               checks_json=$(gh api repos/$ORG_NAME/$repo/commits/$commit_sha/check-runs -H "Accept: application/vnd.github.v3+json" 2>&1)
               if echo "$checks_json" | grep -q "Resource not accessible by personal access token"; then
                 echo "WARNING: Checks API not accessible for $repo PR #$number"
