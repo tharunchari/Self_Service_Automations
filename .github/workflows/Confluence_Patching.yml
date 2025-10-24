@@ -63,6 +63,7 @@ jobs:
             echo "SNS_TOPIC=arn:aws:sns:us-west-2:389180911583:Internal-Tools_Patching" >> $GITHUB_ENV
             echo "SUBJECT_PREFIX=Restart of ConfluenceDR Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=ConfluenceDR patching is scheduled." >> $GITHUB_ENV
+            echo "AWS_REGION=us-west-2" >> $GITHUB_ENV
           elif [ "$ENVIRONMENT" == "confluence" ]; then
             if [ -z "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
               echo "ERROR: Secret VITECH_LINUX_ZOIO_PASSWORD not set for JIRAPROD environment."
