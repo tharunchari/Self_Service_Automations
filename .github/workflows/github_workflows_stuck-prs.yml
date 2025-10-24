@@ -29,6 +29,7 @@ jobs:
       SES_FROM: v3atlassianops@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
       SES_SUBJECT: 'Vitechsystems Org Open PRs >1hr Status Report'
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Use the standard runner token for all GH CLI usage
     steps:
       - name: Install jq and gh
         run: |
@@ -59,21 +60,15 @@ jobs:
           aws-region: us-east-1
 
       - name: Get all repos in org
-        env:
-          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           set -euo pipefail
-          export GH_TOKEN="${GH_TOKEN}"
           gh repo list "$ORG_NAME" --limit 1000 --json name -q '.[] | .name' > repos.txt
 
       - name: Check PRs and build status report
-        env:
-          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           set -xo pipefail
           trap 'echo "ERROR: Job failed at line $LINENO"; exit 1' ERR
 
-          export GH_TOKEN="${GH_TOKEN}"
           NOW=$(date -u +%s)
           DELIM=$'\x1e'
           declare -a PRS_STATUS
