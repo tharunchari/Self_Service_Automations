@@ -70,7 +70,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           trap 'echo "ERROR: Job failed at line $LINENO"; exit 1' ERR
 
           export GH_TOKEN="${GH_TOKEN}"
@@ -80,8 +80,10 @@ jobs:
           AGE_LIMIT=$((60 * 60)) # 1 hour
 
           while read repo; do
+            echo "Processing repo: $repo"
             prs=$(gh pr list --repo "$ORG_NAME/$repo" --state open --json number,createdAt,title 2>&1)
             if ! jq empty <<< "$prs" > /dev/null 2>&1; then
+              echo "WARNING: Failed to parse PR list for $repo"
               continue
             fi
             pr_count=$(jq 'length' <<< "$prs")
@@ -90,7 +92,15 @@ jobs:
               number=$(jq -r '.number' <<< "$pr")
               title=$(jq -r '.title' <<< "$pr")
               created=$(jq -r '.createdAt' <<< "$pr")
-              created_ts=$(date -d "$created" +%s || echo 0)
+              if [ -z "$created" ] || [ -z "$number" ]; then
+                echo "WARNING: Missing created date or PR number for $repo PR index $i"
+                continue
+              fi
+              created_ts=$(date -d "$created" +%s 2>/dev/null || echo 0)
+              if [ "$created_ts" -eq 0 ]; then
+                echo "WARNING: Failed to parse date '$created' for $repo PR #$number"
+                continue
+              fi
               age_secs=$(( NOW - created_ts ))
               pr_url="https://github.com/$ORG_NAME/$repo/pull/$number"
 
@@ -102,22 +112,29 @@ jobs:
               pr_commits=$(gh pr view "$number" --repo "$ORG_NAME/$repo" --json commits 2>&1)
               commit_sha=$(jq -r '.commits[-1].oid // empty' <<< "$pr_commits" || echo "")
               if [ -z "$commit_sha" ]; then
+                echo "WARNING: No commit SHA found for $repo PR #$number"
                 continue
               fi
 
               # Get PR review status and checks
               pr_details=$(gh pr view "$number" --repo "$ORG_NAME/$repo" --json state,reviewDecision,reviewRequests,author,mergeable,mergeStateStatus 2>&1)
-              review_status=$(jq -r '.reviewDecision // "unknown"' <<< "$pr_details")
-              merge_state=$(jq -r '.mergeStateStatus // "unknown"' <<< "$pr_details")
-
-              if [ "$review_status" = "REVIEW_REQUIRED" ]; then
-                review_label="Review required"
-              elif [ "$review_status" = "APPROVED" ]; then
-                review_label="Approved"
-              elif [ "$review_status" = "CHANGES_REQUESTED" ]; then
-                review_label="Changes requested"
-              else
+              if ! jq empty <<< "$pr_details" > /dev/null 2>&1; then
+                echo "WARNING: Failed to get PR details for $repo PR #$number"
                 review_label="Unknown"
+                merge_state="Unknown"
+              else
+                review_status=$(jq -r '.reviewDecision // "unknown"' <<< "$pr_details")
+                merge_state=$(jq -r '.mergeStateStatus // "unknown"' <<< "$pr_details")
+
+                if [ "$review_status" = "REVIEW_REQUIRED" ]; then
+                  review_label="Review required"
+                elif [ "$review_status" = "APPROVED" ]; then
+                  review_label="Approved"
+                elif [ "$review_status" = "CHANGES_REQUESTED" ]; then
+                  review_label="Changes requested"
+                else
+                  review_label="Unknown"
+                fi
               fi
 
               # Get check runs
@@ -144,7 +161,6 @@ jobs:
                 fi
               fi
 
-              # Build stable HTML row for this PR
               PRS_STATUS+=( "${repo}${DELIM}${number}${DELIM}${pr_url}${DELIM}${title}${DELIM}${review_label}${DELIM}${merge_state}${DELIM}${checks_icon}${DELIM}${pending_names}" )
             done
           done < repos.txt
