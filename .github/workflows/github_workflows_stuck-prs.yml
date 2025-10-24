@@ -70,7 +70,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
-          set -uo pipefail
+          set -xo pipefail
           trap 'echo "ERROR: Job failed at line $LINENO"; exit 1' ERR
 
           export GH_TOKEN="${GH_TOKEN}"
@@ -89,9 +89,9 @@ jobs:
             pr_count=$(jq 'length' <<< "$prs")
             for i in $(seq 0 $((pr_count - 1))); do
               pr=$(jq ".[$i]" <<< "$prs")
-              number=$(jq -r '.number' <<< "$pr")
-              title=$(jq -r '.title' <<< "$pr")
-              created=$(jq -r '.createdAt' <<< "$pr")
+              number=$(jq -r '.number // empty' <<< "$pr")
+              title=$(jq -r '.title // empty' <<< "$pr")
+              created=$(jq -r '.createdAt // empty' <<< "$pr")
               if [ -z "$created" ] || [ -z "$number" ]; then
                 echo "WARNING: Missing created date or PR number for $repo PR index $i"
                 continue
