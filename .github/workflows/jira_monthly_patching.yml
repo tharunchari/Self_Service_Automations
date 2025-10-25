@@ -3,9 +3,9 @@ name: Monthly JIRA Patch Schedule
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 22-31 * 1'   # Mondays between 22-31 at 2 AM UTC
-    - cron: '0 10 22-31 * 5'  # Fridays between 22-31 at 10 AM UTC
-    - cron: '0 2 23-32 * 6'   # Saturdays between 23-32 at 2 AM UTC
+    - cron: '0 2 22,23,24,25,26,27,28,29,30,31 * 1'   # Mondays between 22-31 at 2 AM UTC
+    - cron: '0 10 22,23,24,25,26,27,28,29,30,31 * 5'  # Fridays between 22-31 at 10 AM UTC
+    - cron: '0 2 23,24,25,26,27,28,29,30,31 * 6'      # Saturdays between 23-31 at 2 AM UTC
 
 permissions:
   id-token: write
