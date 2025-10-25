@@ -13,29 +13,32 @@ permissions:
 
 jobs:
 
-  check_last_monday:
-    name: Check if today is the last Monday of the month
+  check_last_fullweek_monday:
+    name: Check if today is the Monday of the last full week of the month
     runs-on: ubuntu-latest
     outputs:
-      is_last_monday: ${{ steps.check.outputs.is_last_monday }}
+      is_last_fullweek_monday: ${{ steps.check.outputs.is_last_fullweek_monday }}
     steps:
       - id: check
         run: |
           today=$(date -u +'%Y-%m-%d')
-          last_monday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
-          while [ "$(date -u -d "$last_monday" +%u)" -ne 1 ]; do
-            last_monday=$(date -u -d "$last_monday -1 day" +'%Y-%m-%d')
+          # Find last Friday of the month
+          last_friday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
+          while [ "$(date -u -d "$last_friday" +%u)" -ne 5 ]; do
+            last_friday=$(date -u -d "$last_friday -1 day" +'%Y-%m-%d')
           done
-          if [ "$today" = "$last_monday" ]; then
-            echo "is_last_monday=true" >> $GITHUB_OUTPUT
+          # Monday of the last full week (4 days before last Friday)
+          week_monday=$(date -u -d "$last_friday -4 days" +'%Y-%m-%d')
+          if [ "$today" = "$week_monday" ]; then
+            echo "is_last_fullweek_monday=true" >> $GITHUB_OUTPUT
           else
-            echo "is_last_monday=false" >> $GITHUB_OUTPUT
+            echo "is_last_fullweek_monday=false" >> $GITHUB_OUTPUT
           fi
 
   notify_nonprod:
-    name: Notify Non-Prod Patching (Last Monday)
-    needs: check_last_monday
-    if: needs.check_last_monday.outputs.is_last_monday == 'true'
+    name: Notify Non-Prod Patching (Last full week Monday)
+    needs: check_last_fullweek_monday
+    if: needs.check_last_fullweek_monday.outputs.is_last_fullweek_monday == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS
@@ -53,9 +56,9 @@ jobs:
             --message "Automated notification: Non-Production JIRA patching with rolling restart is scheduled for today JIRAQA and JIRAUPG. No application downtime is expected. Please contact v3atlassianops if you have any questions."
 
   trigger_nonprod_jiraqa:
-    name: Trigger JIRAQA Patching (Last Monday)
-    needs: check_last_monday
-    if: needs.check_last_monday.outputs.is_last_monday == 'true'
+    name: Trigger JIRAQA Patching (Last full week Monday)
+    needs: check_last_fullweek_monday
+    if: needs.check_last_fullweek_monday.outputs.is_last_fullweek_monday == 'true'
     permissions:
       contents: read
       id-token: write
@@ -72,9 +75,9 @@ jobs:
       JIRAQA_ACCESS_TOKEN: ${{ secrets.JIRAQA_ACCESS_TOKEN }}
 
   trigger_nonprod_jiraupg:
-    name: Trigger JIRAUPG Patching (Last Monday)
-    needs: [trigger_nonprod_jiraqa, check_last_monday]
-    if: needs.check_last_monday.outputs.is_last_monday == 'true' && needs.trigger_nonprod_jiraqa.result == 'success'
+    name: Trigger JIRAUPG Patching (Last full week Monday)
+    needs: [trigger_nonprod_jiraqa, check_last_fullweek_monday]
+    if: needs.check_last_fullweek_monday.outputs.is_last_fullweek_monday == 'true' && needs.trigger_nonprod_jiraqa.result == 'success'
     permissions:
       contents: read
       id-token: write
@@ -128,7 +131,6 @@ jobs:
             --subject "ALERT: JIRAUPG Monthly Patch Failure" \
             --message "Automated patching (rolling restart, no expected downtime) for the JIRAUPG environment has failed. Immediate manual intervention is required. Please check GitHub Actions logs for details."
 
-
   check_last_friday:
     name: Check if today is the last Friday of the month
     runs-on: ubuntu-latest
@@ -167,7 +169,6 @@ jobs:
             --topic-arn arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching \
             --subject "Production JIRA Monthly Patch Scheduled for Tomorrow" \
             --message "Reminder: Production JIRA patching will be performed tomorrow (Saturday, rolling restart, no downtime expected). Please reach out to v3atlassianops if you have any concerns."
-
 
   check_patching_saturday:
     name: Check if today is the Saturday after the last Friday of the month
