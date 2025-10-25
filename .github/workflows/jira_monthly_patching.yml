@@ -3,9 +3,9 @@ name: Monthly JIRA Patch Schedule
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 22-28 * 1'   # Mondays between 22-28 at 2 AM UTC (potential last Monday for non-prod patching and notification)
-    - cron: '0 10 22-28 * 5'  # Fridays between 22-28 at 10 AM UTC (potential last Friday for prod email notification)
-    - cron: '0 2 23-29 * 6'   # Saturdays between 23-29 at 2 AM UTC (potential last Saturday for prod patching)
+    - cron: '0 2 22-31 * 1'   # Mondays between 22-31 at 2 AM UTC
+    - cron: '0 10 22-31 * 5'  # Fridays between 22-31 at 10 AM UTC
+    - cron: '0 2 23-32 * 6'   # Saturdays between 23-32 at 2 AM UTC
 
 permissions:
   id-token: write
@@ -169,29 +169,32 @@ jobs:
             --message "Reminder: Production JIRA patching will be performed tomorrow (Saturday, rolling restart, no downtime expected). Please reach out to v3atlassianops if you have any concerns."
 
 
-  check_last_saturday:
-    name: Check if today is the last Saturday of the month
+  check_patching_saturday:
+    name: Check if today is the Saturday after the last Friday of the month
     runs-on: ubuntu-latest
     outputs:
-      is_last_saturday: ${{ steps.check.outputs.is_last_saturday }}
+      is_patching_saturday: ${{ steps.check.outputs.is_patching_saturday }}
     steps:
       - id: check
         run: |
           today=$(date -u +'%Y-%m-%d')
-          last_saturday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
-          while [ "$(date -u -d "$last_saturday" +%u)" -ne 6 ]; do
-            last_saturday=$(date -u -d "$last_saturday -1 day" +'%Y-%m-%d')
+          # Find last Friday of the month
+          last_friday=$(date -u -d "$(date -u +'%Y-%m-01') +1 month -1 day" +'%Y-%m-%d')
+          while [ "$(date -u -d "$last_friday" +%u)" -ne 5 ]; do
+            last_friday=$(date -u -d "$last_friday -1 day" +'%Y-%m-%d')
           done
-          if [ "$today" = "$last_saturday" ]; then
-            echo "is_last_saturday=true" >> $GITHUB_OUTPUT
+          # Find the Saturday after last Friday
+          patch_saturday=$(date -u -d "$last_friday +1 day" +'%Y-%m-%d')
+          if [ "$today" = "$patch_saturday" ]; then
+            echo "is_patching_saturday=true" >> $GITHUB_OUTPUT
           else
-            echo "is_last_saturday=false" >> $GITHUB_OUTPUT
+            echo "is_patching_saturday=false" >> $GITHUB_OUTPUT
           fi
 
   trigger_prod:
-    name: Trigger PROD Patching (Last Saturday)
-    needs: check_last_saturday
-    if: needs.check_last_saturday.outputs.is_last_saturday == 'true'
+    name: Trigger PROD Patching (Saturday after Last Friday)
+    needs: check_patching_saturday
+    if: needs.check_patching_saturday.outputs.is_patching_saturday == 'true'
     permissions:
       contents: read
       id-token: write
