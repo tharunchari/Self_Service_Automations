@@ -114,65 +114,17 @@ jobs:
                 continue
               fi
 
-              pr_commits=$(gh pr view "$number" --repo "$ORG_NAME/$repo" --json commits 2>&1)
-              commit_sha=$(jq -r '.commits[-1].oid // empty' <<< "$pr_commits" || echo "")
-              if [ -z "$commit_sha" ]; then
-                echo "WARNING: No commit SHA found for $repo PR #$number"
-                continue
-              fi
-
               pr_details=$(gh pr view "$number" --repo "$ORG_NAME/$repo" --json state,reviewDecision,reviewRequests,author,mergeable,mergeStateStatus 2>&1)
               if ! jq empty <<< "$pr_details" > /dev/null 2>&1; then
                 echo "WARNING: Failed to get PR details for $repo PR #$number"
-                review_label="Unknown"
+                approved_status="Unknown"
                 merge_state="Unknown"
               else
-                review_status=$(jq -r '.reviewDecision // "unknown"' <<< "$pr_details")
+                approved_status=$(jq -r '.reviewDecision // "unknown"' <<< "$pr_details")
                 merge_state=$(jq -r '.mergeStateStatus // "unknown"' <<< "$pr_details")
-                if [ "$review_status" = "REVIEW_REQUIRED" ]; then
-                  review_label="Review required"
-                elif [ "$review_status" = "APPROVED" ]; then
-                  review_label="Approved"
-                elif [ "$review_status" = "CHANGES_REQUESTED" ]; then
-                  review_label="Changes requested"
-                else
-                  review_label="Unknown"
-                fi
               fi
 
-              # --- Use curl instead of gh api for check runs ---
-              checks_json=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
-                                    -H "Accept: application/vnd.github.v3+json" \
-                                    "https://api.github.com/repos/$ORG_NAME/$repo/commits/$commit_sha/check-runs")
-              if echo "$checks_json" | grep -q "Resource not accessible by personal access token"; then
-                echo "WARNING: Checks API not accessible for $repo PR #$number"
-                pending_names="Checks unavailable"
-                all_checks="Checks unavailable"
-                checks_icon="❓"
-              elif ! jq empty <<< "$checks_json" > /dev/null 2>&1; then
-                echo "WARNING: Invalid JSON from checks API for $repo PR #$number"
-                pending_names="Checks unavailable"
-                all_checks="Checks unavailable"
-                checks_icon="❓"
-              else
-                total_checks=$(jq '.check_runs | length' <<< "$checks_json")
-                pending_checks=$(jq '[.check_runs[] | select(.status == "queued" or .status == "in_progress")] | length' <<< "$checks_json")
-                failed_checks=$(jq '[.check_runs[] | select(.conclusion == "failure")] | length' <<< "$checks_json")
-                passed_checks=$(jq '[.check_runs[] | select(.conclusion == "success")] | length' <<< "$checks_json")
-                all_checks=$(jq -r '[.check_runs[].name] | join(", ")' <<< "$checks_json")
-                pending_names=$(jq -r '[.check_runs[] | select(.status == "queued" or .status == "in_progress") | .name] | join(", ")' <<< "$checks_json")
-                if [ "$pending_checks" -gt 0 ]; then
-                  checks_icon="⏳"
-                elif [ "$failed_checks" -gt 0 ]; then
-                  checks_icon="❌"
-                elif [ "$passed_checks" -eq "$total_checks" ] && [ "$total_checks" -gt 0 ]; then
-                  checks_icon="✅"
-                else
-                  checks_icon="❓"
-                fi
-              fi
-
-              PRS_STATUS+=( "${repo}${DELIM}${number}${DELIM}${pr_url}${DELIM}${title}${DELIM}${review_label}${DELIM}${merge_state}${DELIM}${checks_icon}${DELIM}${pending_names}" )
+              PRS_STATUS+=( "${repo}${DELIM}${number}${DELIM}${pr_url}${DELIM}${title}${DELIM}${approved_status}${DELIM}${merge_state}" )
             done
           done < repos.txt
 
@@ -184,18 +136,16 @@ jobs:
             echo "th { background: #3f51b5; color: white; }"
             echo "tr:nth-child(even) { background: #e9eaf6; }"
             echo "</style></head><body>"
-            echo "<p>The following PRs are open >1 hour. Status icons: ⏳=pending, ✅=all passed, ❌=failed, ❓=unknown/unavailable</p>"
-            echo "<table><tr><th>Repo</th><th>PR #</th><th>Title</th><th>Review Status</th><th>Merging</th><th>Checks</th><th>Pending Checks</th></tr>"
+            echo "<p>The following PRs are open >1 hour.</p>"
+            echo "<table><tr><th>Repo</th><th>PR #</th><th>Title</th><th>PR Approved Status</th><th>Merging</th></tr>"
             for pr in "${PRS_STATUS[@]}"; do
-              IFS="$DELIM" read -r repo number pr_url title review_label merge_state checks_icon pending_names <<< "$pr"
+              IFS="$DELIM" read -r repo number pr_url title approved_status merge_state <<< "$pr"
               echo "<tr>"
               echo "<td>$repo</td>"
               echo "<td><a href=\"$pr_url\">#$number</a></td>"
               echo "<td>$title</td>"
-              echo "<td>$review_label</td>"
+              echo "<td>$approved_status</td>"
               echo "<td>$merge_state</td>"
-              echo "<td style=\"text-align:center;font-size:1.5em;\">$checks_icon</td>"
-              echo "<td>$pending_names</td>"
               echo "</tr>"
             done
             echo "</table></body></html>"
