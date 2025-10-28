@@ -34,7 +34,7 @@ jobs:
       SES_FROM: do-not-reply@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
       SES_SUBJECT: 'Vitechsystems Org Open PRs >1hr Status Report'
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
       REPO_NAME: ${{ github.event.inputs.repo_name }}
     steps:
       - name: Install jq and gh
