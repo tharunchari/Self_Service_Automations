@@ -6,7 +6,7 @@ on:
     - cron: "0 0 1 * *"
 env:
   BAMBOO_BASEURL: "https://bamboo.vitechinc.com/bamboo"
-  BAMBOO_TOKEN: ${{ secrets.BAMBOO_TOKEN }}
+  BAMBOO_TOKEN: ${{ secrets.BAMBOO_PROD_PAT }}
   CONFIG_PATTERN: "Custom Vitech"
 jobs:
   Creating-Amazon-Linux-Bamboo-AMI:
@@ -109,39 +109,52 @@ jobs:
           NEW_AMI_ID: ${{ env.AMI_ID }}
         run: |
           MAIL_BODY="Configuration Updates:\n\n"
+
           # Fetch configurations matching the pattern
-          CONFIG_IDS=$(curl -s -X GET -H "Content-Type: application/json" \
-            -u ${{ vars.BAMBOO5RESTUSER_USERNAME}}:'${{ secrets.BAMBOO5RESTUSER_PASSWORD }}' \
+          CONFIG_IDS=$(curl -s -X GET \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $BAMBOO_TOKEN" \
             --url "$BAMBOO_BASEURL/rest/api/latest/elasticConfiguration" \
             --header 'Accept: application/json' | jq -r ".[] | select(.configurationName | test(\"$CONFIG_PATTERN\")) | .configurationId")
+
           echo "Found configuration IDs: $CONFIG_IDS"
+
           for ID in $CONFIG_IDS; do
             echo "Processing configuration ID: $ID"
+
             # Get configuration details
-            CONFIG_DATA=$(curl -s -X GET -H "Content-Type: application/json" \
-              -u ${{ vars.BAMBOO5RESTUSER_USERNAME}}:'${{ secrets.BAMBOO5RESTUSER_PASSWORD }}' \
+            CONFIG_DATA=$(curl -s -X GET \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $BAMBOO_TOKEN" \
               --url "$BAMBOO_BASEURL/rest/api/latest/elasticConfiguration/$ID" \
               --header 'Accept: application/json')
+
             CURRENT_AMI_ID=$(echo "$CONFIG_DATA" | jq -r '.imageId')
             CONFIG_NAME=$(echo "$CONFIG_DATA" | jq -r '.configurationName')
             echo "Current AMI ID: $CURRENT_AMI_ID"
+
             # Update only the AMI ID
             UPDATED_CONFIG=$(echo "$CONFIG_DATA" | jq --arg new_ami "$NEW_AMI_ID" '.imageId = $new_ami')
+
             # Push updated configuration back to Bamboo
-            RESPONSE=$(curl -s -X PUT -H "Content-Type: application/json" \
-              -u ${{ vars.BAMBOO5RESTUSER_USERNAME}}:'${{ secrets.BAMBOO5RESTUSER_PASSWORD }}' \
+            RESPONSE=$(curl -s -X PUT \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $BAMBOO_TOKEN" \
               --url "$BAMBOO_BASEURL/rest/api/latest/elasticConfiguration/$ID" \
               --data "$UPDATED_CONFIG" \
               --header 'Accept: application/json')
+
             echo "Updated configuration for ID $ID. Response: $RESPONSE"
             echo "Old AMI ID: $CURRENT_AMI_ID"
             echo "New AMI ID: $NEW_AMI_ID"
+
             # Append details to mail body
             MAIL_BODY+="Configuration ID: $ID\n"
             MAIL_BODY+="Name: $CONFIG_NAME\n"
             MAIL_BODY+="Current AMI ID: $CURRENT_AMI_ID\n"
             MAIL_BODY+="Updated AMI ID: $NEW_AMI_ID\n\n"
           done
+
           # Use printf for proper formatting
           printf "%b" "$MAIL_BODY" > mail_body.txt
 
