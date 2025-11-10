@@ -12,11 +12,11 @@ on:
         required: true
         type: string
       source_prod_version:
-        description: "Source Product Version"
+        description: "Source Version"
         required: true
         type: string
       target_prod_version:
-        description: "Target Product Version"
+        description: "Target Version"
         required: true
         type: string
 
