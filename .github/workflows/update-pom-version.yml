@@ -1,0 +1,54 @@
+name: Update pom.xml Product Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_name:
+        description: "Repository Name"
+        required: true
+        type: string
+      branch_name:
+        description: "Branch to update"
+        required: true
+        type: string
+      source_prod_version:
+        description: "Source Product Version"
+        required: true
+        type: string
+      target_prod_version:
+        description: "Target Product Version"
+        required: true
+        type: string
+
+jobs:
+  update-pom:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: vitechsystems/${{ github.event.inputs.repo_name }}
+          ref: ${{ github.event.inputs.branch_name }}
+          token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+
+      - name: Update pom.xml product versions and commit if changed
+        run: |
+          set -e
+          git config --local user.name "V3OPS_USER"
+          git config --local user.email "v3ops@vitechinc.com"
+          echo "Updating pom.xml: ${{ github.event.inputs.source_prod_version }} -> ${{ github.event.inputs.target_prod_version }}"
+          find . -name pom.xml -exec sed -i "s|${{ github.event.inputs.source_prod_version }}|${{ github.event.inputs.target_prod_version }}|g" {} +
+          if git diff --quiet; then
+            echo "No changes detected. Skipping commit."
+          else
+            echo "Changes detected. Committing updated files."
+            git add -u
+            git commit -m "Update pom.xml product version: ${{ github.event.inputs.source_prod_version }} -> ${{ github.event.inputs.target_prod_version }}"
+            git push "https://x-access-token:${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${{ github.event.inputs.repo_name }}.git" "${{ github.event.inputs.branch_name }}"
+          fi
+
+      - name: Clean up workspace
+        run: |
+          echo "Cleaning up workspace..."
+          rm -rf ./*
