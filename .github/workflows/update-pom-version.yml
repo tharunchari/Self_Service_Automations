@@ -1,4 +1,4 @@
-name: Update pom.xml Product Version
+name: Update pom.xml Version
 
 on:
   workflow_dispatch:
