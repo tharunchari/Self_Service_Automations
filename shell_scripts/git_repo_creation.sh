@@ -18,7 +18,7 @@ else
 fi
 
 team_id_2="vitech-devops-team"
-permission_2="Super Users"
+permission_2="push"
 if [ "$organization" == "vitechsystems" ]; then
     team_actor_id_2="7303737"
 else
@@ -71,7 +71,7 @@ fi
 
 # Set team permissions for repositories
 if [ "$owner" == "client" ]; then
-    permission_6="Super Users"
+    permission_6="push"
 else
     permission_6="pull"
 fi
