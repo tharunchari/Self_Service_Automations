@@ -20,6 +20,9 @@ Notes:
 - Script only uses the permissions: "pull", "push", "Super Users" (exact API payload uses "Super Users").
 - It will never set "admin" or any other permission.
 - If TEAM_SLUG is set, it is used directly and the script does not try to search teams.
+update_team_role.py — updated to reliably read current team permission using:
+GET /repos/{owner}/{repo}/teams
+and to avoid calling .json() on empty 204 responses from PUT/other endpoints.
 """
 
 import os
@@ -41,7 +44,7 @@ TARGET = os.environ.get("TARGET", "").strip()
 GITHUB_REPOS = os.environ.get("REPO_NAME", "").strip()
 GITHUB_ORG = os.environ.get("ORG_NAME", "").strip()
 TEAM_NAME = os.environ.get("TEAM_NAME", "").strip()
-TEAM_SLUG_ENV = os.environ.get("TEAM_SLUG", "").strip()   # NEW: accept team slug directly
+TEAM_SLUG_ENV = os.environ.get("TEAM_SLUG", "").strip()
 CURRENT_ROLE = os.environ.get("CURRENT_ROLE", "").strip()
 NEW_ROLE = os.environ.get("NEW_ROLE", "").strip()
 TOKEN_PROD = os.environ.get("PROD_FINE_GRAINED_PAT")
@@ -56,7 +59,6 @@ SES_RECIPIENTS = [e.strip() for e in os.environ.get("SES_RECIPIENTS", "v3atlassi
 ROLE_MAP = {
     "pull": "pull",
     "push": "push",
-    # Accept many variants of "super user" and map them to exact "Super Users" string used in your curl example.
     "super user": "Super Users",
     "super users": "Super Users",
     "super_user": "Super Users",
@@ -65,15 +67,13 @@ ROLE_MAP = {
     "super-users": "Super Users",
     "super": "Super Users",
 }
-
-ALLOWED_CANONICAL = set(ROLE_MAP.values())  # {'pull','push','Super Users'}
+ALLOWED_CANONICAL = set(ROLE_MAP.values())
 
 def normalize_role_to_api(role: str) -> str:
-    """Normalize user-provided role to exact API string we should use."""
     if not role:
         return ""
     key = role.strip().lower()
-    return ROLE_MAP.get(key, key)  # if mapping exists use it, else return lowered key
+    return ROLE_MAP.get(key, key)
 
 # ---------------------------
 # Helpers: API & pagination
@@ -101,6 +101,8 @@ def github_get(session: requests.Session, url: str, params=None) -> requests.Res
 
 def github_put(session: requests.Session, url: str, json_payload=None) -> requests.Response:
     resp = session.put(url, json=json_payload)
+    # PUT for team repo permissions returns 204 No Content on success.
+    # Don't call resp.json() when status_code == 204.
     if resp.status_code >= 400:
         raise RuntimeError(f"GitHub PUT {url} failed: {resp.status_code} {resp.text}")
     return resp
@@ -113,6 +115,10 @@ def paginate(session: requests.Session, url: str, params=None) -> List[Dict]:
         p = params.copy() if params else {}
         p.update({"per_page": per_page, "page": page})
         resp = github_get(session, url, params=p)
+        # only attempt to parse json if body is present
+        text = resp.text or ""
+        if not text.strip():
+            break
         data = resp.json()
         if not isinstance(data, list):
             break
@@ -148,10 +154,9 @@ def publish_sns(message: str, subject: str):
         print(f"[WARN] SNS publish failed: {e}")
 
 # ---------------------------
-# Core logic
+# Core logic — improved: read current permission from /repos/{owner}/{repo}/teams
 # ---------------------------
 def find_team_in_org(session: requests.Session, org: str, team_name: str) -> Dict:
-    """Find team by name or slug (case-insensitive) and return team object including slug and id."""
     url = f"https://api.github.com/orgs/{org}/teams"
     teams = paginate(session, url)
     for t in teams:
@@ -164,33 +169,59 @@ def get_org_repos(session: requests.Session, org: str) -> List[Dict]:
     return paginate(session, url)
 
 def get_repo_current_permission_for_team(session: requests.Session, org: str, team_slug: str, owner: str, repo: str) -> str:
-    url = f"https://api.github.com/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"
+    """
+    Reliable implementation:
+    - Calls GET /repos/{owner}/{repo}/teams which returns a JSON array of teams that have access
+      including "slug" and "permission".
+    - Finds entry with matching team_slug and returns its permission (string like "pull","push","Super Users").
+    - Returns "none" if the team has no access to this repo.
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/teams"
     resp = session.get(url)
+    # if API returns error code raise
     if resp.status_code == 404:
+        # repo not found or not accessible
         return "none"
     if resp.status_code >= 400:
-        raise RuntimeError(f"Failed to get permission for team/{team_slug} on {owner}/{repo}: {resp.status_code} {resp.text}")
-    payload = resp.json()
-    perm = payload.get("permission")
-    if perm:
-        return perm
-    perms = payload.get("permissions")
-    if isinstance(perms, dict):
-        if perms.get("admin"):
-            return "admin"
-        if perms.get("push"):
-            return "push"
-        if perms.get("pull"):
-            return "pull"
-    return "unknown"
+        raise RuntimeError(f"Failed to list teams for {owner}/{repo}: {resp.status_code} {resp.text}")
+
+    text = resp.text or ""
+    if not text.strip():
+        # empty body — treat as none
+        return "none"
+
+    teams = resp.json()
+    if not isinstance(teams, list):
+        return "unknown"
+
+    for t in teams:
+        slug = t.get("slug") or ""
+        if slug.lower() == team_slug.lower():
+            # permission field may be present as 'permission'
+            perm = t.get("permission")
+            if perm:
+                return perm
+            # fallback: check 'permissions' dict
+            perms = t.get("permissions", {})
+            if isinstance(perms, dict):
+                if perms.get("push"):
+                    return "push"
+                if perms.get("pull"):
+                    return "pull"
+            return "unknown"
+    return "none"
 
 def update_team_permission_on_repo(session: requests.Session, org: str, team_slug: str, owner: str, repo: str, permission: str) -> None:
     url = f"https://api.github.com/orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}"
     payload = {"permission": permission}
     resp = session.put(url, json=payload)
+    # successful update returns 204 No Content — that's expected
     if resp.status_code not in (204, 200):
         raise RuntimeError(f"Update failed for {owner}/{repo} -> {resp.status_code} {resp.text}")
 
+# ---------------------------
+# HTML table builder (unchanged)
+# ---------------------------
 def build_html_table(rows: List[Dict], title: str) -> str:
     now = datetime.now(timezone.utc).astimezone().isoformat()
     html = f"<html><body><h2>{title}</h2><p>Run: {now}</p>"
@@ -207,7 +238,7 @@ def build_html_table(rows: List[Dict], title: str) -> str:
     return html
 
 # ---------------------------
-# Main flow
+# Main flow (unchanged overall logic)
 # ---------------------------
 def main():
     parser = argparse.ArgumentParser()
@@ -215,7 +246,6 @@ def main():
     args = parser.parse_args()
     dry_run = str(args.dry_run).lower() in ("true", "1", "yes", "y")
 
-    # validate env inputs
     if TARGET not in ("Repository", "Organization"):
         print(f"[ERROR] TARGET must be 'Repository' or 'Organization'. Got: {TARGET}")
         sys.exit(2)
@@ -229,52 +259,40 @@ def main():
         print("[ERROR] NEW_ROLE is required")
         sys.exit(2)
 
-    # normalize the roles and validate they are in allowed set
     curr_role_api = normalize_role_to_api(CURRENT_ROLE)
     new_role_api = normalize_role_to_api(NEW_ROLE)
-
     if curr_role_api not in ALLOWED_CANONICAL and curr_role_api != "":
-        print(f"[ERROR] CURRENT_ROLE '{CURRENT_ROLE}' normalized to '{curr_role_api}' is not one of allowed roles: {ALLOWED_CANONICAL}")
+        print(f"[ERROR] CURRENT_ROLE '{CURRENT_ROLE}' normalized to '{curr_role_api}' is not allowed {ALLOWED_CANONICAL}")
         sys.exit(2)
     if new_role_api not in ALLOWED_CANONICAL and new_role_api != "":
-        print(f"[ERROR] NEW_ROLE '{NEW_ROLE}' normalized to '{new_role_api}' is not one of allowed roles: {ALLOWED_CANONICAL}")
+        print(f"[ERROR] NEW_ROLE '{NEW_ROLE}' normalized to '{new_role_api}' is not allowed {ALLOWED_CANONICAL}")
         sys.exit(2)
 
     token = pick_token(GITHUB_ORG)
     if not token:
-        print("[ERROR] No GitHub token available in env. Provide PROD_FINE_GRAINED_PAT or INFRA_FINE_GRAINED_PAT.")
+        print("[ERROR] No GitHub token available in env.")
         sys.exit(2)
-
-    print(f"[INFO] TARGET={TARGET}, ORG={GITHUB_ORG}, dry_run={dry_run}")
-    print(f"[INFO] CURRENT_ROLE -> '{curr_role_api}' | NEW_ROLE -> '{new_role_api}'")
 
     session = requests.Session()
     session.headers.update(gh_headers(token))
 
-    # Determine team slug to use:
-    team_slug = None
+    # determine team slug
     if TEAM_SLUG_ENV:
         team_slug = TEAM_SLUG_ENV
-        print(f"[INFO] Using provided TEAM_SLUG='{team_slug}' (skipping team lookup).")
+        print(f"[INFO] Using TEAM_SLUG (env) = {team_slug}")
     else:
         if not TEAM_NAME:
-            print("[ERROR] Neither TEAM_SLUG nor TEAM_NAME provided. Provide one of them.")
+            print("[ERROR] Neither TEAM_SLUG nor TEAM_NAME provided.")
             sys.exit(2)
-        try:
-            team = find_team_in_org(session, GITHUB_ORG, TEAM_NAME)
-            team_slug = team.get("slug")
-            print(f"[INFO] Found team slug by name: {team_slug} (id={team.get('id')})")
-        except Exception as e:
-            msg = f"Failed to find team '{TEAM_NAME}' in org '{GITHUB_ORG}': {e}"
-            print("[ERROR] " + msg)
-            publish_sns(msg, f"Update Team Role: Team Not Found {GITHUB_ORG}/{TEAM_NAME}")
-            sys.exit(3)
+        team = find_team_in_org(session, GITHUB_ORG, TEAM_NAME)
+        team_slug = team.get("slug")
+        print(f"[INFO] Resolved team slug = {team_slug}")
 
     # collect target repos
     target_repos = []
     if TARGET == "Repository":
         if not GITHUB_REPOS:
-            print("[ERROR] REPO_NAME must be provided when TARGET=Repository")
+            print("[ERROR] REPO_NAME required when TARGET=Repository")
             sys.exit(2)
         for r in GITHUB_REPOS.split(","):
             r = r.strip()
@@ -287,14 +305,11 @@ def main():
                 repo = r
             target_repos.append({"owner": owner, "repo": repo})
     else:
-        print(f"[INFO] Fetching all repos for org {GITHUB_ORG} via pagination")
         repos = get_org_repos(session, GITHUB_ORG)
         for item in repos:
             owner = item.get("owner", {}).get("login", GITHUB_ORG)
             repo = item.get("name")
             target_repos.append({"owner": owner, "repo": repo})
-
-    print(f"[INFO] Found {len(target_repos)} target repositories to check/update")
 
     results = []
     for entry in target_repos:
@@ -303,30 +318,25 @@ def main():
         repo_name = f"{owner}/{repo}"
 
         try:
-            current_raw = get_repo_current_permission_for_team(session, GITHUB_ORG, team_slug, owner, repo)
+            current = get_repo_current_permission_for_team(session, GITHUB_ORG, team_slug, owner, repo)
         except Exception as e:
-            current_raw = f"error: {e}"
-            results.append({"repo": repo_name, "current_role": current_raw, "requested_role": new_role_api, "result": f"Failed to get current role: {e}"})
-            print(f"[ERROR] {repo_name} -> Failed to get current role: {e}")
+            results.append({"repo": repo_name, "current_role": f"error: {e}", "requested_role": new_role_api, "result": f"Failed to get current role: {e}"})
+            print(f"[ERROR] {repo_name}: Failed to get current role: {e}")
             continue
 
-        # normalize current permission to our canonical set if possible
-        current_norm = current_raw
-        if isinstance(current_raw, str):
-            low = current_raw.strip().lower()
-            current_norm = ROLE_MAP.get(low, current_raw)
+        # normalize current for comparison
+        current_norm = ROLE_MAP.get((current or "").strip().lower(), current)
 
-        # Determine update condition:
+        # decide update
         do_update = False
         note = ""
-
-        if curr_role_api and current_norm.lower() == curr_role_api.lower():
+        if curr_role_api and current_norm and current_norm.lower() == curr_role_api.lower():
             if new_role_api.lower() != curr_role_api.lower():
                 do_update = True
             else:
                 note = "No update required (current == requested new role)"
         else:
-            note = f"Skipping: current permission '{current_norm}' != expected CURRENT_ROLE '{curr_role_api}'"
+            note = f"Skipping: current '{current_norm}' != expected CURRENT_ROLE '{curr_role_api}'"
 
         if dry_run:
             result_text = f"DRYRUN: would update {current_norm} -> {new_role_api}" if do_update else f"DRYRUN: no action. {note}"
@@ -348,18 +358,18 @@ def main():
 
         results.append({"repo": repo_name, "current_role": current_norm, "requested_role": new_role_api, "result": result_text})
 
-    # Send report via SES (HTML)
+    # send report
     title = f"Update Team Role Report for team '{team_slug}' in org '{GITHUB_ORG}' (dry_run={dry_run})"
     html = build_html_table(results, title)
     subject = f"[GitHub] Team Role Update Report - {GITHUB_ORG}/{team_slug} - dry_run={dry_run}"
-
     ok, info = send_email_via_ses(subject, html)
     if ok:
         print(f"[INFO] SES email sent: {info}")
     else:
-        print(f"[WARN] SES failed: {info}. Publishing to SNS as fallback.")
+        print(f"[WARN] SES failed: {info}. Publishing to SNS.")
         text = subject + "\n\n" + "\n".join([f"{r['repo']}\t{r['current_role']}\t{r['requested_role']}\t{r['result']}" for r in results])
         publish_sns(text, subject)
 
 if __name__ == "__main__":
     main()
+
