@@ -47,8 +47,8 @@ NEW_ROLE = os.environ.get("NEW_ROLE", "").strip()
 TOKEN_PROD = os.environ.get("PROD_FINE_GRAINED_PAT")
 TOKEN_INFRA = os.environ.get("INFRA_FINE_GRAINED_PAT")
 
-SES_SOURCE_EMAIL = os.environ.get("SES_SOURCE_EMAIL", "noreply@vitechsystems.com")
-SES_RECIPIENTS = [e.strip() for e in os.environ.get("SES_RECIPIENTS", "ops-team@vitechsystems.com").split(",") if e.strip()]
+SES_SOURCE_EMAIL = os.environ.get("SES_SOURCE_EMAIL", "do-not-reply@vitechinc.com")
+SES_RECIPIENTS = [e.strip() for e in os.environ.get("SES_RECIPIENTS", "v3atlassianops@vitechinc.com").split(",") if e.strip()]
 
 # ---------------------------
 # Role mapping: only allowed roles
