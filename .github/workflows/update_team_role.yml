@@ -54,7 +54,7 @@ jobs:
       NEW_ROLE: "${{ inputs.NEW_ROLE }}"
       PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
       INFRA_FINE_GRAINED_PAT: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
-	  
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
