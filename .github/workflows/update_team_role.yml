@@ -1,0 +1,91 @@
+name: "Update Team Role in GitHub"
+
+on:
+  workflow_dispatch:
+    inputs:
+      TARGET:
+        required: true
+        description: Repository or Organization
+        type: choice
+        options:
+          - 'Repository'
+          - 'Organization'
+      REPO_NAME:
+        description: 'Repository Name if TARGET is Repository - Separate by , for mutiple repos (repo1,repo2,repo3)'
+        required: false
+      ORG_NAME:
+        description: 'Organization Name'
+        required: true
+        type: choice
+        options:
+          - 'vitechsystems'
+          - 'vitechinfra'
+      TEAM_NAME:
+        required: true
+        description: Name of the team to update its role (Eg:- vitech-devops-team)
+      CURRENT_ROLE:
+        required: true
+        description: Current role (eg:- pull, push, Super User)
+        type: choice
+        options:
+          - 'pull'
+          - 'push'
+          - 'Super User'
+      NEW_ROLE:
+        required: true
+        description: New role to upadte (eg:- pull, push, Super User)
+        type: choice
+        options:
+          - 'pull'
+          - 'push'
+          - 'Super User'
+      KEY:
+        required: true
+        description: Authentication Key for OPS Internal Tools
+jobs:
+  Terminate_Runners:
+    runs-on: ubuntu-24.04
+    env:
+      TARGET: "${{ inputs.TARGET }}"
+      REPO_NAME: "${{ inputs.REPO_NAME }}"
+      ORG_NAME: "${{ inputs.ORG_NAME }}"
+      TEAM_NAME: "${{ inputs.TEAM_NAME }}"
+      CURRENT_ROLE: "${{ inputs.CURRENT_ROLE }}"
+      NEW_ROLE: "${{ inputs.NEW_ROLE }}"
+      PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+      INFRA_FINE_GRAINED_PAT: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
+	  
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Validate Authentication Key
+        id: validate_key
+        run: |
+          if [[ "${{ inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
+            echo "Invalid authentication key."
+            # Send notification for invalid key
+            aws sns publish \
+              --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+              --message "$(echo -e "**Updating Team Role in GitHub Aborted**\n\nInvalid authentication key provided.\n$(date +%Y-%m-%d)")" \
+              --subject "Updating Team Role in GitHub: Invalid Key"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install boto3 requests python-dateutil
+
+      - name: Run GitHub runner monitor script
+        run: python3 PYTHON_Script/update_team_role.py --dry-run=True
