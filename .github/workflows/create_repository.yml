@@ -9,9 +9,11 @@ on:
         required: true
         description: Repository type ('product' or 'client')
         default: 'client'
+        type: choice
         options:
           - 'product'
           - 'client'
+
       PROJECT_KEY:
         required: true
         description: Jira Project Key
