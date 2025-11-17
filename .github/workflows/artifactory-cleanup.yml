@@ -1,0 +1,25 @@
+name: List WAR files older than 7 days
+
+on:
+  workflow_dispatch:
+
+jobs:
+  list-war-files:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install JFrog CLI
+        run: |
+          curl -fL https://getcli.jfrog.io | sh
+          sudo mv jfrog /usr/local/bin/
+
+      - name: Configure JFrog
+        run: |
+          jfrog config add my-server \
+            --url https://artifactrepodr.vitechinc.com/ \
+            --access-token ${{ secrets.JFROG_TOKEN }} \
+            --interactive=false
+
+      - name: List WAR files older than 7 days
+        run: |
+          jfrog rt s "libs-snapshot-local/com/vitechinc/v3/**/*.war" --older-than=7d
