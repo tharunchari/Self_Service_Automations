@@ -20,15 +20,12 @@ jobs:
             --access-token ${{ secrets.JFROG_TOKEN }} \
             --interactive=false
 
-      - name: Create AQL query file
+      - name: Create File Spec for AQL query
         run: |
-          echo 'items.find({
-            "repo": "libs-snapshot-local",
-            "path": {"$match": "com/vitechinc/v3/*"},
-            "name": {"$match": "*.war"},
-            "modified": {"$before": "7d"}
-          }).include("repo", "path", "name", "modified")' > query.aql
+          echo '{
+            "aql": "items.find({\"repo\":\"libs-snapshot-local\",\"path\":{\"$match\":\"com/vitechinc/v3/*\"},\"name\":{\"$match\":\"*.war\"},\"modified\":{\"$before\":\"7d\"}})"
+          }' > file-spec.json
 
       - name: Run AQL query to list WAR files older than 7 days
         run: |
-          jfrog rt s --spec=query.aql --server-id=my-server
+          jfrog rt s --spec=file-spec.json --server-id=my-server
