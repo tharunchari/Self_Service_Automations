@@ -1,10 +1,10 @@
-name: List WAR files older than 7 days
+name: List old WAR files in Artifactory
 
 on:
   workflow_dispatch:
 
 jobs:
-  list-war-files:
+  list-old-war-files:
     runs-on: ubuntu-latest
 
     steps:
@@ -13,13 +13,22 @@ jobs:
           curl -fL https://getcli.jfrog.io | sh
           sudo mv jfrog /usr/local/bin/
 
-      - name: Configure JFrog
+      - name: Configure JFrog CLI
         run: |
           jfrog config add my-server \
-            --url https://artifactrepodr.vitechinc.com/ \
+            --url https://artifactrepodr.vitechinc.com \
             --access-token ${{ secrets.JFROG_TOKEN }} \
             --interactive=false
 
-      - name: List WAR files older than 7 days
+      - name: Create AQL query file
         run: |
-          jfrog rt s "libs-snapshot-local/com/vitechinc/v3/**/*.war" --older-than=7d
+          echo 'items.find({
+            "repo": "libs-snapshot-local",
+            "path": {"$match": "com/vitechinc/v3/*"},
+            "name": {"$match": "*.war"},
+            "modified": {"$before": "7d"}
+          }).include("repo", "path", "name", "modified")' > query.aql
+
+      - name: Run AQL query to list WAR files older than 7 days
+        run: |
+          jfrog rt s --spec=query.aql --server-id=my-server
