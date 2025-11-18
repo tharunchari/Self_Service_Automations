@@ -70,12 +70,12 @@ jobs:
 
       - name: Publish Report to SNS Topic
         env:
-          TOPIC_ARN: ${{ secrets.SNS_TOPIC_ARN }}
+          TOPIC_ARN: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching
         run: |
           REPORT=$(sed 's/"/\\"/g' artifacts/artifacts_deleted.txt)
 
           aws sns publish \
-            --topic-arn "$TOPIC_ARN" \
+            --topic-arn "arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" \
             --subject "Artifacts deleted from Artifactory" \
             --message "From: ${SES_FROM}\nTo: ${SES_TO}\n\n${REPORT}"
 
