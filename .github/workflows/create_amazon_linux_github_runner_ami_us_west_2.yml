@@ -30,8 +30,8 @@ jobs:
             --image-id ${{ env.LATEST_AMI }}  \
             --instance-type ${{ vars.AWS_INSTANCE_TYPE_C5_4XLARGE }} \
             --key-name InternalToolsOregon \
-            --security-group-ids sg-04566dd49a782b643 \
-            --subnet-id subnet-0674f1c53222ce83b \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS_DR }} \
+            --subnet-id ${{ vars.SUBNET_ID_DR }} \
             --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":200,"VolumeType":"gp3"}}]' \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Amazon-Linux-AMI-GITHUB},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github},{Key=provision-method,Value=cli}]' \
             --iam-instance-profile Name=VitechTools > /tmp/ec2_output.json
@@ -102,3 +102,31 @@ jobs:
             echo "AMI is still pending. Waiting for 100 seconds..."
             sleep 100
           done
+
+      - name: Step 8 - Retrieve Current AMI ID from GitHub
+        run: |
+          export CURRENT_AMI_ID=$(curl -s -X GET https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI_DR \
+            -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            -H "Accept: application/vnd.github+json" | jq -r '.value')
+          echo "CURRENT_AMI_ID=$CURRENT_AMI_ID" >> $GITHUB_ENV
+
+      - name: Step 9 - Update the new AMI ID in GitHub organization variables
+        run: |
+          curl -X PATCH https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI_DR \
+            -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            -H "Accept: application/vnd.github+json" \
+            -d '{"value": "${{ env.AMI_ID }}"}'
+
+      - name: Step 10 - Send AMI Details via SNS
+        run: |
+          MESSAGE=$(printf "New Amazon Linux AMI US-WEST-2 created on $(date +%Y-%m-%d) for GitHub Runner. \nCurrent AMI ID: ${{ env.CURRENT_AMI_ID }}\nNew AMI ID: ${{ env.AMI_ID }}\nAttention may be required.")
+          aws sns publish \
+            --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+            --message "$MESSAGE" \
+            --subject "New Amazon Linux AMI US-WEST-2 Created for GitHub Self-Hosted Runners on $(date +%Y-%m-%d)"
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+
+      - name: Step 11 - Terminate Self Hosted Runner instance
+        run: |
+          aws ec2 terminate-instances --instance-ids "${{ env.INSTANCE_ID }}" --region ${{ vars.AWS_REGION_US_WEST_2 }}
