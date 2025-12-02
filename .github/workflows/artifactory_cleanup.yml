@@ -25,7 +25,7 @@ jobs:
   cleanup-artifacts:
     needs: [check-schedule, start-runner]
     if: needs.check-schedule.outputs.should_proceed == 'true'
-    runs-on: [self-hosted, Internal_Tools_Automation_Server]
+    runs-on: Internal_Tools_Automation_Server
 
     env:
       SES_FROM: do-not-reply@vitechinc.com
