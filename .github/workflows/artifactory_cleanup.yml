@@ -57,16 +57,16 @@ jobs:
 
       - name: Delete WAR Artifacts
         run: |
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" >> artifacts/artifacts_deleted.txt
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" -delete -confirm N
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" -token ${ARTIFACTORY_TOKEN} >> artifacts/artifacts_deleted.txt
+         # java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" -delete -confirm N -token ${ARTIFACTORY_TOKEN}
 
       - name: Append EAR Header
         run: echo "************** EAR FILES deleted from artifactory **************" >> artifacts/artifacts_deleted.txt
 
       - name: Delete EAR Artifacts
         run: |
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" >> artifacts/artifacts_deleted.txt
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" -delete -confirm N
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" -token ${ARTIFACTORY_TOKEN} >> artifacts/artifacts_deleted.txt
+         # java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" -delete -confirm N -token ${ARTIFACTORY_TOKEN}
 
       - name: Publish Report to SNS Topic
         env:
