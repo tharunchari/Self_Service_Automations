@@ -16,11 +16,12 @@ jobs:
 
   start-runner:
     needs: check-schedule
-    if: needs.check-schedule.outputs.should_proceed == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.check-schedule.outputs.should_proceed == 'true'
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
+
 
   cleanup-artifacts:
     needs: [check-schedule, start-runner]
