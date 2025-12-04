@@ -67,7 +67,8 @@ jobs:
       - name: Find WAR Artifacts
         run: |
           java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.war -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
-
+           echo ***************** print files**************************
+           cat artifacts/artifacts_deleted.txt
       # Actually delete WAR files (uncomment ONLY if you want actual deletion!)
       # - name: Delete WAR Artifacts
       #   run: |
