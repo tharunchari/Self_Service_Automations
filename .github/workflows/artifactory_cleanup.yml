@@ -1,10 +1,9 @@
 name: Artifactory Cleanup (WAR + EAR)
 
 on:
-  # Uncomment for daily schedule:
-  # schedule:
-  #   - cron: "0 0 * * *"
-  workflow_dispatch:
+   schedule:
+     - cron: "0 0 * * *"
+   workflow_dispatch:
 
 jobs:
   check-schedule:
@@ -67,12 +66,11 @@ jobs:
       - name: Find WAR Artifacts
         run: |
           java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.war -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
-           echo ***************** print files**************************
-           cat artifacts/artifacts_deleted.txt
+
       # Actually delete WAR files (uncomment ONLY if you want actual deletion!)
-      # - name: Delete WAR Artifacts
-      #   run: |
-      #     java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.war -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
+      - name: Delete WAR Artifacts
+        run: |
+           java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.war -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
 
       # EAR header
       - name: Append EAR Header
@@ -84,10 +82,15 @@ jobs:
           java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.ear -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
 
       # Actually delete EAR files (uncomment ONLY if you want actual deletion!)
-      # - name: Delete EAR Artifacts
-      #   run: |
-      #     java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.ear -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
+      - name: Delete EAR Artifacts
+        run: |
+           java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.ear -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
 
+      - name: Print output of the log file 
+        run: |
+          echo ***************** print files**************************
+           cat artifacts/artifacts_deleted.txt
+          echo ***************** print files**************************
       # Publish report to AWS SNS
       - name: Publish Report to SNS Topic
         env:
