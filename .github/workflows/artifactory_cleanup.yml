@@ -1,7 +1,7 @@
 name: Artifactory Cleanup (WAR + EAR)
 
 on:
-  # Uncomment next lines to enable daily scheduled runs
+  # Uncomment for daily schedule:
   # schedule:
   #   - cron: "0 0 * * *"
   workflow_dispatch:
@@ -38,40 +38,56 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Debugging section: check directory, jar and Java setup
-      - name: Print working directory and list files
+      # Set up Java 8 (matches your server env)
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: 'temurin'
+
+      # Debug: Show current directory and files
+      - name: Show current directory and files
         run: |
           pwd
           ls -l
 
-      - name: Print Java version
-        run: java -version
-
-      - name: Check if DevOps.jar contains the main class
+      # Debug: confirm jar contains main class (corrected name)
+      - name: Check for main class in DevOps.jar
         run: |
-          jar tf DevOps.jar | grep ArtiFactoryRestCaller || echo "Class not found in jar"
+          jar tf DevOps.jar | grep ArtifactoryRestCaller || echo "Class not found in jar"
 
-      - name: Prepare output file
+      # Prepare output file
+      - name: Prepare cleanup output file
         run: |
           mkdir -p artifacts
           rm -f artifacts/artifacts_deleted.txt
           echo "**************** WAR FILES deleted from artifactory *******************" >> artifacts/artifacts_deleted.txt
 
-      - name: Delete WAR Artifacts
+      # List WAR files marked for deletion
+      - name: Find WAR Artifacts
         run: |
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
-          # Uncomment next line for actual deletion
-          # java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.war -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
 
+      # Actually delete WAR files (uncomment ONLY if you want actual deletion!)
+      # - name: Delete WAR Artifacts
+      #   run: |
+      #     java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.war -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
+
+      # EAR header
       - name: Append EAR Header
         run: echo "************** EAR FILES deleted from artifactory **************" >> artifacts/artifacts_deleted.txt
 
-      - name: Delete EAR Artifacts
+      # List EAR files marked for deletion
+      - name: Find EAR Artifacts
         run: |
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
-          # Uncomment next line for actual deletion
-          # java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.ear -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
 
+      # Actually delete EAR files (uncomment ONLY if you want actual deletion!)
+      # - name: Delete EAR Artifacts
+      #   run: |
+      #     java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.ear -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
+
+      # Publish report to AWS SNS
       - name: Publish Report to SNS Topic
         env:
           TOPIC_ARN: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching
@@ -82,6 +98,7 @@ jobs:
             --subject "Artifacts deleted from Artifactory" \
             --message "From: ${SES_FROM}\\nTo: ${SES_TO}\\n\\n${REPORT}"
 
+      # Upload report file for record
       - name: Upload Report as Artifact
         uses: actions/upload-artifact@v4
         with:
