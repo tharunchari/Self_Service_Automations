@@ -1,8 +1,9 @@
 name: Artifactory Cleanup (WAR + EAR)
 
 on:
- # schedule:
-  #  - cron: "0 0 * * *"   # daily at midnight
+  # Uncomment next lines to enable daily scheduled runs
+  # schedule:
+  #   - cron: "0 0 * * *"
   workflow_dispatch:
 
 jobs:
@@ -22,7 +23,6 @@ jobs:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
 
-
   cleanup-artifacts:
     needs: [check-schedule, start-runner]
     if: needs.check-schedule.outputs.should_proceed == 'true'
@@ -32,23 +32,24 @@ jobs:
       SES_FROM: do-not-reply@vitechinc.com
       SES_TO: v3atlassianops@vitechinc.com
       SNS_TOPIC_ARN: ${{ secrets.SNS_TOPIC_ARN }}
+      ARTIFACTORY_TOKEN: ${{ secrets.ARTIFACTORY_TOKEN }}
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Java 8
-        uses: actions/setup-java@v4
-        with:
-          java-version: '8'
-          distribution: 'temurin'
+      # Debugging section: check directory, jar and Java setup
+      - name: Print working directory and list files
+        run: |
+          pwd
+          ls -l
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+      - name: Print Java version
+        run: java -version
+
+      - name: Debug: Check if DevOps.jar contains the main class
+        run: |
+          jar tf DevOps.jar | grep ArtiFactoryRestCaller || echo "Class not found in jar"
 
       - name: Prepare output file
         run: |
@@ -58,27 +59,28 @@ jobs:
 
       - name: Delete WAR Artifacts
         run: |
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" -token ${ARTIFACTORY_TOKEN} >> artifacts/artifacts_deleted.txt
-         # java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" -delete -confirm N -token ${ARTIFACTORY_TOKEN}
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
+          # Uncomment next line for actual deletion
+          # java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.war" -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
 
       - name: Append EAR Header
         run: echo "************** EAR FILES deleted from artifactory **************" >> artifacts/artifacts_deleted.txt
 
       - name: Delete EAR Artifacts
         run: |
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" -token ${ARTIFACTORY_TOKEN} >> artifacts/artifacts_deleted.txt
-         # java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" -delete -confirm N -token ${ARTIFACTORY_TOKEN}
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
+          # Uncomment next line for actual deletion
+          # java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtiFactoryRestCaller -pattern "*.ear" -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
 
       - name: Publish Report to SNS Topic
         env:
           TOPIC_ARN: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching
         run: |
           REPORT=$(sed 's/"/\\"/g' artifacts/artifacts_deleted.txt)
-
           aws sns publish \
-            --topic-arn "arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching" \
+            --topic-arn "${TOPIC_ARN}" \
             --subject "Artifacts deleted from Artifactory" \
-            --message "From: ${SES_FROM}\nTo: ${SES_TO}\n\n${REPORT}"
+            --message "From: ${SES_FROM}\\nTo: ${SES_TO}\\n\\n${REPORT}"
 
       - name: Upload Report as Artifact
         uses: actions/upload-artifact@v4
