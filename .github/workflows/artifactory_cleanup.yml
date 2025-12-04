@@ -47,7 +47,7 @@ jobs:
       - name: Print Java version
         run: java -version
 
-      - name: Debug: Check if DevOps.jar contains the main class
+      - name: Check if DevOps.jar contains the main class
         run: |
           jar tf DevOps.jar | grep ArtiFactoryRestCaller || echo "Class not found in jar"
 
