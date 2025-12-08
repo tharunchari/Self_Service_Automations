@@ -107,7 +107,7 @@ jobs:
           aws sns publish \
             --topic-arn "${TOPIC_ARN}" \
             --subject "Artifacts deleted from Artifactory" \
-            --message "From: ${SES_FROM}\nTo: ${SES_TO}\n\n${REPORT}"
+            --message "${REPORT}"
 
       - name: Upload Report Artifact
         uses: actions/upload-artifact@v4
