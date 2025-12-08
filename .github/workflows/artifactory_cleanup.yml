@@ -1,11 +1,14 @@
 name: Artifactory Cleanup (WAR + EAR)
 
 on:
-   schedule:
-     - cron: "0 0 * * *"
-   workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
 
 jobs:
+  # ------------------------------------------------------
+  # 1. Simple initial check — allows conditional workflows
+  # ------------------------------------------------------
   check-schedule:
     runs-on: ubuntu-latest
     outputs:
@@ -14,14 +17,20 @@ jobs:
       - id: check
         run: echo "should_proceed=true" >> $GITHUB_OUTPUT
 
+  # ------------------------------------------------------
+  # 2. Start Self-Hosted Runner
+  # ------------------------------------------------------
   start-runner:
     needs: check-schedule
-    if: github.event_name == 'workflow_dispatch' && needs.check-schedule.outputs.should_proceed == 'true'
+    if: needs.check-schedule.outputs.should_proceed == 'true'
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
 
+  # ------------------------------------------------------
+  # 3. Artifactory Cleanup (Runs on the Self-Hosted Runner)
+  # ------------------------------------------------------
   cleanup-artifacts:
     needs: [check-schedule, start-runner]
     if: needs.check-schedule.outputs.should_proceed == 'true'
@@ -37,61 +46,56 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Set up Java 8 (matches your server env)
       - name: Set up Java 8
         uses: actions/setup-java@v4
         with:
           java-version: '8'
           distribution: 'temurin'
 
-      # Debug: Show current directory and files
-      - name: Show current directory and files
+      - name: Show working directory
         run: |
           pwd
           ls -l
 
-      # Debug: confirm jar contains main class (corrected name)
-      - name: Check for main class in DevOps.jar
+      - name: Verify DevOps.jar contains main class
         run: |
           jar tf DevOps.jar | grep ArtifactoryRestCaller || echo "Class not found in jar"
 
-      # Prepare output file
-      - name: Prepare cleanup output file
+      - name: Prepare output file
         run: |
           mkdir -p artifacts
           rm -f artifacts/artifacts_deleted.txt
           echo "**************** WAR FILES deleted from artifactory *******************" >> artifacts/artifacts_deleted.txt
 
-      # List WAR files marked for deletion
       - name: Find WAR Artifacts
         run: |
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.war -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller \
+            -pattern *.war -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
 
-      # Actually delete WAR files (uncomment ONLY if you want actual deletion!)
       - name: Delete WAR Artifacts
         run: |
-           java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.war -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller \
+            -pattern *.war -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
 
-      # EAR header
       - name: Append EAR Header
         run: echo "************** EAR FILES deleted from artifactory **************" >> artifacts/artifacts_deleted.txt
 
-      # List EAR files marked for deletion
       - name: Find EAR Artifacts
         run: |
-          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.ear -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller \
+            -pattern *.ear -token "${ARTIFACTORY_TOKEN}" >> artifacts/artifacts_deleted.txt
 
-      # Actually delete EAR files (uncomment ONLY if you want actual deletion!)
       - name: Delete EAR Artifacts
         run: |
-           java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller -pattern *.ear -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
+          java -cp DevOps.jar com.vitechinc.opsutil.artifactory.ArtifactoryRestCaller \
+            -pattern *.ear -delete -confirm N -token "${ARTIFACTORY_TOKEN}"
 
-      - name: Print output of the log file 
+      - name: Print log
         run: |
-          echo ***************** print files**************************
-           cat artifacts/artifacts_deleted.txt
-          echo ***************** print files**************************
-      # Publish report to AWS SNS
+          echo "***************** Report Output **************************"
+          cat artifacts/artifacts_deleted.txt
+          echo "***************** End Report *****************************"
+
       - name: Publish Report to SNS Topic
         env:
           TOPIC_ARN: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching
@@ -100,17 +104,19 @@ jobs:
           aws sns publish \
             --topic-arn "${TOPIC_ARN}" \
             --subject "Artifacts deleted from Artifactory" \
-            --message "From: ${SES_FROM}\\nTo: ${SES_TO}\\n\\n${REPORT}"
+            --message "From: ${SES_FROM}\nTo: ${SES_TO}\n\n${REPORT}"
 
-      # Upload report file for record
-      - name: Upload Report as Artifact
+      - name: Upload Report Artifact
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-deleted-report
           path: artifacts/artifacts_deleted.txt
 
+  # ------------------------------------------------------
+  # 4. Stop Runner (Runs Always)
+  # ------------------------------------------------------
   stop-runner:
-    needs: [cleanup-artifacts]
+    needs: cleanup-artifacts
     if: always()
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
