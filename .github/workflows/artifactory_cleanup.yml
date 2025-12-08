@@ -93,8 +93,11 @@ jobs:
       - name: Print log
         run: |
           echo "***************** Report Output **************************"
+          sed -i 's#https://##g' artifacts/artifacts_deleted.txt
+          sleep 5
           cat artifacts/artifacts_deleted.txt
           echo "***************** End Report *****************************"
+          
 
       - name: Publish Report to SNS Topic
         env:
