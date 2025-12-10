@@ -99,6 +99,7 @@ jobs:
       - name: Render final SQL (envsubst)
         run: |
           filename=$(basename "$FILE_PATH")
+          echo "FILENAME=$filename" >> $GITHUB_ENV
           envsubst < "$FILE_PATH" > "output/$filename"
           echo "Rendered SQL created: output/$filename"
 
@@ -106,5 +107,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rendered-sql
-          path: output/$filename
+          path: output/${{ env.FILENAME }}
           retention-days: 1
