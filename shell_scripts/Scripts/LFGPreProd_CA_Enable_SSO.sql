@@ -10,7 +10,7 @@ perform pkg_util_interface.p_upd_external_accounts(piv_external_account_name    
                                                  ,piv_external_account_code      => 'OIDCAuthCA'
                                                  ,piv_ip_address                 => ''
                                                  ,piv_username                   => ''
-                                                 ,piv_password                   => '${LFGPreProd_CA_Enable_SSO}'
+                                                 ,piv_password                   => '${LFGPREPROD_CA_ENABLE_SSO}'
                                                  ,piv_external_account_type      => ''
                                                  ,piv_end_point                  => ''
                                                  ,pib_active_flag                => 'Y'
@@ -74,3 +74,4 @@ UPDATE dbo.security_application
          WHERE internal_name = 'OIDC_AUTH_CA')
  WHERE internal_name IN ('USER');
 end; $t$;
+
