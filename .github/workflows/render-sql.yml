@@ -1,0 +1,109 @@
+name: Render SQL Using Repo Variables (Auto Script Finder)
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Repository Name"
+        required: true
+        type: string     
+      branch:
+        description: "Branch Name"
+        required: true
+        type: string
+      script_name:
+        description: "Script_Name eg: Devops123.sql"
+        required: true
+        type: string
+
+jobs:
+  render-sql:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+        with:
+          repository: vitechsystems/${{ inputs.repo }}
+          ref: ${{ inputs.branch }}
+          path: target_repo
+          token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y jq gettext-base
+
+      - name: Find script in repo
+        id: find_script
+        run: |
+          echo "Searching for script: ${{ inputs.script_name }}"
+
+          file_path=$(find target_repo -type f -name "${{ inputs.script_name }}" | head -n 1)
+
+          if [ -z "$file_path" ]; then
+            echo "::error ::Script not found."
+            exit 1
+          fi
+
+          echo "FILE_PATH=$file_path" >> $GITHUB_ENV
+          echo "Found at: $file_path"
+
+      - name: Extract placeholders from SQL
+        id: extract_vars
+        run: |
+          file="$FILE_PATH"
+
+          placeholders=$(grep -o '\${[^}]*}' "$file" | sed 's/[${}]//g' | sort -u)
+
+          echo "Found placeholders:"
+          echo "$placeholders"
+
+          echo "VAR_LIST<<EOF" >> $GITHUB_ENV
+          echo "$placeholders" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Fetch Repo Variables from GitHub
+        id: fetch_repo_vars
+        run: |
+          echo "Fetching repo-level variables from: vitechsystems/${{ inputs.repo }}"
+
+          curl -s -L \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/vitechsystems/${{ inputs.repo }}/actions/variables" \
+            -o repo_vars.json
+
+          echo "Repo variables received:"
+          jq '.variables[].name' repo_vars.json
+
+      - name: Map placeholders to repo variables
+        id: match_vars
+        run: |
+          echo "Matching SQL placeholders with repo variables..."
+
+          for var in $VAR_LIST; do
+            value=$(jq -r --arg name "$var" '.variables[] | select(.name == $name) | .value' repo_vars.json)
+
+            if [ -z "$value" ] || [ "$value" == "null" ]; then
+              echo "::warning ::Variable '$var' NOT found in repo variables."
+              continue
+            fi
+
+            echo "$var=$value" >> $GITHUB_ENV
+            echo "Mapped: $var = $value"
+          done
+
+      - name: Create output folder
+        run: mkdir -p output
+
+      - name: Render final SQL (envsubst)
+        run: |
+          envsubst < "$FILE_PATH" > output/rendered.sql
+          echo "Rendered SQL created."
+
+      - name: Upload rendered SQL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-sql
+          path: output/rendered.sql
+          retention-days: 1
