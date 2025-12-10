@@ -1,4 +1,4 @@
-name: Render SQL Using Repo Variables (Auto Script Finder)
+name: Render SQL Using Repo Variables
 
 on:
   workflow_dispatch:
@@ -106,5 +106,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rendered-sql
-          path: output/rendered.sql
+          path: output/$filename
           retention-days: 1
