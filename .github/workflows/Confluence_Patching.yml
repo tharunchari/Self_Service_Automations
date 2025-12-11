@@ -258,7 +258,7 @@ jobs:
               --instance-ids "$INSTANCE_ID" \
               --document-name "AWS-RunShellScript" \
               --comment "Stop ds_agent, remove dsa_filt, and start ds_agent" \
-              --parameters 'commands=["service ds_agent stop", "sleep 240", "sudo rmmod dsa_filter", "service ds_agent start"]' \
+              --parameters 'commands=["service ds_agent stop", "sleep 240", "sudo rmmod dsa_filter", "sleep 240", "service ds_agent start"]' \
               --query 'Command.CommandId' --output text > command-id.txt
             COMMAND_ID=$(cat command-id.txt)
             echo "Waiting for command to complete..."
