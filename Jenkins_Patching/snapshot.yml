@@ -15,7 +15,7 @@
           validate_certs: no
           hostname: "172.26.44.50"
           username: "{{ vcusername }}@vitechinc.com"
-          password: "{{ VC_PASSWORD }}"
+          password: "{{ vcpassword1 }}"
           datacenter: "XAND"
           folder: "/XAND/"
           name: "{{ inventory_hostname|upper }}"
