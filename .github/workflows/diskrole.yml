@@ -23,10 +23,13 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Run Ansible Playbook
+        env:
+          ANSIBLE_SSH_PASS_1: ${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}
+          ANSIBLE_SSH_PASS_2: ${{ secrets.INTERNAL_TOOLS_PASSWORD_4O1 }}
         run: |
           export ANSIBLE_ROLES_PATH="$PWD/Ansible"
           sudo -E ANSIBLE_HOST_KEY_CHECKING=False \
             ansible-playbook \
-            Ansible/diskrole/tests/test.yml \
-            -i Ansible/diskrole/tests/inventory \
-            -e ansible_ssh_pass_1=${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }} ansible_ssh_pass_2=${{ secrets.INTERNAL_TOOLS_PASSWORD_4O1 }}
+              Ansible/diskrole/tests/test.yml \
+              -i Ansible/diskrole/tests/inventory \
+              -e "ansible_ssh_pass_1=$ANSIBLE_SSH_PASS_1 ansible_ssh_pass_2=$ANSIBLE_SSH_PASS_2"
