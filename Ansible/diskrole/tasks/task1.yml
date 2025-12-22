@@ -1,13 +1,17 @@
 ---
 # Task1-/root
 # tasks file for diskrole
-- shell: df -hP /
+
+- name: Get root filesystem usage
+  shell: df -hP / | tail -1
   register: disk_usage
-- debug: 
-    msg: "{{ disk_usage.stdout_lines }}"
-- shell: df -hP / | awk ' 0+$5 >= {{root_usage}} {print $5}'|sed 's/%//g'
-  register: disk
-- shell: hostname
+
+- name: Extract disk usage percentage
+  set_fact:
+    root_used_percent: "{{ disk_usage.stdout.split()[4] | regex_replace('%','') | int }}"
+
+- name: Get hostname
+  command: hostname
   register: host_name
 
 - name: Send disk usage alert via AWS SNS
@@ -19,14 +23,12 @@
   vars:
     sns_message: |
       Disk usage alert for {{ inventory_hostname }}
- 
+
       Host Name: {{ host_name.stdout }}
-      Mount Point: {{ disk_usage.stdout_lines[1].split()[5] }}
-      Usage: {{ disk_usage.stdout_lines[1].split()[4] }}
- 
+      Mount Point: {{ disk_usage.stdout.split()[5] }}
+      Usage: {{ root_used_percent }}%
+
       Disk Space Usage Report:
- 
-      {{ disk_usage.stdout_lines[0] }}
-      {{ disk_usage.stdout_lines[1] }}
-  when: disk.stdout | int >= root_usage
+      {{ disk_usage.stdout }}
+  when: root_used_percent >= (root_usage | int)
   ignore_errors: true
