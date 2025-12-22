@@ -1,0 +1,33 @@
+name: Moniter Internal Tools Servers
+ 
+on:
+  workflow_dispatch:
+#  schedule:
+#    - cron: '0 0/3 * * 1-5'
+ 
+jobs:
+  start-runner:
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
+    secrets: inherit
+
+  Monitering:
+    needs: start-runner
+    name: Run Ansible Playbook
+    runs-on: Internal_Tools_Automation_Server
+ 
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Run Ansible Playbook
+        run: |
+          sudo ansible-playbook Ansible/diskrole/tasks/main.yml -i Ansible/diskrole/tests/inventory -e "ansible_ssh_pass_1=${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }} ansible_ssh_pass_2=${{ secrets.INTERNAL_TOOLS_PASSWORD_4O1 }}"
