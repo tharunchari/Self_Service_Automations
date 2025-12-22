@@ -1,0 +1,11 @@
+---
+- hosts:
+#     - localhost
+#     - qa
+     - prod
+#     - dev
+#     - testing
+
+  remote_user: root
+  roles:
+    - diskrole

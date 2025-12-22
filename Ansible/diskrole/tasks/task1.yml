@@ -1,0 +1,32 @@
+---
+# Task1-/root
+# tasks file for diskrole
+- shell: df -hP /
+  register: disk_usage
+- debug: 
+    msg: "{{ disk_usage.stdout_lines }}"
+- shell: df -hP / | awk ' 0+$5 >= {{root_usage}} {print $5}'|sed 's/%//g'
+  register: disk
+- shell: hostname
+  register: host_name
+
+- name: Send disk usage alert via AWS SNS
+  command: >
+    aws sns publish
+    --topic-arn {{ sns_topic_arn }}
+    --subject "Alert: {{ host_name.stdout }} - {{ inventory_hostname }} - Disk usage is high"
+    --message "{{ sns_message }}"
+  vars:
+    sns_message: |
+      Disk usage alert for {{ inventory_hostname }}
+ 
+      Host Name: {{ host_name.stdout }}
+      Mount Point: {{ disk_usage.stdout_lines[1].split()[5] }}
+      Usage: {{ disk_usage.stdout_lines[1].split()[4] }}
+ 
+      Disk Space Usage Report:
+ 
+      {{ disk_usage.stdout_lines[0] }}
+      {{ disk_usage.stdout_lines[1] }}
+  when: disk.stdout | int >= root_usage
+  ignore_errors: true
