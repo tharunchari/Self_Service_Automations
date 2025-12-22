@@ -1,6 +1,6 @@
 ---
 # vars file for diskrole
-root_usage: '80'
+root_usage: '69'
 u01_usage: '80'
 u02_usage: '80'
 u03_usage: '80'
