@@ -7,6 +7,4 @@
 #     - testing
   remote_user: root
   roles:
-    - role: diskrole
-      vars:
-        ansible_roles_path: Ansible
+    - diskrole
