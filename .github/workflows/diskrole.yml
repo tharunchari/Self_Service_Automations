@@ -24,4 +24,7 @@ jobs:
 
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook /actions-runner/_work/Internal-Tools/Internal-Tools/Ansible/diskrole/tests/test.yml -i /actions-runner/_work/Internal-Tools/Internal-Tools/Ansible/diskrole/tests/inventory -e "ansible_ssh_pass_1=${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }} ansible_ssh_pass_2=${{ secrets.INTERNAL_TOOLS_PASSWORD_4O1 }}"
+          sudo ansible-playbook \
+            Ansible/diskrole/tests/test.yml \
+            -i Ansible/diskrole/tests/inventory \
+            -e "ansible_ssh_pass_1=${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }} ansible_ssh_pass_2=${{ secrets.INTERNAL_TOOLS_PASSWORD_4O1 }}"
