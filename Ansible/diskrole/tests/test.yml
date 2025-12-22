@@ -5,7 +5,8 @@
      - prod
 #     - dev
 #     - testing
-
   remote_user: root
   roles:
-    - diskrole
+    - role: diskrole
+      vars:
+        ansible_roles_path: Ansible
