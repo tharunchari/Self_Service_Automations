@@ -24,6 +24,7 @@ jobs:
 
       - name: Run Ansible Playbook
         run: |
+          export ANSIBLE_ROLES_PATH="$PWD/Ansible"
           sudo ansible-playbook \
             Ansible/diskrole/tests/test.yml \
             -i Ansible/diskrole/tests/inventory \
