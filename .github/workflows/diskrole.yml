@@ -28,5 +28,4 @@ jobs:
           sudo ansible-playbook \
             Ansible/diskrole/tests/test.yml \
             -i Ansible/diskrole/tests/inventory \
-            --roles-path Ansible \
             -e "ansible_ssh_pass_1=${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }} ansible_ssh_pass_2=${{ secrets.INTERNAL_TOOLS_PASSWORD_4O1 }}" 
