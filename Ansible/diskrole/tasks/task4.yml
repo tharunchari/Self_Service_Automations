@@ -6,37 +6,45 @@
     path: /u03
   register: user_check
 
-- shell: df -hP /u03
+- name: Get root filesystem usage
+  shell: df -hP /u03 | tail -1
   register: disk_usage
-  when: user_check.stat.exists == true
-# ignore_errors: true
-- debug: 
-    msg: "{{ disk_usage.stdout_lines }}"
-  when: user_check.stat.exists == true
-- shell: df -hP /u03 | awk ' 0+$5 >= {{u03_usage}} {print $5}'|sed 's/%//g'
-  register: disk
-  when: user_check.stat.exists == true
-- shell: hostname
+
+- name: Get hostname
+  command: hostname
   register: host_name
   when: user_check.stat.exists == true
 
-- name: Send disk usage alert via AWS SNS
-  command: >
-    aws sns publish
-    --topic-arn {{ sns_topic_arn }}
-    --subject "Alert: {{ host_name.stdout }} - {{ inventory_hostname }} - Disk usage is high"
-    --message "{{ sns_message }}"
-  vars:
-    sns_message: |
-      Disk usage alert for {{ inventory_hostname }}
- 
-      Host Name: {{ host_name.stdout }}
-      Mount Point: {{ disk_usage.stdout_lines[1].split()[5] }}
-      Usage: {{ disk_usage.stdout_lines[1].split()[4] }}
- 
-      Disk Space Usage Report:
- 
-      {{ disk_usage.stdout_lines[0] }}
-      {{ disk_usage.stdout_lines[1] }}
-  when: disk.stdout | int >= root_usage
+- debug:
+    msg: '{{ disk_usage }}'
+
+- name: Extract disk usage percentage
+  set_fact:
+    root_used_percent: '{{ disk_usage.stdout.split()[4] | regex_replace(''%'','''') }}'
+
+- debug:
+    msg: '{{ root_used_percent }}'
+
+- mail:
+    host: '{{ smtp_host }}'
+    port: '{{ smtp_port }}'
+    subject: >-
+      Alert: {{ host_name.stdout }} - {{ inventory_hostname }} - Disk usage is
+      high
+    body: |-
+      Disk usage alert for {{ inventory_hostname }} 
+
+
+       Host Name: {{ host_name.stdout }} 
+       Usage: {{ root_used_percent }}% 
+
+
+       Disk Space Usage Report:
+       {{ disk_usage.stdout }}
+    from: '{{ from_mail }}'
+    to: '{{ to_mail }}'
+
+  when: 
+     - root_used_percent >= u03_usage
+     - user_check.stat.exists == true
   ignore_errors: true
