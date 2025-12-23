@@ -34,6 +34,21 @@ localhost ansible_connection=local
 #VITECH-APP-SONAR-ENTP
 #172.26.47.38 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
 
+#vm-artifactoryha-prod-alb
+#10.172.2.141 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_2 }}"
+
+#vm-artifactoryha-prod-app01
+#10.172.3.246 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_2 }}"
+
+#vm-artifactoryha-prod-app02
+#172.26.56.157 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_2 }}"
+
+#VM-XRAYPROD-APP01
+#10.172.3.165 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
+
+#VM-XRAYPROD-APP02
+#172.26.56.64 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
+
 #VITECH-SVN-NODE0
 172.26.46.98 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
 
@@ -51,18 +66,3 @@ localhost ansible_connection=local
 
 #sonar-app-v310
 172.26.49.240 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
-
-#vm-artifactoryha-prod-alb
-10.172.2.141 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_2 }}"
-
-#vm-artifactoryha-prod-app01
-10.172.3.246 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_2 }}"
-
-#vm-artifactoryha-prod-app02
-172.26.56.157 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_2 }}"
-
-#VM-XRAYPROD-APP01
-10.172.3.165 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
-
-#VM-XRAYPROD-APP02
-172.26.56.64 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
