@@ -9,6 +9,7 @@
 - name: Get root filesystem usage
   shell: df -hP /u01 | tail -1
   register: disk_usage
+  when: user_check.stat.exists == true
 
 - name: Get hostname
   command: hostname
