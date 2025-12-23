@@ -1,0 +1,56 @@
+name: Create JIRA Dupms
+
+env:
+  JIRA_INSTANCE_ID_1: i-0701b695cf611c383
+  JIRA_INSTANCE_ID_2: i-0d78aecfd23d2d10c
+
+on:
+  workflow_dispatch:
+    inputs:
+      KEY:
+        required: true
+        description: Authentication Key for OPS Internal Tools
+
+jobs:
+  jira_dumps:
+    name: Check Runner Status
+    runs-on: ubuntu-24.04
+    steps:       
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Validate Authentication Key
+        id: validate_key
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [[ "${{ inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
+            echo "Invalid authentication key."
+            # Send notification for invalid key
+            aws sns publish \
+              --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
+              --message "$(echo -e "**JIRA Dump Creation Aborted**\n\nInvalid authentication key provided. JIRA Dump Creation process is not started.\n$(date +%Y-%m-%d)")" \
+              --subject "JIRA Dump Creation Aborted: Invalid Key"
+            exit 1
+          fi
+
+      - name: Run Command on EC2 Instance to generate dumps and send to mail on Jira node
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceids,Values=${{ env.JIRA_INSTANCE_ID_1 }}" \
+            --parameters commands="sudo /u01/jira_dump.sh" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+      - name: Run Command on EC2 Instance to generate dumps and send to mail on Jira node
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceids,Values=${{ env.JIRA_INSTANCE_ID_2 }}" \
+            --parameters commands="sudo /u01/jira_dump.sh" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
