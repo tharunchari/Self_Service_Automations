@@ -2,13 +2,19 @@ name: Moniter Internal Tools Servers
  
 on:
   workflow_dispatch:
-#  schedule:
-#    - cron: '0 0/3 * * 1-5'
+  schedule:
+    - cron: '0 3 * * 1-5'
  
 jobs:
+  start-runner:
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
+    secrets: inherit
 
   Monitering:
     name: Run Ansible Playbook
+    needs: start-runner
     runs-on: Internal_Tools_Automation_Server
  
     steps:
@@ -33,3 +39,11 @@ jobs:
               Ansible/diskrole/tests/test.yml \
               -i Ansible/diskrole/tests/inventory \
               -e "ansible_ssh_pass_1=$ANSIBLE_SSH_PASS_1 ansible_ssh_pass_2=$ANSIBLE_SSH_PASS_2"
+
+  stop-runner:
+    needs: Monitering
+    if: always()  # Ensures this job runs even if execute-job fails
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    with:
+      runner_name: "Internal_Tools_Automation_Server"
+    secrets: inherit
