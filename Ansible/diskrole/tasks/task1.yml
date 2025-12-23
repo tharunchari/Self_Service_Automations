@@ -39,5 +39,5 @@
     from: '{{ from_mail }}'
     to: '{{ to_mail }}'
 
-  when: root_used_percent >= root_usage
+  when: (root_used_percent | int) >= (root_usage | int)
   ignore_errors: true
