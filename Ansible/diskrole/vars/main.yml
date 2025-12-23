@@ -1,12 +1,12 @@
 ---
 # vars file for diskrole
-root_usage: '69'
+root_usage: '80'
 u01_usage: '80'
 u02_usage: '80'
 u03_usage: '80'
 u04_usage: '80'
-#to_mail: v3atlassianops@vitechinc.com
-to_mail: tkammari@vitechinc.com
+to_mail: v3atlassianops@vitechinc.com
+#to_mail: tkammari@vitechinc.com
 from_mail: no-reply@vitechinc.com
 smtp_host: smtp-relay.vitech.com
 smtp_port: '25'
