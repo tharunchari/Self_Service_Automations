@@ -32,5 +32,5 @@
 
       Disk Space Usage Report:
       {{ disk_usage.stdout }}
-  when: (root_used_percent | int) >= (root_usage | int)
+  when: root_used_percent >= root_usage
   ignore_errors: true
