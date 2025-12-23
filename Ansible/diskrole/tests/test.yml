@@ -6,5 +6,6 @@
 #     - dev
 #     - testing
   remote_user: root
+  ignore_unreachable: true
   roles:
     - diskrole
