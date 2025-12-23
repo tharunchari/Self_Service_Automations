@@ -45,6 +45,6 @@
     to: '{{ to_mail }}'
 
   when: 
-     - root_used_percent >= u03_usage
+     - (root_used_percent | int) >= (u03_usage | int)
      - user_check.stat.exists == true
   ignore_errors: true
