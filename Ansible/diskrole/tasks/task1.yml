@@ -6,9 +6,15 @@
   shell: df -hP / | tail -1
   register: disk_usage
 
+- debug: 
+    msg: "{{ disk_usage }}"
+    
 - name: Extract disk usage percentage
   set_fact:
     root_used_percent: "{{ disk_usage.stdout.split()[4] | regex_replace('%','') }}"
+
+- debug: 
+    msg: "{{ root_used_percent }}"
 
 - name: Send disk usage alert via AWS SNS
   command: >
