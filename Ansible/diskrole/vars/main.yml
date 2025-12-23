@@ -6,3 +6,7 @@ u02_usage: '80'
 u03_usage: '80'
 u04_usage: '80'
 sns_topic_arn: arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd
+to_mail: v3atlassianops@vitechinc.com
+from_mail: v3opsinternal@vitechinc.com
+smtp_host: smtp-relay.vitech.com
+smtp_port: '25'
