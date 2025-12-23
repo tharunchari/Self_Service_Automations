@@ -38,6 +38,6 @@
        {{ disk_usage.stdout }}
     from: '{{ from_mail }}'
     to: '{{ to_mail }}'
-  when: disk.stdout >= root_usage
+  when: root_used_percent >= root_usage
   ignore_errors: true
 
