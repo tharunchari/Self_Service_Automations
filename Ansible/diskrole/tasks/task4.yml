@@ -9,6 +9,7 @@
 - name: Get root filesystem usage
   shell: df -hP /u03 | tail -1
   register: disk_usage
+  when: user_check.stat.exists == true
 
 - name: Get hostname
   command: hostname
@@ -17,13 +18,16 @@
 
 - debug:
     msg: '{{ disk_usage }}'
+  when: user_check.stat.exists == true
 
 - name: Extract disk usage percentage
   set_fact:
     root_used_percent: '{{ disk_usage.stdout.split()[4] | regex_replace(''%'','''') }}'
+  when: user_check.stat.exists == true
 
 - debug:
     msg: '{{ root_used_percent }}'
+  when: user_check.stat.exists == true
 
 - mail:
     host: '{{ smtp_host }}'
