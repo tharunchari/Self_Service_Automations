@@ -40,17 +40,61 @@ jobs:
       - name: Run Command on EC2 Instance to generate dumps and send to mail on Jira node
         run: |
           aws ssm send-command \
+            --instance-ids ${{ env.JIRA_INSTANCE_ID_1 }} \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceids,Values=${{ env.JIRA_INSTANCE_ID_1 }}" \
-            --parameters commands="sudo /u01/jira_dump.sh" \
-            --region ${{ vars.AWS_REGION }}
-        shell: bash
+            --parameters commands='sudo /u01/jira_dump.sh' \
+            --region ${{ vars.AWS_REGION }} > /tmp/command_output_1.json
+          COMMAND_ID_1=$(jq -r '.Command.CommandId' < /tmp/command_output_1.json)
+          echo "COMMAND_ID_1=$COMMAND_ID_1" >> $GITHUB_ENV
+ 
+      - name: Verify script execution with retries
+        run: |
+          END_TIME=$(( $(date +%s) + 5000 )) # 5000 seconds timeout
+          while [ $(date +%s) -lt $END_TIME ]; do
+            STATUS=$(aws ssm list-command-invocations \
+              --command-id ${{ env.COMMAND_ID_1 }} \
+              --details \
+              --query "CommandInvocations[0].Status" \
+              --output text)
+            if [ "$STATUS" == "Success" ]; then
+              echo "Shell script executed successfully!"
+              break
+            elif [ "$STATUS" == "Failed" ]; then
+              echo "Shell script execution failed."
+              exit 1
+            else
+              echo "Shell script not yet successful. Retrying in 100 seconds..."
+              sleep 100
+            fi
+          done
 
       - name: Run Command on EC2 Instance to generate dumps and send to mail on Jira node
         run: |
           aws ssm send-command \
+            --instance-ids ${{ env.JIRA_INSTANCE_ID_2 }} \
             --document-name "AWS-RunShellScript" \
-            --targets "Key=instanceids,Values=${{ env.JIRA_INSTANCE_ID_2 }}" \
-            --parameters commands="sudo /u01/jira_dump.sh" \
-            --region ${{ vars.AWS_REGION }}
-        shell: bash
+            --parameters commands='sudo /u01/jira_dump.sh' \
+            --region ${{ vars.AWS_REGION }} > /tmp/command_output_2.json
+          COMMAND_ID_2=$(jq -r '.Command.CommandId' < /tmp/command_output_2.json)
+          echo "COMMAND_ID_2=$COMMAND_ID_2" >> $GITHUB_ENV
+ 
+      - name: Verify script execution with retries
+        run: |
+          END_TIME=$(( $(date +%s) + 5000 )) # 5000 seconds timeout
+          while [ $(date +%s) -lt $END_TIME ]; do
+            STATUS=$(aws ssm list-command-invocations \
+              --command-id ${{ env.COMMAND_ID_2 }} \
+              --details \
+              --query "CommandInvocations[0].Status" \
+              --output text)
+            if [ "$STATUS" == "Success" ]; then
+              echo "Shell script executed successfully!"
+              break
+            elif [ "$STATUS" == "Failed" ]; then
+              echo "Shell script execution failed."
+              exit 1
+            else
+              echo "Shell script not yet successful. Retrying in 100 seconds..."
+              sleep 100
+            fi
+          done
