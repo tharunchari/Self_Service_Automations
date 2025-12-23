@@ -47,7 +47,7 @@ jobs:
           COMMAND_ID_1=$(jq -r '.Command.CommandId' < /tmp/command_output_1.json)
           echo "COMMAND_ID_1=$COMMAND_ID_1" >> $GITHUB_ENV
  
-      - name: Verify script execution with retries
+      - name: Verify script execution with retries on Jira node ${{ env.JIRA_INSTANCE_ID_1 }} 
         run: |
           END_TIME=$(( $(date +%s) + 5000 )) # 5000 seconds timeout
           while [ $(date +%s) -lt $END_TIME ]; do
@@ -78,7 +78,7 @@ jobs:
           COMMAND_ID_2=$(jq -r '.Command.CommandId' < /tmp/command_output_2.json)
           echo "COMMAND_ID_2=$COMMAND_ID_2" >> $GITHUB_ENV
  
-      - name: Verify script execution with retries
+      - name: Verify script execution with retries on Jira node ${{ env.JIRA_INSTANCE_ID_2 }} 
         run: |
           END_TIME=$(( $(date +%s) + 5000 )) # 5000 seconds timeout
           while [ $(date +%s) -lt $END_TIME ]; do
