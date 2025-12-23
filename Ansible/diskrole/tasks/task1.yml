@@ -20,21 +20,16 @@
 - debug: 
     msg: "{{ root_used_percent }}"
 
-- name: Send disk usage alert via AWS SNS
-  command: >
-    aws sns publish
-    --topic-arn {{ sns_topic_arn }}
-    --subject "Alert: {{ host_name.stdout }} - {{ inventory_hostname }} - Disk usage is high"
-    --message "{{ sns_message }}"
-  vars:
-    sns_message: |
-      Disk usage alert for {{ inventory_hostname }}
-
-      Host Name: {{ host_name.stdout }}
-      Mount Point: {{ disk_usage.stdout.split()[5] }}
-      Usage: {{ root_used_percent }}%
-
-      Disk Space Usage Report:
-      {{ disk_usage.stdout }}
-  when: root_used_percent >= root_usage
+  - mail:
+    host: '{{ smtp_host }}'
+    port: '{{ smtp_port }}'
+    subject: 'Alert: {{ host_name.stdout }} - {{ inventory_hostname }} - Disk usage is high'
+    body: "Disk usage alert for {{ inventory_hostname }} \n\n\n
+           Host Name: {{ host_name.stdout }} \n
+           Usage: {{ root_used_percent }}% \n\n\n
+           Disk Space Usage Report:\n
+           {{ disk_usage.stdout }}"
+    from: '{{ from_mail }}'
+    to: '{{ to_mail }}'
+  when: disk.stdout >= root_usage
   ignore_errors: true
