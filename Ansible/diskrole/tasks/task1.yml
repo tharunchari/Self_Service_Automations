@@ -6,6 +6,10 @@
   shell: df -hP / | tail -1
   register: disk_usage
 
+- name: Get hostname
+  command: hostname
+  register: host_name
+
 - debug: 
     msg: "{{ disk_usage }}"
     
