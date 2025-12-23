@@ -10,15 +10,15 @@
   command: hostname
   register: host_name
 
-- debug: 
-    msg: "{{ disk_usage }}"
-    
+- debug:
+    msg: '{{ disk_usage }}'
+
 - name: Extract disk usage percentage
   set_fact:
-    root_used_percent: "{{ disk_usage.stdout.split()[4] | regex_replace('%','') }}"
+    root_used_percent: '{{ disk_usage.stdout.split()[4] | regex_replace(''%'','''') }}'
 
-- debug: 
-    msg: "{{ root_used_percent }}"
+- debug:
+    msg: '{{ root_used_percent }}'
 
 - mail:
     host: '{{ smtp_host }}'
@@ -38,6 +38,6 @@
        {{ disk_usage.stdout }}
     from: '{{ from_mail }}'
     to: '{{ to_mail }}'
+
   when: root_used_percent >= root_usage
   ignore_errors: true
-
