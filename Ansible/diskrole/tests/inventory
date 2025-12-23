@@ -11,7 +11,7 @@ localhost ansible_connection=local
 #172.26.44.76 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_2 }}"
 
 #VITECH-APP-CROWD
-172.26.44.146 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
+#172.26.44.146 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
 
 #VITECH-APP-CONFLUENCE
 #172.26.40.183 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
@@ -31,6 +31,9 @@ localhost ansible_connection=local
 #VM-APP-JENKINS-SLAVE02
 #172.26.56.99 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
 
+#VITECH-APP-SONAR-ENTP
+#172.26.47.38 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
+
 #VITECH-SVN-NODE0
 172.26.46.98 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
 
@@ -48,9 +51,6 @@ localhost ansible_connection=local
 
 #sonar-app-v310
 172.26.49.240 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
-
-#VITECH-APP-SONAR-ENTP
-172.26.47.38 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_1 }}"
 
 #vm-artifactoryha-prod-alb
 10.172.2.141 ansible_user=root ansible_ssh_pass="{{ ansible_ssh_pass_2 }}"
