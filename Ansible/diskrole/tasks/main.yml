@@ -2,7 +2,7 @@
 # tasks file for diskrole
 - name: run task
   include_tasks: task1.yml
-#- include_tasks: task2.yml
-#- include_tasks: task3.yml
-#- include_tasks: task4.yml
-#- include_tasks: task5.yml
+- include_tasks: task2.yml
+- include_tasks: task3.yml
+- include_tasks: task4.yml
+- include_tasks: task5.yml
