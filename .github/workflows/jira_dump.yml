@@ -1,4 +1,4 @@
-name: Create JIRA Dupms
+name: Generate JIRA Dupms
 
 env:
   JIRA_INSTANCE_ID_1: i-0701b695cf611c383
@@ -32,8 +32,8 @@ jobs:
             # Send notification for invalid key
             aws sns publish \
               --topic-arn arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd \
-              --message "$(echo -e "**JIRA Dump Creation Aborted**\n\nInvalid authentication key provided. JIRA Dump Creation process is not started.\n$(date +%Y-%m-%d)")" \
-              --subject "JIRA Dump Creation Aborted: Invalid Key"
+              --message "$(echo -e "**JIRA Dump Generation Aborted**\n\nInvalid authentication key provided. JIRA Dump Generation process is not started.\n$(date +%Y-%m-%d)")" \
+              --subject "JIRA Dump Generation Aborted: Invalid Key"
             exit 1
           fi
 
