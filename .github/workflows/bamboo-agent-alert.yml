@@ -1,0 +1,70 @@
+name: Bamboo Agents Down Alert
+permissions:
+  contents: read
+
+env:
+  BAMBOO_URL: https://bamboo.vitechinc.com/bamboo
+  SNS_TOPIC_ARN: arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * 1-5'   # Every hour
+
+jobs:
+  check-bamboo-agents:
+    name: Monitering Bamboo Crop & AWSDEV Agents
+    runs-on: ubuntu-24.04
+    steps:       
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Get Bamboo agent status
+        id: bamboo_status
+        env:
+          BAMBOO_TOKEN: ${{ secrets.BAMBOO_PROD_PAT}}
+        run: |
+          set -o pipefail
+
+          agents=$(curl -sS \
+            -H "Authorization: Bearer $BAMBOO_TOKEN" \
+            -H "Accept: application/json" \
+            "$BAMBOO_URL/rest/api/latest/agent?offline=false" \
+          | jq -r '.[] 
+              | select(
+                  .active == false
+                  and (.name | startswith("CORPCLOUD") | not)
+                  and (.name | startswith("AWSDEV") | not)
+                )
+              | .name')
+
+          echo "AGENTS<<EOF" >> $GITHUB_ENV
+          echo "$agents" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Print the output
+        run: |
+          if [[ -z "$AGENTS" ]]; then
+            echo "No offline agents detected"
+          else
+            echo "Offline agents:"
+            echo "$AGENTS"
+          fi
+
+      - name: Send mail alert via AWS SNS
+        if: env.AGENTS != ''
+        run: |
+          aws sns publish \
+            --topic-arn "$SNS_TOPIC_ARN" \
+            --subject "Alert: Bamboo agents are down" \
+            --message "$(cat <<EOF
+            The following Bamboo agents are currently offline:
+
+            $AGENTS
+            EOF
+            )"
+        continue-on-error: true
