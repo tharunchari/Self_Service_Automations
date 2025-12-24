@@ -37,7 +37,7 @@ jobs:
             exit 1
           fi
 
-      - name: Run Command on EC2 Instance to generate dumps and send to mail on Jira node
+      - name: Run Command on EC2 Instance to generate dumps and send to mail on Jira node 1
         run: |
           aws ssm send-command \
             --instance-ids ${{ env.JIRA_INSTANCE_ID_1 }} \
@@ -46,6 +46,16 @@ jobs:
             --region ${{ vars.AWS_REGION }} > /tmp/command_output_1.json
           COMMAND_ID_1=$(jq -r '.Command.CommandId' < /tmp/command_output_1.json)
           echo "COMMAND_ID_1=$COMMAND_ID_1" >> $GITHUB_ENV
+
+      - name: Run Command on EC2 Instance to generate dumps and send to mail on Jira node 2
+        run: |
+          aws ssm send-command \
+            --instance-ids ${{ env.JIRA_INSTANCE_ID_2 }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands='sudo /u01/jira_dump.sh' \
+            --region ${{ vars.AWS_REGION }} > /tmp/command_output_2.json
+          COMMAND_ID_2=$(jq -r '.Command.CommandId' < /tmp/command_output_2.json)
+          echo "COMMAND_ID_2=$COMMAND_ID_2" >> $GITHUB_ENV
  
       - name: Verify script execution with retries on Jira node ${{ env.JIRA_INSTANCE_ID_1 }} 
         run: |
@@ -67,16 +77,6 @@ jobs:
               sleep 100
             fi
           done
-
-      - name: Run Command on EC2 Instance to generate dumps and send to mail on Jira node
-        run: |
-          aws ssm send-command \
-            --instance-ids ${{ env.JIRA_INSTANCE_ID_2 }} \
-            --document-name "AWS-RunShellScript" \
-            --parameters commands='sudo /u01/jira_dump.sh' \
-            --region ${{ vars.AWS_REGION }} > /tmp/command_output_2.json
-          COMMAND_ID_2=$(jq -r '.Command.CommandId' < /tmp/command_output_2.json)
-          echo "COMMAND_ID_2=$COMMAND_ID_2" >> $GITHUB_ENV
  
       - name: Verify script execution with retries on Jira node ${{ env.JIRA_INSTANCE_ID_2 }} 
         run: |
