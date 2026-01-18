@@ -296,7 +296,7 @@ jobs:
               --query 'StandardOutputContent' \
               --output text | head -n 1)
 
-            if [[ -n "$INSTANCE_ALIVE" ]]; then
+            if grep -q "HTTP/1.1 200" curl_check.txt; then
               echo "<html>" > email_body.html
               echo "<head><style>" >> email_body.html
               echo "  body { font-family: Arial, sans-serif; background-color: #f9f9f9; color: #333; padding: 20px; }" >> email_body.html
