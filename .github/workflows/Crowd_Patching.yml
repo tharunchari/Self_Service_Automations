@@ -12,7 +12,7 @@ on:
     inputs:
       environment:
         required: true
-        description: "The environment to patch (crowd or crowddr)"
+        description: 'The environment to patch (crowd or crowddr)'
 
   workflow_call:
     inputs:
@@ -50,7 +50,8 @@ jobs:
 
       - name: Set environment-specific variables
         run: |
-          if [ "$ENVIRONMENT" == "crowddr" ]; then
+          set -euo pipefail
+          if [ "$ENVIRONMENT" = "crowddr" ]; then
             echo "Using crowddr configuration"
             echo "ASG_NAME=CROWDDR-CrowddrAWSScalingGroup-R8z77BTENVAJ" >> $GITHUB_ENV
             echo "URL=https://crowddr.vitechinc.com/crowddr" >> $GITHUB_ENV
@@ -58,9 +59,9 @@ jobs:
             echo "SUBJECT_PREFIX=Restart of crowdDR Nodes for Scheduled Patching" >> $GITHUB_ENV
             echo "BODY_PREFIX=CrowdDR patching is scheduled." >> $GITHUB_ENV
             echo "AWS_REGION=us-west-2" >> $GITHUB_ENV
-          elif [ "$ENVIRONMENT" == "crowd" ]; then
+          elif [ "$ENVIRONMENT" = "crowd" ]; then
             if [ -z "${{ secrets.VITECH_LINUX_ZOIO_PASSWORD }}" ]; then
-              echo "ERROR: Secret VITECH_LINUX_ZOIO_PASSWORD not set."
+              echo "ERROR: Secret VITECH_LINUX_ZOIO_PASSWORD not set for JIRAPROD environment."
               exit 1
             fi
             echo "Using crowd configuration"
@@ -71,7 +72,7 @@ jobs:
             echo "BODY_PREFIX=crowd patching is scheduled." >> $GITHUB_ENV
             echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
           else
-            echo "Invalid environment specified. Please choose 'crowd' or 'crowddr'."
+            echo "Invalid environment specified. Please choose either 'crowddr' or 'crowd'."
             exit 1
           fi
 
@@ -84,55 +85,55 @@ jobs:
 
       - name: Send pre-patching notification via SNS
         run: |
+          # Export context at start of script
+          ENVIRONMENT="${ENVIRONMENT}"
+          ASG_NAME="${ASG_NAME}"
+          SNS_TOPIC="${SNS_TOPIC}"
+          SUBJECT_PREFIX="${SUBJECT_PREFIX}"
+          BODY_PREFIX="${BODY_PREFIX}"
+
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
-            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+            --auto-scaling-group-name "$ASG_NAME" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
             --output text)
           if [[ -z "$INSTANCE_IDS" ]]; then
             echo "ERROR: No instances found in ASG. Exiting."
             exit 1
           fi
-
-      - name: Generate HTML email body (pre-patching)
-        run: |
-          echo '<html>'                            >  email_body.html
-          echo '<head><style>'                   >>  email_body.html
-          echo '  body { font-family: Arial, sans-serif; background-color: #f9f9f9; color: #333; padding: 20px; }' >> email_body.html
-          echo '  table { border-collapse: collapse; width: 100%; background-color: #fff; }' >> email_body.html
-          echo '  th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }' >> email_body.html
-          echo '  th { background-color: #0073e6; color: white; }' >> email_body.html
-          echo '  tr:nth-child(even) { background-color: #f2f2f2; }' >> email_body.html
-          echo '</style></head>'                  >>  email_body.html
-          echo '<body>'                          >>  email_body.html
-          echo "<h2>${BODY_PREFIX}</h2>"         >>  email_body.html
+          echo "<html>" > email_body.html
+          echo "<head><style>" >> email_body.html
+          echo "  body { font-family: Arial, sans-serif; background-color: #f9f9f9; color: #333; padding: 20px; }" >> email_body.html
+          echo "  table { border-collapse: collapse; width: 100%; background-color: #fff; }" >> email_body.html
+          echo "  th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }" >> email_body.html
+          echo "  th { background-color: #0073e6; color: white; }" >> email_body.html
+          echo "  tr:nth-child(even) { background-color: #f2f2f2; }" >> email_body.html
+          echo "</style></head>" >> email_body.html
+          echo "<body>" >> email_body.html
+          echo "<h2>$BODY_PREFIX</h2>" >> email_body.html
           echo "<p>Please be aware of any disruptions during this process.</p>" >> email_body.html
-          echo "<h3>Impacted EC2 Instances</h3>" >>  email_body.html
-          echo '<table>'                         >>  email_body.html
-          echo '  <tr><th>Instance ID</th></tr>' >>  email_body.html
-          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
-            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
-            --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
-            --output text)
-          for I in $INSTANCE_IDS; do
-            echo "  <tr><td>$I</td></tr>"         >> email_body.html
+          echo "<h3>Impacted EC2 Instances</h3>" >> email_body.html
+          echo "<table>" >> email_body.html
+          echo "<tr><th>Instance ID</th></tr>" >> email_body.html
+          for line in $INSTANCE_IDS; do
+            echo "<tr><td>$line</td></tr>" >> email_body.html
           done
-          echo '</table>'                        >>  email_body.html
+          echo "</table>" >> email_body.html
           echo "<p style='margin-top: 30px; font-size: 12px; color: #888;'>Sent by GitHub Actions via AWS SES</p>" >> email_body.html
-          echo '</body></html>'                  >>  email_body.html
+          echo "</body></html>" >> email_body.html
 
-      - name: Send SES email (pre-patching)
-        run: |
           HTML_BODY=$(jq -Rs . < email_body.html)
           aws ses send-email \
             --from "v3atlassianops@vitechinc.com" \
             --destination "ToAddresses=v3atlassianops@vitechinc.com" \
-            --message "Subject={Data='${SUBJECT_PREFIX}'},Body={Html={Data=${HTML_BODY}}}"
+            --message "Subject={Data='$SUBJECT_PREFIX'},Body={Html={Data=$HTML_BODY}}"
 
       - name: Get Auto Scaling Group Instances
         id: get-instances
         run: |
+          ENVIRONMENT="${ENVIRONMENT}"
+          ASG_NAME="${ASG_NAME}"
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
-            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+            --auto-scaling-group-name "$ASG_NAME" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
             --output text | tr -s '\n' ' ')
           echo "INSTANCE_IDS=$INSTANCE_IDS" >> $GITHUB_ENV
@@ -140,85 +141,242 @@ jobs:
 
       - name: Set Auto Scaling Group to 1 instance
         run: |
+          ASG_NAME="${ASG_NAME}"
           aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+            --auto-scaling-group-name "$ASG_NAME" \
             --min-size 1
 
-      # PATCHING LOOP - omitted for brevity in this excerpt, implement patch step as in your script
-
-      - name: Send SES email (per-instance after patch example)
-        if: always()
+      - name: Patch Each Instance
         run: |
-          # Simulate variables for demonstration; set these as outputs, envs, or from patch step
-          INSTANCE_ID=i-1234567890abcdef0
-          INSTANCE_PRIVATE_IP=10.0.1.123
-          BEFORE_VERSION="Amazon Linux 2"
-          AFTER_VERSION="Amazon Linux 2"
-          ENVIRONMENT=${ENVIRONMENT:-crowd}
-          # Use ALIVE in this example; adjust logic per your workflow
-          ALIVE_STATUS="✅ ALIVE"
+          set -euo pipefail
 
-          echo '<html>'                            >  email_body.html
-          echo '<head><style>'                   >>  email_body.html
-          echo '  body { font-family: Arial, sans-serif; background-color: #f9f9f9; color: #333; padding: 20px; }' >> email_body.html
-          echo '  table { border-collapse: collapse; width: 100%; background-color: #fff; }' >> email_body.html
-          echo '  th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }' >> email_body.html
-          echo '  th { background-color: #0073e6; color: white; }' >> email_body.html
-          echo '  tr:nth-child(even) { background-color: #f2f2f2; }' >> email_body.html
-          echo '  .status-alive { color: green; font-weight: bold; }' >> email_body.html
-          echo '</style></head>'                  >>  email_body.html
-          echo '<body>'                          >>  email_body.html
-          echo "<p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>" >> email_body.html
-          echo "<table>"                         >>  email_body.html
-          echo "  <tr><th>Instance ID</th><th>Instance IP</th><th>Before Patching Version</th><th>After Patching Version</th><th>Alive Status</th></tr>" >> email_body.html
-          echo "  <tr>"                          >>  email_body.html
-          echo "    <td>${INSTANCE_ID}</td>"     >>  email_body.html
-          echo "    <td style='background-color: #d4edda;'>${INSTANCE_PRIVATE_IP}</td>" >> email_body.html
-          echo "    <td style='background-color: #d4edda;'>${BEFORE_VERSION}</td>"     >> email_body.html
-          echo "    <td style='background-color: #d4edda;'>${AFTER_VERSION}</td>"      >> email_body.html
-          echo "    <td class='status-alive' style='background-color: #d4edda;'>${ALIVE_STATUS}</td>" >> email_body.html
-          echo "  </tr>"                         >>  email_body.html
-          echo "</table>"                        >>  email_body.html
-          echo "<p style='margin-top: 30px; font-size: 12px; color: #888;'>Sent by GitHub Actions via AWS SES</p>" >> email_body.html
-          echo '</body></html>'                  >>  email_body.html
+          ENVIRONMENT="${ENVIRONMENT}"
+          ASG_NAME="${ASG_NAME}"
+          SNS_TOPIC="${SNS_TOPIC}"
+          SUBJECT_PREFIX="${SUBJECT_PREFIX}"
+          BODY_PREFIX="${BODY_PREFIX}"
+          URL="${URL}"
+          INSTANCE_IDS="${INSTANCE_IDS}"
+          TOKEN="${TOKEN:-}"
 
-          EMAIL_BODY=$(jq -Rs . < email_body.html)
-          aws ses send-email \
-            --from "v3atlassianops@vitechinc.com" \
-            --destination "ToAddresses=v3atlassianops@vitechinc.com" \
-            --message "Subject={Data='[${ENVIRONMENT}] crowd Node Successfully Patched - ${INSTANCE_ID} (${INSTANCE_PRIVATE_IP})'},Body={Html={Data=${EMAIL_BODY}}}"
+          INSTANCE_IDS_ARRAY=($INSTANCE_IDS)
+          PATCH_SUCCESS=true
+
+          for INSTANCE_ID in "${INSTANCE_IDS_ARRAY[@]}"; do
+            echo "==============================="
+            echo "Patching instance: $INSTANCE_ID"
+
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters 'commands=["cat /etc/system-release"]' \
+              --query 'Command.CommandId' --output text > before-version-command-id.txt
+            BEFORE_COMMAND_ID=$(cat before-version-command-id.txt)
+            sleep 10
+            BEFORE_VERSION=$(aws ssm get-command-invocation \
+              --command-id "$BEFORE_COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query 'StandardOutputContent' \
+              --output text | head -n 1)
+
+            aws autoscaling enter-standby \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --instance-ids "$INSTANCE_ID" \
+              --should-decrement-desired-capacity
+
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters 'commands=["sudo service httpd stop", "sudo service crowd stop"]'
+
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters 'commands=["dnf -y --releasever=latest update"]' \
+              --query 'Command.CommandId' --output text > command-id.txt
+            COMMAND_ID=$(cat command-id.txt)
+            for i in {1..30}; do
+              COMMAND_STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+              if [[ "$COMMAND_STATUS" == "Success" ]]; then
+                break
+              elif [[ "$COMMAND_STATUS" == "Failed" ]]; then
+                exit 1
+              fi
+              sleep 30
+            done
+            if [[ "$COMMAND_STATUS" != "Success" ]]; then
+              exit 1
+            fi
+
+            aws ec2 stop-instances --instance-ids "$INSTANCE_ID"
+            aws ec2 wait instance-stopped --instance-ids "$INSTANCE_ID"
+            aws ec2 start-instances --instance-ids "$INSTANCE_ID"
+            aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+
+            SSM_READY=false
+            for i in {1..30}; do
+              STATUS=$(aws ssm describe-instance-information --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
+              if [[ "$STATUS" == "Online" ]]; then
+                SSM_READY=true
+                break
+              fi
+              sleep 15
+            done
+            if [[ "$SSM_READY" == "false" ]]; then
+              aws sns publish \
+                --topic-arn "$SNS_TOPIC" \
+                --subject "SSM Not Ready for Instance $INSTANCE_ID" \
+                --message "SSM agent did not become ready after EC2 start in $ENVIRONMENT. Please investigate."
+              exit 1
+            fi
+
+            INSTANCE_STATE=$(aws ec2 describe-instance-status --instance-ids "$INSTANCE_ID" --query 'InstanceStatuses[0].InstanceState.Name' --output text)
+            if [[ "$INSTANCE_STATE" != "running" ]]; then
+              aws sns publish \
+                --topic-arn "$SNS_TOPIC" \
+                --subject "EC2 Start Failure for Instance $INSTANCE_ID" \
+                --message "Instance $INSTANCE_ID failed to start after $ENVIRONMENT patching. Please investigate."
+              exit 1
+            fi
+
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters 'commands=["sudo cp -r /etc/httpd/conf.d /etc/httpd/conf.d.bak-$(date +%Y%m%d-%H%M%S)", "sudo mv /etc/httpd/conf.d/ssl.conf /etc/httpd/conf.d/ssl.conf-bkp ", "sudo service httpd restart", "sudo service crowd restart"]'
+
+            aws autoscaling exit-standby \
+              --auto-scaling-group-name "$ASG_NAME" \
+              --instance-ids "$INSTANCE_ID"
+
+            for i in {1..10}; do
+              sleep 60
+            done
+
+          INSTANCE_PRIVATE_IP=$(aws ec2 describe-instances \
+            --instance-ids "$INSTANCE_ID" \
+            --query 'Reservations[].Instances[].PrivateIpAddress' \
+            --output text)
+          
+          # Execute the curl on the target instance with SSM, capture only header output
+          CURL_COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=['curl -Ik http://$INSTANCE_PRIVATE_IP:8095/']" \
+            --query 'Command.CommandId' --output text)
+          
+          # Wait (can tune, 10s often enough for basic curl)
+          sleep 30
+          
+          CURL_OUTPUT=$(aws ssm get-command-invocation \
+            --command-id "$CURL_COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text)
+          
+          echo "$CURL_OUTPUT" > curl_check.txt
+          echo "Curl output on instance $INSTANCE_ID ($INSTANCE_PRIVATE_IP):"
+          cat curl_check.txt
+          
+          if grep -q "HTTP/1.1 200" curl_check.txt; then
+            echo "Status 200 OK from $INSTANCE_PRIVATE_IP:8095/"
+          else
+            echo "ERROR: Did not get HTTP/1.1 200 from $INSTANCE_PRIVATE_IP:8095/. Failing job."
+            exit 1
+          fi
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name "AWS-RunShellScript" \
+              --parameters 'commands=["cat /etc/system-release"]' \
+              --query 'Command.CommandId' --output text > after-version-command-id.txt
+            AFTER_COMMAND_ID=$(cat after-version-command-id.txt)
+            sleep 10
+            AFTER_VERSION=$(aws ssm get-command-invocation \
+              --command-id "$AFTER_COMMAND_ID" \
+              --instance-id "$INSTANCE_ID" \
+              --query 'StandardOutputContent' \
+              --output text | head -n 1)
+
+            if [[ -n "$INSTANCE_ALIVE" ]]; then
+              echo "<html>" > email_body.html
+              echo "<head><style>" >> email_body.html
+              echo "  body { font-family: Arial, sans-serif; background-color: #f9f9f9; color: #333; padding: 20px; }" >> email_body.html
+              echo "  table { border-collapse: collapse; width: 100%; background-color: #fff; }" >> email_body.html
+              echo "  th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }" >> email_body.html
+              echo "  th { background-color: #0073e6; color: white; }" >> email_body.html
+              echo "  tr:nth-child(even) { background-color: #f2f2f2; }" >> email_body.html
+              echo "  .status-alive { color: green; font-weight: bold; }" >> email_body.html
+              echo "</style></head>" >> email_body.html
+              echo "<body>" >> email_body.html
+              echo "<p>The following Jira node was successfully patched in <b>${ENVIRONMENT}</b>:</p>" >> email_body.html
+              echo "<table>" >> email_body.html
+              echo "  <tr><th>Instance ID</th><th>Instance IP</th><th>Before Patching Version</th><th>After Patching Version</th><th>Alive Status</th></tr>" >> email_body.html
+              echo "  <tr>" >> email_body.html
+              echo "    <td>${INSTANCE_ID}</td>" >> email_body.html
+              echo "    <td style='background-color: #d4edda;'>${INSTANCE_PRIVATE_IP}</td>" >> email_body.html
+              echo "    <td style='background-color: #d4edda;'>${BEFORE_VERSION}</td>" >> email_body.html
+              echo "    <td style='background-color: #d4edda;'>${AFTER_VERSION}</td>" >> email_body.html
+              echo "    <td class='status-alive' style='background-color: #d4edda;'>✅ ALIVE</td>" >> email_body.html
+              echo "  </tr>" >> email_body.html
+              echo "</table>" >> email_body.html
+              echo "<p style='margin-top: 30px; font-size: 12px; color: #888;'>Sent by GitHub Actions via AWS SES</p>" >> email_body.html
+              echo "</body></html>" >> email_body.html
+              EMAIL_BODY=$(jq -Rs . < email_body.html)
+              aws ses send-email \
+                --from "v3atlassianops@vitechinc.com" \
+                --destination "ToAddresses=v3atlassianops@vitechinc.com" \
+                --message "Subject={Data='[${ENVIRONMENT}] crowd Node Successfully Patched - ${INSTANCE_ID} (${INSTANCE_PRIVATE_IP})'},Body={Html={Data=${EMAIL_BODY}}}"
+            else
+              aws sns publish \
+                --topic-arn "$SNS_TOPIC" \
+                --subject "$SUBJECT_PREFIX Failed on Node $INSTANCE_PRIVATE_IP" \
+                --message "Patching of instance $INSTANCE_ID ($INSTANCE_PRIVATE_IP) failed. Please investigate."
+              PATCH_SUCCESS=false
+              break
+            fi
+          done
+          if [[ "$PATCH_SUCCESS" == "false" ]]; then
+            exit 1
+          fi
 
       - name: Set Auto Scaling Group to 2
         run: |
+          ASG_NAME="${ASG_NAME}"
           aws autoscaling update-auto-scaling-group \
-            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+            --auto-scaling-group-name "$ASG_NAME" \
             --min-size 2
 
-      - name: Check URL Status Code
+      - name: Check URL status
         id: check_status
         run: |
-          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "${{ env.URL }}/status")
+          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "$URL/status")
           echo "URL Status Code: $STATUS_CODE"
+      
           if [[ "$STATUS_CODE" -eq 200 ]]; then
-            echo "URL is up and running with status code 200"
-            echo "status_code=200" >> $GITHUB_ENV
+            echo "status_code=200" >> $GITHUB_OUTPUT
           else
-            echo "Error: URL did not return status code 200. Status Code: $STATUS_CODE"
-            echo "status_code=$STATUS_CODE" >> $GITHUB_ENV
+            echo "status_code=$STATUS_CODE" >> $GITHUB_OUTPUT
             aws sns publish \
-              --topic-arn ${{ env.SNS_TOPIC }} \
+              --topic-arn "$SNS_TOPIC" \
               --subject "${{ github.event.inputs.environment }} App Down Alert - Status Code: $STATUS_CODE" \
-              --message "The app at ${{ env.URL }} is down. Status code: $STATUS_CODE. Please investigate."
+              --message "The app at $URL is down. Status code: $STATUS_CODE. Please investigate."
             exit 3
+          fi
+
 
       - name: Send post-patching notification via SNS
-        if: env.status_code == '200'
+        if: steps.check_status.outputs.status_code == '200'
         run: |
+          ASG_NAME="${ASG_NAME}"
+          SNS_TOPIC="${SNS_TOPIC}"
+          SUBJECT_PREFIX="${SUBJECT_PREFIX}"
+          BODY_PREFIX="${BODY_PREFIX}"
+          URL="${URL}"
+
           INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
-            --auto-scaling-group-name "${{ env.ASG_NAME }}" \
+            --auto-scaling-group-name "$ASG_NAME" \
             --query 'AutoScalingGroups[0].Instances[*].InstanceId' \
             --output text)
           aws sns publish \
-            --topic-arn ${{ env.SNS_TOPIC }} \
-            --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "$(printf "${{ env.BODY_PREFIX }} The patching has been completed successfully ${{ env.URL }}. Please reach out to v3atlassianops@vitechinc.com for any issues.\n\n **Instance IDs:**\n%s\n" "$INSTANCE_IDS")"
+            --topic-arn "$SNS_TOPIC" \
+            --subject "Rolling $SUBJECT_PREFIX Completed" \
+            --message "$(printf "$BODY_PREFIX The patching has been completed successfully $URL. Please reach out to v3atlassianops@vitechinc.com for any issues.\\n\\n **Instance IDs:**\\n%s\\n" "$INSTANCE_IDS")"
