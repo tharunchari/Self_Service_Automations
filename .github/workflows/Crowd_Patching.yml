@@ -347,20 +347,29 @@ jobs:
             --auto-scaling-group-name "$ASG_NAME" \
             --min-size 2
 
-      - name: Check URL status
+      - name: Check URL state
         id: check_status
         run: |
-          STATUS_CODE=$(curl --write-out "%{http_code}" --silent --output /dev/null "$URL/status")
-          echo "URL Status Code: $STATUS_CODE"
-      
-          if [[ "$STATUS_CODE" -eq 200 ]]; then
-            echo "status_code=200" >> $GITHUB_OUTPUT
+          URL="${URL}"
+          SNS_TOPIC="${SNS_TOPIC}"
+          ENVIRONMENT="${ENVIRONMENT}"
+
+          # Fetch only the body; ignore status code
+          STATE=$(curl --silent "$URL/status" | jq -r '.state // empty')
+
+          echo "Received state: $STATE"
+
+          if [[ "$STATE" == "RUNNING" ]]; then
+            echo "state=RUNNING" >> $GITHUB_OUTPUT
+            echo "URL:${URL} state is RUNNING"
           else
-            echo "status_code=$STATUS_CODE" >> $GITHUB_OUTPUT
+            echo "state=$STATE" >> $GITHUB_OUTPUT
+            MESSAGE="The app at $URL is unhealthy. State: $STATE. Please investigate."
+            echo "$MESSAGE"
             aws sns publish \
               --topic-arn "$SNS_TOPIC" \
-              --subject "${{ github.event.inputs.environment }} App Down Alert - Status Code: $STATUS_CODE" \
-              --message "The app at $URL is down. Status code: $STATUS_CODE. Please investigate."
+              --subject "$ENVIRONMENT App Down Alert - State: $STATE" \
+              --message "$MESSAGE"
             exit 3
           fi
 
