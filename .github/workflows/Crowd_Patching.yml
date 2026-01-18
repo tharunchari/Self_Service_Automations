@@ -248,7 +248,9 @@ jobs:
               --auto-scaling-group-name "$ASG_NAME" \
               --instance-ids "$INSTANCE_ID"
 
-            for i in {1..10}; do
+            echo "Waiting 300 seconds to allow services and cluster to stabilize..."
+            for i in {1..5}; do
+              echo "  ... waiting $((i*60)) seconds elapsed"
               sleep 60
             done
 
