@@ -1,0 +1,33 @@
+- name: List, sort Bamboo agents, and send email in clean table format
+  hosts: localhost
+  vars_files:
+    - names.yml
+  tasks:
+    - name: Get and sort Bamboo agents
+      shell: |
+        curl -u  {{ username }}:'{{ password }}'  https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false | \
+        jq -r '.[] | select(.active == true and (.name | startswith("BAMBOO-OEL9") or startswith("VITECH"))) | .name' | \
+        sort -t '-' -k4,4n | \
+        nl -w 1 | \
+        awk '{printf "%-6s %-60s\n", $1, $2}' 
+      register: bamboo_agents
+ 
+    - name: Format Bamboo agents into table
+      set_fact:
+        bamboo_table: |
+          {% set header = "Index   Agent Name" %}
+          {% set separator = "------  ------------------------------------------------------------" %}
+          {% set rows = bamboo_agents.stdout %}
+          {{ header }}
+          {{ separator }}
+          {{ rows }}
+ 
+    - name: Send email with table format
+      mail:
+        host: smtp-relay.vitech.com
+        port: 25
+        to: v3atlassianops@vitechinc.com
+        subject: "Bamboo Agents Status"
+        body: |
+          All Bamboo Agents Status 
+          {{ bamboo_table }}
