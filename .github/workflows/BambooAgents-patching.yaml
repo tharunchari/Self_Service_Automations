@@ -1,9 +1,11 @@
 name: Bamboo Agents Patching Pipeline
 on:
   workflow_dispatch:
-    KEY:
-      required: true
-      description: Authentication Key for OPS Internal Tools
+    inputs:
+      KEY:
+        description: 'Authentication Key for OPS Internal Tools'
+        required: true
+        type: string
 
 env:
   RUNNER_NAME: "Internal_Tools_Automation_Server"
@@ -35,7 +37,7 @@ jobs:
         id: validate_key
         if: github.event_name == 'workflow_dispatch'
         run: |
-          if [[ "${{ inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
+          if [[ "${{ github.event.inputs.KEY }}" != "${{ secrets.OPS_INTERNAL_TOOLS_PASSWORD }}" ]]; then
             echo "Invalid authentication key."
             # Send notification for invalid key
             aws sns publish \
