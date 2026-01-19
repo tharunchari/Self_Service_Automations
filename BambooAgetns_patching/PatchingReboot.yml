@@ -1,0 +1,78 @@
+
+- name: Update and reboot 
+  hosts: all
+  become: true
+  become_user: root
+  vars:
+    ansible_python_interpreter: /usr/bin/python
+  tasks:
+    - name: Check the kernel version before webserver patching
+      shell: uname -r
+      register: kversion
+
+    - name: Get hostname
+      shell: hostname
+      register: hostname
+
+    - name: Debug kernel version, hostname, and IP address
+      debug:
+        msg: |
+          Hostname: {{ hostname.stdout }}
+          IP Address: {{ ansible_default_ipv4.address }}
+          Kernel Version: {{ kversion.stdout }}
+
+    - name: Send email with kernel version details in HTML table
+      run_once: true
+      delegate_to: localhost
+      local_action:
+        module: community.general.mail
+        host: smtp-relay.vitech.com
+        port: 25
+        to: v3atlassianops@vitechinc.com
+        subject: "Before Patching Kernel Version Report"
+        body: |
+          <!DOCTYPE html>
+          <html>
+          <body>
+            <h2>Kernel Version Details Before Patching</h2>
+            <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%; text-align: left;">
+              <thead>
+                <tr style="background-color: #f2f2f2;">
+                  <th>IP Address</th>
+                  <th>Hostname</th>
+                  <th>Kernel Version</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for host in play_hosts %}
+                <tr>
+                  <td>{{ hostvars[host].ansible_default_ipv4.address }}</td>
+                  <td>{{ hostvars[host].hostname.stdout }}</td>
+                  <td>{{ hostvars[host].kversion.stdout }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </body>
+          </html>
+        subtype: html
+
+
+    - name: Upgrade ALL OS packages
+      shell: yum update -y
+      register: yum_update_result
+      ignore_errors: yes
+
+
+        
+    - name: Reboot the server
+      shell: |
+        sleep 5
+        reboot
+      async: 1
+      poll: 0
+      ignore_errors: yes
+        
+    - name: Pause for 180 seconds after upgrading packages
+      pause:
+        seconds: 360
