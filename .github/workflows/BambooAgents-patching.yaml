@@ -1,11 +1,9 @@
-
----
-name: Bamboo Agetns Patching Pipeline
+name: Bamboo Agents Patching Pipeline
 on:
   workflow_dispatch:
-      KEY:
-        required: true
-        description: Authentication Key for OPS Internal Tools
+    KEY:
+      required: true
+      description: Authentication Key for OPS Internal Tools
 
 env:
   RUNNER_NAME: "Internal_Tools_Automation_Server"
@@ -47,11 +45,7 @@ jobs:
             exit 1
           fi
 
-
-
-
           # Validate component based on environment
-
           if [[ "$APP_ENV" == "prod" ]]; then
             VALID_COMPONENTS=("crucible" "sonarv310uc" "jenkins")
           elif [[ "$APP_ENV" == "qa" ]]; then
@@ -61,33 +55,25 @@ jobs:
             exit 1
           fi
 
-
           # Check if the selected component is valid
-
           if [[ ! " ${VALID_COMPONENTS[@]} " =~ " ${APP_COMP} " ]]; then
             echo "Error: Invalid component selected for environment $APP_ENV"
             exit 1
           fi
 
-
-     - name: Send the Mail Notification 
-        run: >
+      - name: Send the Mail Notification 
+        run: |
           pwd
-
           ls -la
-
           sudo ansible-playbook Jenkins_Patching/mail.yaml -i $INVENTORY_PATH --extra-vars "app_component=${{ github.event.inputs.APP_COMPONENT }}" -vvv
         continue-on-error: false
         
       - name: Stop the System Service
-        run: >
+        run: |
           pwd
-
           ls -la
-
           sudo ansible-playbook Jenkins_Patching/stop.yaml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
         continue-on-error: false
-
 
       - name: Take System Snapshot
         run: |
@@ -100,26 +86,22 @@ jobs:
         continue-on-error: false
         
       - name: Apply System Patches and Reboot
-        run: >
+        run: |
           pwd
-
           ls -la
-
           sudo ansible-playbook Jenkins_Patching/PatchandReboot.yml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
         continue-on-error: false
 
-      - name: wait for 180 seconds
+      - name: Wait for 180 seconds
         run: sleep 180
+
       - name: Start the system service
-        run: >
+        run: |
           pwd
-
           ls -la
-
           sudo ansible-playbook Jenkins_Patching/startandmail.yaml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
         continue-on-error: false
         
-
   notify-on-failure:  # ✅ Now inside "jobs"
     name: Send Failure Notification
     needs: execute-job
