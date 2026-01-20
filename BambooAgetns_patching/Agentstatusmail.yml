@@ -1,8 +1,10 @@
-- name: List Bamboo agents and send notification
+---
+- name: List, sort Bamboo agents, and send notification
   hosts: localhost
   gather_facts: false
   vars_files:
     - names.yml
+ 
   tasks:
     - name: Get and sort Bamboo agents
       shell: >
@@ -13,22 +15,24 @@ https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false
         | sort -t '-' -k4,4n
         | nl -w 1
         | awk '{printf "%-6s %-60s\\n", $1, $2}'
+
       register: bamboo_agents
       no_log: true
  
-    - name: Format Bamboo agents
+    - name: Format Bamboo agents into table
       set_fact:
         bamboo_table: |
           Index   Agent Name
           ------  ------------------------------------------------------------
           {{ bamboo_agents.stdout }}
  
-    - name: SNS Notification
+    - name: Patching Email Notification via SNS
       community.aws.sns:
-        topic: arn:aws:sns:us-east-1:389180911583:Testing
-        subject: Bamboo Agents Patching
+        topic: "arn:aws:sns:us-east-1:389180911583:Testing"
+        subject: "Bamboo Agents Patching"
         msg: |
           Below Bamboo agents are going to be patched:
           {{ bamboo_table }}
       no_log: true
 
+ 
