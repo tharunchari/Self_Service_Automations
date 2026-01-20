@@ -27,7 +27,7 @@ https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false
 
         | awk '{printf "%-6s %-60s\n", $1, $2}'
 
-      register: "{{ bamboo_agents }}"
+      register: '{{ bamboo_agents }}'
 
       no_log: true
  
