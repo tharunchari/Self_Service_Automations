@@ -22,12 +22,22 @@
           {{ separator }}
           {{ rows }}
  
-    - name: Send email with table format
-      mail:
-        host: smtp-relay.vitech.com
-        port: 25
-        to: v3atlassianops@vitechinc.com
-        subject: "Bamboo Agents Status"
+   # - name: Send email with table format
+   #   mail:
+   #     host: smtp-relay.vitech.com
+   #     port: 25
+   #     to: v3atlassianops@vitechinc.com
+   #     subject: "Bamboo Agents Status"
+   #     body: |
+   #       All Bamboo Agents Status 
+   #       {{ bamboo_table }}
+
+
+    - name: Patching Email Notification
+      community.aws.sns:
+        topic: "arn:aws:sns:us-east-1:389180911583:Testing" 
+        msg: |
+        subject: "Bamboo Agents Patching
         body: |
-          All Bamboo Agents Status 
+          Below bamboo agents are going to patching 
           {{ bamboo_table }}
