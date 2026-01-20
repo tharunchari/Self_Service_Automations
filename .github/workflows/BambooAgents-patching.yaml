@@ -50,10 +50,13 @@ jobs:
 
 
       - name: Send the Mail Notification 
+        env:
+          BAMBOO_USERNAME: ${{ secrets.BAMBOO_USERNAME }}
+          BAMBOO_PASSWORD: ${{ secrets.BAMBOO_PASSWORD }}
         run: |
           pwd
           ls -la
-          sudo ansible-playbook Jenkins_Patching/mail.yaml -i $INVENTORY_PATH --extra-vars "app_component=${{ github.event.inputs.APP_COMPONENT }}" -vvv
+          sudo ansible-playbook BambooAgetns_patching/Agentstatusmail.yml --extra-vars "bamboo_username=${BAMBOO_USERNAME} bamboo_password=${BAMBOO_PASSWORD}" -vvv
         continue-on-error: false
         
    #   - name: Stop the System Service
