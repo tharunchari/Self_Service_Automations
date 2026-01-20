@@ -9,7 +9,7 @@
     - names.yml
  
   tasks:
- 
+
     - name: Get and sort Bamboo agents
 
       shell: |
@@ -51,9 +51,9 @@ https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false | \
 
       community.aws.sns:
 
-        topic: "arn:aws:sns:us-east-1:389180911583:Testing"
+        topic: arn:aws:sns:us-east-1:389180911583:Testing
 
-        subject: "Bamboo Agents Patching"
+        subject: Bamboo Agents Patching
 
         msg: |
 
