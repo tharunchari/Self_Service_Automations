@@ -15,7 +15,6 @@ https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false
         | sort -t '-' -k4,4n
         | nl -w 1
         | awk '{printf "%-6s %-60s\\n", $1, $2}'
-
       register: bamboo_agents
       no_log: true
  
