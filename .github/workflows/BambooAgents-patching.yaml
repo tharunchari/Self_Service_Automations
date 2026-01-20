@@ -83,15 +83,15 @@ jobs:
    #       sudo ansible-playbook Jenkins_Patching/PatchandReboot.yml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
    #     continue-on-error: false
 
-      - name: Wait for 180 seconds
-        run: sleep 180
+    #  - name: Wait for 180 seconds
+       # run: sleep 180
 
-      - name: Start the system service
-        run: |
-          pwd
-          ls -la
-          sudo ansible-playbook Jenkins_Patching/startandmail.yaml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
-        continue-on-error: false
+     # - name: Start the system service
+     #   run: |
+      #    pwd
+       #   ls -la
+       #   sudo ansible-playbook Jenkins_Patching/startandmail.yaml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
+     #   continue-on-error: false
         
 #  notify-on-failure:  # ✅ Now inside "jobs"
 #    name: Send Failure Notification
