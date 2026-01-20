@@ -21,7 +21,7 @@
           {{ header }}
           {{ separator }}
           {{ rows }}
- 
+     
    # - name: Send email with table format
    #   mail:
    #     host: smtp-relay.vitech.com
@@ -33,11 +33,12 @@
    #       {{ bamboo_table }}
 
 
-    - name: Patching Email Notification
+    - name: Patching Email Notification via SNS
       community.aws.sns:
-        topic: "arn:aws:sns:us-east-1:389180911583:Testing" 
+        topic: "arn:aws:sns:us-east-1:389180911583:Testing"
+        subject: "Bamboo Agents Patching"
         msg: |
-        subject: "Bamboo Agents Patching
-        body: |
-          Below bamboo agents are going to patching 
+          Below Bamboo agents are going to be patched:
+ 
           {{ bamboo_table }}
+      no_log: true
