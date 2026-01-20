@@ -32,5 +32,5 @@ vm_names:
 vm_names1: 
  - VITECH-BAMBOO-SONAR-AGENT01 
   
-username:
+username: bamboo5restuser
 password: 
