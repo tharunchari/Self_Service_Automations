@@ -7,14 +7,11 @@
  
   tasks:
     - name: Get and sort Bamboo agents
-      shell: >
-        curl -s -u "{{ bamboo_username }}:{{ bamboo_password }}"
-        -H "Accept: application/json"
-https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false
-        | jq -r '.[] | select(.active == true and (.name | startswith("BAMBOO-OEL9") or startswith("VITECH"))) | .name'
-        | sort -t '-' -k4,4n
-        | nl -w 1
-        | awk '{printf "%-6s %-60s\\n", $1, $2}'
+      shell: |
+        curl -u {{ bamboo_username }}:'{{ bamboo_password }}' https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false | \
+        jq -r '.[] | select(.active == true and (.name | startswith("BAMBOO-OEL9") or startswith("VITECH"))) | .name' | \
+        sort -t '-' -k4,4n | \
+        nl -w 1 | \
       register: bamboo_agents
       no_log: true
  
