@@ -8,7 +8,7 @@
   tasks:
     - name: Get and sort Bamboo agents
       shell: |
-        curl -u {{ bamboo_username }}:'{{ bamboo_password }}' https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false | \
+        curl -H "Authorization: Bearer {{ bamboo_password }}" https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false | \
         jq -r '.[] | select(.active == true and (.name | startswith("BAMBOO-OEL9") or startswith("VITECH"))) | .name' | \
         sort -t '-' -k4,4n | \
         nl -w 1 | \
