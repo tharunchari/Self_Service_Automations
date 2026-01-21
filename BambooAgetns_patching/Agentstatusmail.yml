@@ -2,33 +2,47 @@
 - name: List, sort Bamboo agents, and send notification
   hosts: localhost
   gather_facts: false
-  vars_files:
-    - names.yml
- 
+
   tasks:
-    - name: Get and sort Bamboo agents
+    - name: Get Bamboo agents list and sort
       shell: |
         curl -H "Authorization: Bearer {{ bamboo_password }}" https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false | \
         jq -r '.[] | select(.active == true and (.name | startswith("BAMBOO-OEL9") or startswith("VITECH"))) | .name' | \
         sort -t '-' -k4,4n | \
-        nl -w 1 | \
+        nl -w 1
       register: bamboo_agents
-      no_log: true
- 
-    - name: Format Bamboo agents into table
+      no_log: false  # Setting no_log: false to print output in logs
+      tags: get_agents
+
+    - name: Display Bamboo agents output
+      debug:
+        msg: "Bamboo agents list: {{ bamboo_agents.stdout }}"
+      tags: display_agents
+
+    - name: Format Bamboo agents into table format
       set_fact:
         bamboo_table: |
           Index   Agent Name
           ------  ------------------------------------------------------------
           {{ bamboo_agents.stdout }}
- 
-    - name: Patching Email Notification via SNS
+      tags: format_table
+
+    - name: Display formatted Bamboo agents table
+      debug:
+        msg: "Formatted Bamboo agents table:\n{{ bamboo_table }}"
+      tags: display_table
+
+    - name: Send Email Notification via SNS
       community.aws.sns:
         topic: "arn:aws:sns:us-east-1:389180911583:Testing"
         subject: "Bamboo Agents Patching"
         msg: |
           Below Bamboo agents are going to be patched:
           {{ bamboo_table }}
-      no_log: true
+      no_log: false  # Set no_log: false to allow logging of this task output
+      tags: send_notification
 
- 
+    - name: Confirm Email Notification Sent
+      debug:
+        msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Testing"
+      tags: confirm_notification
