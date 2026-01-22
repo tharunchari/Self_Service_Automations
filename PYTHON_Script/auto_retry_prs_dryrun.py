@@ -100,7 +100,7 @@ def get_repo_workflows(repo):
         query = """
         query($org: String!, $repo: String!, $after: String) {
           repository(owner: $org, name: $repo) {
-            pullRequests(first: 10, states: [OPEN, MERGED, CLOSED], after: $after) {
+            pullRequests(first: 10, states: [OPEN], after: $after) {
               nodes { number url }
               pageInfo { hasNextPage endCursor }
             }
