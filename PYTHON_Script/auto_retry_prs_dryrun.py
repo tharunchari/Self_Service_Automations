@@ -4,7 +4,8 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-TOKEN = os.environ["ORG_GITHUB_TOKEN"]
+TOKEN = os.environ.get("ORG_GITHUB_TOKEN") or os.environ["GITHUB_TOKEN"]
+
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Accept": "application/vnd.github+json"
