@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 import boto3
 
-TOKEN = os.environ.get("ORG_GITHUB_TOKEN") or os.environ["GITHUB_TOKEN"]
+# -----------------------------
+# Config
+# -----------------------------
+TOKEN = os.environ.get("ORG_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
 HEADERS = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/vnd.github+json"}
 ORG = "vitechsystems"
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 2))
@@ -28,6 +31,9 @@ STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 sns_client = boto3.client("sns")
 
+# -----------------------------
+# Main
+# -----------------------------
 def main():
     print(f"Dry-Run Org-Wide Auto-Retry for org: {ORG}")
     repos = get_org_repos()
@@ -49,6 +55,9 @@ def main():
     else:
         print("\nNo failures detected across org.")
 
+# -----------------------------
+# GitHub API helpers
+# -----------------------------
 def get_org_repos():
     repos = []
     page = 1
@@ -76,6 +85,9 @@ def get_run_logs(repo, run_id):
         return ""
     return resp.text.lower()
 
+# -----------------------------
+# Classify failures
+# -----------------------------
 def classify_run(repo, run):
     run_id = str(run["id"])
     pr_numbers = [pr["number"] for pr in run.get("pull_requests", [])]
@@ -88,25 +100,27 @@ def classify_run(repo, run):
     infra_failure = any(pat in logs for pat in INFRA_FAILURE_PATTERNS)
     app_failure = any(pat in logs for pat in APP_FAILURE_PATTERNS)
     reason = []
+    color = "#f0f0f0"
     if infra_failure:
         reason.append("Infra Failure")
+        color = "#FF9999"  # red-ish
     if app_failure:
         reason.append("App Failure")
+        color = "#FFD966"  # yellow-ish
     if not reason:
         reason = ["Unknown/Other Failure"]
+        color = "#D9D9D9"  # grey
 
     print(f"Run ID: {run_id}")
     print(f"PR Link: {pr_link}")
     print(f"Reason: {', '.join(reason)}")
 
-    # Record state (dry-run)
     record_retry(run, repo, dry_run=True)
 
-    # Only return failure info for notification
-    return {"repo": repo, "pr_link": pr_link, "reason": ", ".join(reason)}
+    return {"repo": repo, "pr_link": pr_link, "reason": ", ".join(reason), "color": color}
 
 # -----------------------------
-# Local retry state
+# Retry state (dry-run)
 # -----------------------------
 def get_retry_count(run_id):
     file_path = STATE_DIR / f"{run_id}.json"
@@ -133,18 +147,41 @@ def record_retry(run, repo, dry_run=True):
         json.dump(data, f, indent=2)
 
 # -----------------------------
-# SNS Notification
+# SNS email
 # -----------------------------
 def send_sns_summary(failures):
-    html_table = "<table border='1' style='border-collapse: collapse'>"
-    html_table += "<tr><th>Repo</th><th>PR Link</th><th>Reason</th></tr>"
-    for f in failures:
-        html_table += f"<tr><td>{f['repo']}</td><td>{f['pr_link']}</td><td>{f['reason']}</td></tr>"
-    html_table += "</table>"
+    if not SNS_TOPIC:
+        print("SNS_TOPIC is not set. Skipping email notification.")
+        return
 
-    message = f"Org-Wide Auto-Retry Dry Run Failures Report\n\n{html_table}"
-    sns_client.publish(TopicArn=SNS_TOPIC, Subject="Org-Wide PR Failures Report", Message=message)
+    html_table = """
+    <html>
+    <body>
+    <h2>Org-Wide PR Failures Dry-Run Report</h2>
+    <table border='1' style='border-collapse: collapse; width: 100%;'>
+        <tr style='background-color:#4CAF50; color:white;'>
+            <th>Repo</th><th>PR Link</th><th>Reason</th>
+        </tr>
+    """
+    for f in failures:
+        html_table += f"""
+        <tr style='background-color:{f['color']};'>
+            <td>{f['repo']}</td>
+            <td><a href="{f['pr_link']}">{f['pr_link']}</a></td>
+            <td>{f['reason']}</td>
+        </tr>
+        """
+    html_table += "</table></body></html>"
+
+    sns_client.publish(
+        TopicArn=SNS_TOPIC,
+        Subject="Org-Wide PR Failures Report",
+        Message=html_table
+    )
     print("\nSNS notification sent with summary of failures.")
 
+# -----------------------------
+# Run script
+# -----------------------------
 if __name__ == "__main__":
     main()
