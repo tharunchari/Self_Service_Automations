@@ -91,49 +91,64 @@ def get_all_repos():
     return repos
 
 # -----------------------------
-# Fetch workflow runs per repo
+# Fetch workflow runs per repo (UPDATED)
 # -----------------------------
 def get_repo_workflows(repo):
     all_failed_runs = []
-    cursor = None
+    
+    # 1. Fetch all open PRs with pagination
+    pr_cursor = None
+    all_open_prs = []
     while True:
-        query = """
+        pr_query = """
         query($org: String!, $repo: String!, $after: String) {
           repository(owner: $org, name: $repo) {
-            pullRequests(first: 10, states: [OPEN], after: $after) {
+            pullRequests(first: 50, states: [OPEN], after: $after) {
               nodes { number url }
               pageInfo { hasNextPage endCursor }
-            }
-            workflows(first: 5) {
-              nodes {
-                name
-                runs(first: 10, statuses: FAILURE) {
-                  nodes { id url conclusion createdAt checkSuite { workflowRun { id } } }
-                  pageInfo { hasNextPage endCursor }
-                }
-              }
             }
           }
         }
         """
-        variables = {"org": ORG, "repo": repo, "after": cursor}
-        result = graphql_query(query, variables)
-        if not result:
+        pr_variables = {"org": ORG, "repo": repo, "after": pr_cursor}
+        pr_result = graphql_query(pr_query, pr_variables)
+        if not pr_result:
             break
-
-        repo_data = result.get("data", {}).get("repository", {})
-        prs = repo_data.get("pullRequests", {}).get("nodes", [])
-        workflows = repo_data.get("workflows", {}).get("nodes", [])
-        for wf in workflows:
-            runs_info = wf.get("runs", {}).get("nodes", [])
-            for run in runs_info:
-                all_failed_runs.append({"run": run, "prs": prs, "repo": repo})
-
-        page_info = repo_data.get("pullRequests", {}).get("pageInfo", {})
-        if page_info.get("hasNextPage"):
-            cursor = page_info.get("endCursor")
-        else:
+        pr_nodes = pr_result["data"]["repository"]["pullRequests"]["nodes"]
+        all_open_prs.extend(pr_nodes)
+        pr_page_info = pr_result["data"]["repository"]["pullRequests"]["pageInfo"]
+        if not pr_page_info["hasNextPage"]:
             break
+        pr_cursor = pr_page_info["endCursor"]
+
+    # 2. Fetch workflows and their failed runs (without pagination on workflows for simplicity)
+    workflow_query = """
+    query($org: String!, $repo: String!) {
+      repository(owner: $org, name: $repo) {
+        workflows(first: 10) {
+          nodes {
+            name
+            runs(first: 20, statuses: FAILURE) {
+              nodes { id url conclusion createdAt checkSuite { workflowRun { id } } }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }
+      }
+    }
+    """
+    workflow_variables = {"org": ORG, "repo": repo}
+    workflow_result = graphql_query(workflow_query, workflow_variables)
+    if not workflow_result:
+        return []
+
+    workflows = workflow_result["data"]["repository"]["workflows"]["nodes"]
+
+    for wf in workflows:
+        runs_info = wf.get("runs", {}).get("nodes", [])
+        for run in runs_info:
+            all_failed_runs.append({"run": run, "prs": all_open_prs, "repo": repo})
+
     return all_failed_runs
 
 # -----------------------------
@@ -271,7 +286,7 @@ def send_sns_summary(failures, total_repos):
     """
     for f in failures:
         html += f"""
-        <tr style='background-color:{f['color']};'>
+        <tr style='background-color:{f['color']}'>
             <td>{f['repo']}</td>
             <td><a href="{f['pr_link']}">{f['pr_link']}</a></td>
             <td>{f['reason']}</td>
