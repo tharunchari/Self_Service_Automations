@@ -1,9 +1,11 @@
 import os
 import requests
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 import boto3
+from requests.exceptions import RequestException
 
 # -----------------------------
 # Config
@@ -20,6 +22,7 @@ INFRA_FAILURE_PATTERNS = [
     "lost communication with the server",
     "the operation was canceled"
 ]
+
 APP_FAILURE_PATTERNS = [
     "test failed",
     "lint",
@@ -32,40 +35,27 @@ STATE_DIR.mkdir(parents=True, exist_ok=True)
 sns_client = boto3.client("sns")
 
 # -----------------------------
-# Main
+# GitHub API helpers with retry
 # -----------------------------
-def main():
-    print(f"Dry-Run Org-Wide Auto-Retry for org: {ORG}")
-    repos = get_org_repos()
-    all_failures = []
+def github_get(url, max_attempts=5, backoff=2):
+    """GET request with retry/backoff"""
+    for attempt in range(max_attempts):
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except RequestException as e:
+            print(f"GitHub API request error (attempt {attempt+1}/{max_attempts}): {e}")
+            time.sleep(backoff * (attempt + 1))
+    print(f"Failed to fetch URL after {max_attempts} attempts: {url}")
+    return None
 
-    for repo in repos:
-        print(f"\nScanning repo: {repo}")
-        runs = get_failed_pr_runs(repo)
-        if not runs:
-            print("No failed PR workflow runs found in this repo.")
-            continue
-        for run in runs:
-            failure_info = classify_run(repo, run)
-            if failure_info:
-                all_failures.append(failure_info)
-
-    if all_failures:
-        send_sns_summary(all_failures)
-    else:
-        print("\nNo failures detected across org.")
-
-# -----------------------------
-# GitHub API helpers
-# -----------------------------
 def get_org_repos():
     repos = []
     page = 1
     while True:
         url = f"https://api.github.com/orgs/{ORG}/repos?per_page=100&page={page}"
-        resp = requests.get(url, headers=HEADERS)
-        resp.raise_for_status()
-        data = resp.json()
+        data = github_get(url)
         if not data:
             break
         repos.extend([r["name"] for r in data])
@@ -74,19 +64,20 @@ def get_org_repos():
 
 def get_failed_pr_runs(repo):
     url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs?event=pull_request&status=failure&per_page=100"
-    resp = requests.get(url, headers=HEADERS)
-    resp.raise_for_status()
-    return resp.json().get("workflow_runs", [])
+    data = github_get(url)
+    if not data:
+        return []
+    return data.get("workflow_runs", [])
 
 def get_run_logs(repo, run_id):
     url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/logs"
-    resp = requests.get(url, headers=HEADERS)
-    if resp.status_code != 200:
+    data = github_get(url)
+    if data is None:
         return ""
-    return resp.text.lower()
+    return str(data).lower()  # convert to string for pattern search
 
 # -----------------------------
-# Classify failures
+# Failure classification
 # -----------------------------
 def classify_run(repo, run):
     run_id = str(run["id"])
@@ -103,10 +94,10 @@ def classify_run(repo, run):
     color = "#f0f0f0"
     if infra_failure:
         reason.append("Infra Failure")
-        color = "#FF9999"  # red-ish
+        color = "#FF9999"  # red
     if app_failure:
         reason.append("App Failure")
-        color = "#FFD966"  # yellow-ish
+        color = "#FFD966"  # yellow
     if not reason:
         reason = ["Unknown/Other Failure"]
         color = "#D9D9D9"  # grey
@@ -147,7 +138,7 @@ def record_retry(run, repo, dry_run=True):
         json.dump(data, f, indent=2)
 
 # -----------------------------
-# SNS email
+# SNS notification
 # -----------------------------
 def send_sns_summary(failures):
     if not SNS_TOPIC:
@@ -181,7 +172,35 @@ def send_sns_summary(failures):
     print("\nSNS notification sent with summary of failures.")
 
 # -----------------------------
-# Run script
+# Main
+# -----------------------------
+def main():
+    print(f"Dry-Run Org-Wide Auto-Retry for org: {ORG}")
+    repos = get_org_repos()
+    print(f"Total repos found: {len(repos)}")
+    all_failures = []
+
+    for repo in repos:
+        try:
+            print(f"\nScanning repo: {repo}")
+            runs = get_failed_pr_runs(repo)
+            if not runs:
+                print("No failed PR workflow runs found in this repo.")
+                continue
+            for run in runs:
+                failure_info = classify_run(repo, run)
+                if failure_info:
+                    all_failures.append(failure_info)
+        except Exception as e:
+            print(f"Skipping repo {repo} due to error: {e}")
+
+    if all_failures:
+        send_sns_summary(all_failures)
+    else:
+        print("\nNo failures detected across org.")
+
+# -----------------------------
+# Entry point
 # -----------------------------
 if __name__ == "__main__":
     main()
