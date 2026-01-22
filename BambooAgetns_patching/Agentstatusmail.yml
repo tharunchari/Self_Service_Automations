@@ -19,39 +19,26 @@
         msg: "Bamboo agents list: {{ bamboo_agents.stdout }}"
       tags: display_agents
 
-    - name: Format Bamboo agents into HTML table format
+    - name: Format Bamboo agents into table format
       set_fact:
-        bamboo_html_table: |
-          <html>
-          <body>
-            <h3>Bamboo Agents to be Patched</h3>
-            <table border="1" cellpadding="10" cellspacing="0" style="border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; border: 2px solid #333;">
-              <tr style="background-color: #f2f2f2;">
-                <th style="text-align: left; padding: 8px; border: 1px solid #333;">Index</th>
-                <th style="text-align: left; padding: 8px; border: 1px solid #333;">Agent Name</th>
-              </tr>
-              {% for line in bamboo_agents.stdout_lines %}
-              <tr style="background-color: {% if loop.index is odd %}#f9f9f9{% else %}#ffffff{% endif %};">
-                <td style="text-align: left; padding: 8px; border: 1px solid #333;">{{ line.split()[0] }}</td>
-                <td style="text-align: left; padding: 8px; border: 1px solid #333;">{{ line.split()[1:] | join(' ') }}</td>
-              </tr>
-              {% endfor %}
-            </table>
-          </body>
-          </html>
+        bamboo_table: |
+          Index   Agent Name
+          ------  ------------------------------------------------------------
+          {{ bamboo_agents.stdout }}
       tags: format_table
 
-    - name: Display formatted Bamboo agents HTML table
+    - name: Display formatted Bamboo agents table
       debug:
-        msg: "Formatted Bamboo agents HTML table:\n{{ bamboo_html_table }}"
+        msg: "Formatted Bamboo agents table:\n{{ bamboo_table }}"
       tags: display_table
 
-    - name: Send Email Notification via SNS with HTML table as a string
+    - name: Send Email Notification via SNS
       community.aws.sns:
         topic: "arn:aws:sns:us-east-1:389180911583:Testing"
         subject: "Bamboo Agents Patching"
-        msg: "{{ bamboo_html_table }}"  # Pass HTML as a string
-        message_structure: "string"  # Use string format
+        msg: |
+          Below Bamboo agents are going to be patched:
+          {{ bamboo_table }}
       no_log: false  # Set no_log: false to allow logging of this task output
       tags: send_notification
 
