@@ -5,7 +5,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 import boto3
-from urllib.parse import quote_plus
 
 # -----------------------------
 # Config
@@ -15,7 +14,6 @@ HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 ORG = "vitechsystems"
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 2))
 SNS_TOPIC = os.environ.get("SNS_TOPIC")
-DRY_RUN = True  # Change to False to enable retry
 
 INFRA_FAILURE_PATTERNS = [
     "runner unexpectedly disconnected",
@@ -39,7 +37,7 @@ sns_client = boto3.client("sns")
 GRAPHQL_URL = "https://api.github.com/graphql"
 
 # -----------------------------
-# GraphQL helpers with rate-limit handling
+# GraphQL helpers
 # -----------------------------
 def graphql_query(query, variables=None, max_attempts=5, backoff=2):
     for attempt in range(max_attempts):
@@ -64,7 +62,7 @@ def graphql_query(query, variables=None, max_attempts=5, backoff=2):
     return None
 
 # -----------------------------
-# Fetch all repos with pagination
+# Fetch all repos
 # -----------------------------
 def get_all_repos():
     repos = []
@@ -93,7 +91,7 @@ def get_all_repos():
     return repos
 
 # -----------------------------
-# Fetch workflow runs + PRs with pagination
+# Fetch workflow runs per repo
 # -----------------------------
 def get_repo_workflows(repo):
     all_failed_runs = []
@@ -125,7 +123,6 @@ def get_repo_workflows(repo):
 
         repo_data = result.get("data", {}).get("repository", {})
         prs = repo_data.get("pullRequests", {}).get("nodes", [])
-
         workflows = repo_data.get("workflows", {}).get("nodes", [])
         for wf in workflows:
             runs_info = wf.get("runs", {}).get("nodes", [])
@@ -137,7 +134,6 @@ def get_repo_workflows(repo):
             cursor = page_info.get("endCursor")
         else:
             break
-
     return all_failed_runs
 
 # -----------------------------
@@ -162,9 +158,23 @@ def fetch_run_logs(run_url):
         return ""
 
 # -----------------------------
-# Classify failure as Infra or App
+# Retry workflow via GitHub API
 # -----------------------------
-def classify_run(run_info):
+def rerun_workflow(run_id, repo):
+    owner = ORG
+    url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs/{run_id}/rerun"
+    resp = requests.post(url, headers=HEADERS)
+    if resp.status_code == 201:
+        print(f"Workflow run {run_id} for {repo} rerun triggered successfully.")
+        return True
+    else:
+        print(f"Failed to rerun workflow {run_id} for {repo}: {resp.text}")
+        return False
+
+# -----------------------------
+# Classify failure and optionally rerun
+# -----------------------------
+def classify_run(run_info, dry_run=True):
     run = run_info["run"]
     repo = run_info["repo"]
     prs = run_info["prs"]
@@ -174,25 +184,38 @@ def classify_run(run_info):
     logs = fetch_run_logs(run_url)
 
     reason = "Unknown"
-    color = "#FFFF99"  # default yellow
+    color = "#FFFF99"
+    retriggered = "No"
+    retrigger_color = "#CCCCCC"
 
     for pattern in INFRA_FAILURE_PATTERNS:
         if pattern.lower() in logs.lower():
             reason = "Infra Failure"
-            color = "#FF9999"  # red
+            color = "#FF6666"  # red
+            if not dry_run:
+                if rerun_workflow(run["id"], repo):
+                    retriggered = "Yes"
+                    retrigger_color = "#00CC00"  # green
             break
     else:
         for pattern in APP_FAILURE_PATTERNS:
             if pattern.lower() in logs.lower():
                 reason = "App Failure"
-                color = "#99CCFF"  # blue
+                color = "#66CCFF"  # blue
                 break
         else:
             reason = "Unknown Failure"
             color = "#FFFF99"
 
-    record_retry(run, repo, dry_run=DRY_RUN)
-    return {"repo": repo, "pr_link": pr_link, "reason": reason, "color": color}
+    record_retry(run, repo, dry_run)
+    return {
+        "repo": repo,
+        "pr_link": pr_link,
+        "reason": reason,
+        "color": color,
+        "retriggered": retriggered,
+        "retrigger_color": retrigger_color
+    }
 
 # -----------------------------
 # Retry state
@@ -211,61 +234,56 @@ def record_retry(run, repo, dry_run=True):
         json.dump(data, f, indent=2)
 
 # -----------------------------
-# SNS notification (batch)
+# SNS Notification
 # -----------------------------
 def send_sns_summary(failures, total_repos):
     if not SNS_TOPIC or not failures:
         print("No failures or SNS_TOPIC not set. Skipping email notification.")
         return
 
-    # Summary counts
-    infra_count = sum(1 for f in failures if f["reason"] == "Infra Failure")
-    app_count = sum(1 for f in failures if f["reason"] == "App Failure")
-    unknown_count = sum(1 for f in failures if f["reason"] == "Unknown Failure")
+    total_failures = len(failures)
+    infra_failures = sum(1 for f in failures if "Infra" in f["reason"])
+    app_failures = sum(1 for f in failures if "App" in f["reason"])
 
-    # HTML top summary
-    html_summary = f"""
-    <html><body>
-    <h2>Org-Wide PR Failures Dry-Run Report</h2>
-    <table border='1' style='border-collapse: collapse; width: 50%;'>
+    html = f"""
+    <html>
+    <body>
+    <h2>Org-Wide PR Failures Report</h2>
+    <h3>Summary</h3>
+    <table border='1' style='border-collapse: collapse; width: 60%;'>
         <tr style='background-color:#4CAF50; color:white;'>
-            <th>Organization</th><th>Total Repos Scanned</th><th>Total Failures</th><th>Infra</th><th>App</th><th>Unknown</th>
+            <th>Org</th><th>Total Repos</th><th>Total Failures</th><th>Infra Failures</th><th>App Failures</th>
         </tr>
-        <tr style='text-align:center;'>
+        <tr>
             <td>{ORG}</td>
             <td>{total_repos}</td>
-            <td>{len(failures)}</td>
-            <td>{infra_count}</td>
-            <td>{app_count}</td>
-            <td>{unknown_count}</td>
+            <td>{total_failures}</td>
+            <td>{infra_failures}</td>
+            <td>{app_failures}</td>
         </tr>
     </table>
     <br>
-    """
-
-    # HTML detailed table
-    html_table = """
+    <h3>Failed PRs / Workflows</h3>
     <table border='1' style='border-collapse: collapse; width: 100%;'>
         <tr style='background-color:#4CAF50; color:white;'>
-            <th>Repo</th><th>PR Link</th><th>Reason</th>
+            <th>Repo</th><th>PR Link</th><th>Reason</th><th>Retriggered</th>
         </tr>
     """
     for f in failures:
-        html_table += f"""
+        html += f"""
         <tr style='background-color:{f['color']};'>
             <td>{f['repo']}</td>
             <td><a href="{f['pr_link']}">{f['pr_link']}</a></td>
             <td>{f['reason']}</td>
+            <td style='background-color:{f['retrigger_color']}; color:white;'>{f['retriggered']}</td>
         </tr>
         """
-    html_table += "</table></body></html>"
-
-    message = html_summary + html_table
+    html += "</table></body></html>"
 
     sns_client.publish(
         TopicArn=SNS_TOPIC,
         Subject="Org-Wide PR Failures Report",
-        Message=message
+        Message=html
     )
     print("SNS email sent.")
 
@@ -273,10 +291,11 @@ def send_sns_summary(failures, total_repos):
 # Main
 # -----------------------------
 def main():
-    print(f"Dry-Run Org-Wide Auto-Retry for org: {ORG}")
+    dry_run = True  # Set to False to enable reruns
+    print(f"{'Dry-Run' if dry_run else 'LIVE'} Org-Wide Auto-Retry for org: {ORG}")
+
     repos = get_all_repos()
-    total_repos = len(repos)
-    print(f"Total repos found: {total_repos}")
+    print(f"Total repos found: {len(repos)}")
     all_failures = []
 
     for repo in repos:
@@ -286,13 +305,13 @@ def main():
             print("No failed workflow runs found.")
             continue
         for run_info in failed_runs:
-            failure_info = classify_run(run_info)
+            failure_info = classify_run(run_info, dry_run=dry_run)
             all_failures.append(failure_info)
 
     if all_failures:
-        send_sns_summary(all_failures, total_repos)
+        send_sns_summary(all_failures, total_repos=len(repos))
     else:
-        print(f"No failures detected across org ({total_repos} repos).")
+        print("No failures detected across org.")
 
 if __name__ == "__main__":
     main()
