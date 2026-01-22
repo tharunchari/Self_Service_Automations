@@ -5,13 +5,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 import boto3
-from requests.exceptions import RequestException
+from urllib.parse import quote_plus
 
 # -----------------------------
 # Config
 # -----------------------------
 TOKEN = os.environ.get("ORG_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
-HEADERS = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/vnd.github+json"}
+HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 ORG = "vitechsystems"
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 2))
 SNS_TOPIC = os.environ.get("SNS_TOPIC")
@@ -20,7 +20,9 @@ INFRA_FAILURE_PATTERNS = [
     "runner unexpectedly disconnected",
     "received a shutdown signal",
     "lost communication with the server",
-    "the operation was canceled"
+    "the operation was canceled",
+    "Job canceled",
+    "terminated by spot interruption"
 ]
 
 APP_FAILURE_PATTERNS = [
@@ -33,104 +35,177 @@ STATE_DIR = Path(".github/ci-retry-state")
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 sns_client = boto3.client("sns")
+GRAPHQL_URL = "https://api.github.com/graphql"
 
 # -----------------------------
-# GitHub API helpers with retry
+# GraphQL helpers with rate-limit handling
 # -----------------------------
-def github_get(url, max_attempts=5, backoff=2):
-    """GET request with retry/backoff"""
+def graphql_query(query, variables=None, max_attempts=5, backoff=2):
     for attempt in range(max_attempts):
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=15)
+            resp = requests.post(
+                GRAPHQL_URL, headers=HEADERS, json={"query": query, "variables": variables}, timeout=20
+            )
+            if resp.status_code == 403 and 'X-RateLimit-Remaining' in resp.headers:
+                remaining = int(resp.headers['X-RateLimit-Remaining'])
+                reset_time = int(resp.headers['X-RateLimit-Reset'])
+                if remaining == 0:
+                    sleep_sec = max(reset_time - int(time.time()), 0) + 5
+                    print(f"Rate limit exceeded, sleeping for {sleep_sec} seconds...")
+                    time.sleep(sleep_sec)
+                    continue
             resp.raise_for_status()
             return resp.json()
-        except RequestException as e:
-            print(f"GitHub API request error (attempt {attempt+1}/{max_attempts}): {e}")
+        except requests.exceptions.RequestException as e:
+            print(f"GraphQL request error (attempt {attempt+1}/{max_attempts}): {e}")
             time.sleep(backoff * (attempt + 1))
-    print(f"Failed to fetch URL after {max_attempts} attempts: {url}")
+    print("Failed to complete GraphQL request.")
     return None
 
-def get_org_repos():
+# -----------------------------
+# Fetch all repos with pagination
+# -----------------------------
+def get_all_repos():
     repos = []
-    page = 1
+    cursor = None
     while True:
-        url = f"https://api.github.com/orgs/{ORG}/repos?per_page=100&page={page}"
-        data = github_get(url)
-        if not data:
+        query = """
+        query($org: String!, $after: String) {
+          organization(login: $org) {
+            repositories(first: 50, after: $after, orderBy: {field: NAME, direction: ASC}) {
+              nodes { name }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }
+        """
+        variables = {"org": ORG, "after": cursor}
+        result = graphql_query(query, variables)
+        if not result:
             break
-        repos.extend([r["name"] for r in data])
-        page += 1
+        nodes = result["data"]["organization"]["repositories"]["nodes"]
+        repos.extend([r["name"] for r in nodes])
+        page_info = result["data"]["organization"]["repositories"]["pageInfo"]
+        if not page_info["hasNextPage"]:
+            break
+        cursor = page_info["endCursor"]
     return repos
 
-def get_failed_pr_runs(repo):
-    url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs?event=pull_request&status=failure&per_page=100"
-    data = github_get(url)
-    if not data:
-        return []
-    return data.get("workflow_runs", [])
+# -----------------------------
+# Fetch workflow runs + PRs with pagination
+# -----------------------------
+def get_repo_workflows(repo):
+    all_failed_runs = []
+    cursor = None
+    while True:
+        query = """
+        query($org: String!, $repo: String!, $after: String) {
+          repository(owner: $org, name: $repo) {
+            pullRequests(first: 10, states: [OPEN, MERGED, CLOSED], after: $after) {
+              nodes { number url }
+              pageInfo { hasNextPage endCursor }
+            }
+            workflows(first: 5) {
+              nodes {
+                name
+                runs(first: 10, statuses: FAILURE) {
+                  nodes { id url conclusion createdAt checkSuite { workflowRun { id } } }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+          }
+        }
+        """
+        variables = {"org": ORG, "repo": repo, "after": cursor}
+        result = graphql_query(query, variables)
+        if not result:
+            break
 
-def get_run_logs(repo, run_id):
-    url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/logs"
-    data = github_get(url)
-    if data is None:
+        repo_data = result.get("data", {}).get("repository", {})
+        prs = repo_data.get("pullRequests", {}).get("nodes", [])
+
+        workflows = repo_data.get("workflows", {}).get("nodes", [])
+        for wf in workflows:
+            runs_info = wf.get("runs", {}).get("nodes", [])
+            for run in runs_info:
+                all_failed_runs.append({"run": run, "prs": prs, "repo": repo})
+
+        # PR pagination
+        page_info = repo_data.get("pullRequests", {}).get("pageInfo", {})
+        if page_info.get("hasNextPage"):
+            cursor = page_info.get("endCursor")
+        else:
+            break
+
+    return all_failed_runs
+
+# -----------------------------
+# Fetch workflow run logs
+# -----------------------------
+def fetch_run_logs(run_url):
+    # Construct API URL to fetch job logs
+    # Example: convert run.url to API jobs endpoint
+    try:
+        parts = run_url.split("/")
+        owner, repo, run_id = parts[3], parts[4], parts[-1]
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs/{run_id}/jobs"
+        resp = requests.get(api_url, headers=HEADERS, timeout=20)
+        resp.raise_for_status()
+        jobs = resp.json().get("jobs", [])
+        logs_text = ""
+        for job in jobs:
+            logs_text += job.get("name", "") + "\n"
+            for step in job.get("steps", []):
+                logs_text += step.get("name", "") + ": " + str(step.get("conclusion")) + "\n"
+        return logs_text
+    except Exception as e:
+        print(f"Failed to fetch logs for {run_url}: {e}")
         return ""
-    return str(data).lower()  # convert to string for pattern search
 
 # -----------------------------
-# Failure classification
+# Classify failure as Infra or App
 # -----------------------------
-def classify_run(repo, run):
-    run_id = str(run["id"])
-    pr_numbers = [pr["number"] for pr in run.get("pull_requests", [])]
-    if not pr_numbers:
-        pr_link = "Not a PR run"
+def classify_run(run_info):
+    run = run_info["run"]
+    repo = run_info["repo"]
+    prs = run_info["prs"]
+    run_url = run["url"]
+
+    pr_link = ", ".join([pr["url"] for pr in prs]) if prs else "Not a PR run"
+    logs = fetch_run_logs(run_url)
+
+    reason = "Unknown"
+    color = "#FFFF99"  # default yellow
+
+    for pattern in INFRA_FAILURE_PATTERNS:
+        if pattern.lower() in logs.lower():
+            reason = "Infra Failure"
+            color = "#FF9999"  # red
+            break
     else:
-        pr_link = ", ".join([f"https://github.com/{ORG}/{repo}/pull/{n}" for n in pr_numbers])
-
-    logs = get_run_logs(repo, run_id)
-    infra_failure = any(pat in logs for pat in INFRA_FAILURE_PATTERNS)
-    app_failure = any(pat in logs for pat in APP_FAILURE_PATTERNS)
-    reason = []
-    color = "#f0f0f0"
-    if infra_failure:
-        reason.append("Infra Failure")
-        color = "#FF9999"  # red
-    if app_failure:
-        reason.append("App Failure")
-        color = "#FFD966"  # yellow
-    if not reason:
-        reason = ["Unknown/Other Failure"]
-        color = "#D9D9D9"  # grey
-
-    print(f"Run ID: {run_id}")
-    print(f"PR Link: {pr_link}")
-    print(f"Reason: {', '.join(reason)}")
+        for pattern in APP_FAILURE_PATTERNS:
+            if pattern.lower() in logs.lower():
+                reason = "App Failure"
+                color = "#99CCFF"  # blue
+                break
+        else:
+            reason = "Unknown Failure"
+            color = "#FFFF99"
 
     record_retry(run, repo, dry_run=True)
-
-    return {"repo": repo, "pr_link": pr_link, "reason": ", ".join(reason), "color": color}
+    return {"repo": repo, "pr_link": pr_link, "reason": reason, "color": color}
 
 # -----------------------------
-# Retry state (dry-run)
+# Retry state
 # -----------------------------
-def get_retry_count(run_id):
-    file_path = STATE_DIR / f"{run_id}.json"
-    if file_path.exists():
-        with open(file_path) as f:
-            data = json.load(f)
-            return data.get("retry_count", 0)
-    return 0
-
 def record_retry(run, repo, dry_run=True):
     run_id = str(run["id"])
     file_path = STATE_DIR / f"{run_id}.json"
-    current = get_retry_count(run_id)
-    pr_number = run.get("pull_requests")[0]["number"] if run.get("pull_requests") else None
     data = {
         "run_id": run_id,
         "repo": repo,
-        "pr_number": pr_number,
-        "retry_count": current + (0 if dry_run else 1),
+        "retry_count": 0 if dry_run else 1,
         "last_retry_ts": datetime.now(timezone.utc).isoformat(),
         "dry_run": dry_run
     }
@@ -138,11 +213,11 @@ def record_retry(run, repo, dry_run=True):
         json.dump(data, f, indent=2)
 
 # -----------------------------
-# SNS notification
+# SNS notification (batch)
 # -----------------------------
 def send_sns_summary(failures):
-    if not SNS_TOPIC:
-        print("SNS_TOPIC is not set. Skipping email notification.")
+    if not SNS_TOPIC or not failures:
+        print("No failures or SNS_TOPIC not set. Skipping email notification.")
         return
 
     html_table = """
@@ -169,38 +244,31 @@ def send_sns_summary(failures):
         Subject="Org-Wide PR Failures Report",
         Message=html_table
     )
-    print("\nSNS notification sent with summary of failures.")
+    print("SNS email sent.")
 
 # -----------------------------
 # Main
 # -----------------------------
 def main():
     print(f"Dry-Run Org-Wide Auto-Retry for org: {ORG}")
-    repos = get_org_repos()
+    repos = get_all_repos()
     print(f"Total repos found: {len(repos)}")
     all_failures = []
 
     for repo in repos:
-        try:
-            print(f"\nScanning repo: {repo}")
-            runs = get_failed_pr_runs(repo)
-            if not runs:
-                print("No failed PR workflow runs found in this repo.")
-                continue
-            for run in runs:
-                failure_info = classify_run(repo, run)
-                if failure_info:
-                    all_failures.append(failure_info)
-        except Exception as e:
-            print(f"Skipping repo {repo} due to error: {e}")
+        print(f"\nScanning repo: {repo}")
+        failed_runs = get_repo_workflows(repo)
+        if not failed_runs:
+            print("No failed workflow runs found.")
+            continue
+        for run_info in failed_runs:
+            failure_info = classify_run(run_info)
+            all_failures.append(failure_info)
 
     if all_failures:
         send_sns_summary(all_failures)
     else:
-        print("\nNo failures detected across org.")
+        print("No failures detected across org.")
 
-# -----------------------------
-# Entry point
-# -----------------------------
 if __name__ == "__main__":
     main()
