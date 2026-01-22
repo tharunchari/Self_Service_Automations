@@ -80,7 +80,7 @@ def get_all_repos():
         """
         variables = {"org": ORG, "after": cursor}
         result = graphql_query(query, variables)
-        if not result:
+        if not result or "data" not in result:
             break
         nodes = result["data"]["organization"]["repositories"]["nodes"]
         repos.extend([r["name"] for r in nodes])
@@ -91,12 +91,12 @@ def get_all_repos():
     return repos
 
 # -----------------------------
-# Fetch workflow runs per repo (UPDATED)
+# Fetch workflow runs per repo (only OPEN PRs)
 # -----------------------------
 def get_repo_workflows(repo):
     all_failed_runs = []
-    
-    # 1. Fetch all open PRs with pagination
+
+    # Fetch all OPEN PRs with pagination
     pr_cursor = None
     all_open_prs = []
     while True:
@@ -112,7 +112,8 @@ def get_repo_workflows(repo):
         """
         pr_variables = {"org": ORG, "repo": repo, "after": pr_cursor}
         pr_result = graphql_query(pr_query, pr_variables)
-        if not pr_result:
+        if not pr_result or "data" not in pr_result or pr_result["data"]["repository"] is None:
+            print(f"Warning: Could not fetch PRs for repo {repo}. Response: {pr_result}")
             break
         pr_nodes = pr_result["data"]["repository"]["pullRequests"]["nodes"]
         all_open_prs.extend(pr_nodes)
@@ -121,7 +122,7 @@ def get_repo_workflows(repo):
             break
         pr_cursor = pr_page_info["endCursor"]
 
-    # 2. Fetch workflows and their failed runs (without pagination on workflows for simplicity)
+    # Fetch workflows and their failed runs
     workflow_query = """
     query($org: String!, $repo: String!) {
       repository(owner: $org, name: $repo) {
@@ -139,7 +140,12 @@ def get_repo_workflows(repo):
     """
     workflow_variables = {"org": ORG, "repo": repo}
     workflow_result = graphql_query(workflow_query, workflow_variables)
-    if not workflow_result:
+
+    if (not workflow_result or 
+        "data" not in workflow_result or 
+        workflow_result["data"]["repository"] is None or
+        "workflows" not in workflow_result["data"]["repository"]):
+        print(f"Warning: Could not fetch workflows for repo {repo}. Response: {workflow_result}")
         return []
 
     workflows = workflow_result["data"]["repository"]["workflows"]["nodes"]
