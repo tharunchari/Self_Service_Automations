@@ -3,15 +3,13 @@ import requests
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+import boto3
 
 TOKEN = os.environ.get("ORG_GITHUB_TOKEN") or os.environ["GITHUB_TOKEN"]
-
-HEADERS = {
-    "Authorization": f"Bearer {TOKEN}",
-    "Accept": "application/vnd.github+json"
-}
+HEADERS = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/vnd.github+json"}
 ORG = "vitechsystems"
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 2))
+SNS_TOPIC = os.environ.get("SNS_TOPIC")
 
 INFRA_FAILURE_PATTERNS = [
     "runner unexpectedly disconnected",
@@ -28,11 +26,28 @@ APP_FAILURE_PATTERNS = [
 STATE_DIR = Path(".github/ci-retry-state")
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 
+sns_client = boto3.client("sns")
+
 def main():
     print(f"Dry-Run Org-Wide Auto-Retry for org: {ORG}")
     repos = get_org_repos()
+    all_failures = []
+
     for repo in repos:
-        process_repo(repo)
+        print(f"\nScanning repo: {repo}")
+        runs = get_failed_pr_runs(repo)
+        if not runs:
+            print("No failed PR workflow runs found in this repo.")
+            continue
+        for run in runs:
+            failure_info = classify_run(repo, run)
+            if failure_info:
+                all_failures.append(failure_info)
+
+    if all_failures:
+        send_sns_summary(all_failures)
+    else:
+        print("\nNo failures detected across org.")
 
 def get_org_repos():
     repos = []
@@ -48,14 +63,8 @@ def get_org_repos():
         page += 1
     return repos
 
-def process_repo(repo):
-    print(f"\nScanning repo: {repo}")
-    runs = get_failed_pr_runs(repo)
-    for run in runs:
-        classify_run(repo, run)
-
 def get_failed_pr_runs(repo):
-    url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs?event=pull_request&status=failure&per_page=20"
+    url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs?event=pull_request&status=failure&per_page=100"
     resp = requests.get(url, headers=HEADERS)
     resp.raise_for_status()
     return resp.json().get("workflow_runs", [])
@@ -69,21 +78,32 @@ def get_run_logs(repo, run_id):
 
 def classify_run(repo, run):
     run_id = str(run["id"])
+    pr_numbers = [pr["number"] for pr in run.get("pull_requests", [])]
+    if not pr_numbers:
+        pr_link = "Not a PR run"
+    else:
+        pr_link = ", ".join([f"https://github.com/{ORG}/{repo}/pull/{n}" for n in pr_numbers])
+
     logs = get_run_logs(repo, run_id)
     infra_failure = any(pat in logs for pat in INFRA_FAILURE_PATTERNS)
     app_failure = any(pat in logs for pat in APP_FAILURE_PATTERNS)
-    retry_count = get_retry_count(run_id)
-
-    pr_numbers = [pr["number"] for pr in run.get("pull_requests", [])]
+    reason = []
+    if infra_failure:
+        reason.append("Infra Failure")
+    if app_failure:
+        reason.append("App Failure")
+    if not reason:
+        reason = ["Unknown/Other Failure"]
 
     print(f"Run ID: {run_id}")
-    print(f"PR Numbers: {pr_numbers if pr_numbers else 'None'}")
-    print(f"Infra Failure: {infra_failure}")
-    print(f"App Failure: {app_failure}")
-    print(f"Retry Count: {retry_count}")
+    print(f"PR Link: {pr_link}")
+    print(f"Reason: {', '.join(reason)}")
 
     # Record state (dry-run)
     record_retry(run, repo, dry_run=True)
+
+    # Only return failure info for notification
+    return {"repo": repo, "pr_link": pr_link, "reason": ", ".join(reason)}
 
 # -----------------------------
 # Local retry state
@@ -111,6 +131,20 @@ def record_retry(run, repo, dry_run=True):
     }
     with open(file_path, "w") as f:
         json.dump(data, f, indent=2)
+
+# -----------------------------
+# SNS Notification
+# -----------------------------
+def send_sns_summary(failures):
+    html_table = "<table border='1' style='border-collapse: collapse'>"
+    html_table += "<tr><th>Repo</th><th>PR Link</th><th>Reason</th></tr>"
+    for f in failures:
+        html_table += f"<tr><td>{f['repo']}</td><td>{f['pr_link']}</td><td>{f['reason']}</td></tr>"
+    html_table += "</table>"
+
+    message = f"Org-Wide Auto-Retry Dry Run Failures Report\n\n{html_table}"
+    sns_client.publish(TopicArn=SNS_TOPIC, Subject="Org-Wide PR Failures Report", Message=message)
+    print("\nSNS notification sent with summary of failures.")
 
 if __name__ == "__main__":
     main()
