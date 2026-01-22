@@ -22,6 +22,6 @@ jobs:
 
       - name: Run Dry-Run Auto-Retry Script
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # workflow token is sufficient for read
+          GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}  
           MAX_RETRIES: 2
         run: python PYTHON_Script/auto_retry_prs_dryrun.py
