@@ -46,12 +46,12 @@
         msg: "Formatted Bamboo agents HTML table:\n{{ bamboo_html_table }}"
       tags: display_table
 
-    - name: Send Email Notification via SNS with HTML table
+    - name: Send Email Notification via SNS with HTML table as a string
       community.aws.sns:
         topic: "arn:aws:sns:us-east-1:389180911583:Testing"
         subject: "Bamboo Agents Patching"
-        msg: "{{ bamboo_html_table }}"
-        message_structure: "html"
+        msg: "{{ bamboo_html_table }}"  # Pass HTML as a string
+        message_structure: "string"  # Use string format
       no_log: false  # Set no_log: false to allow logging of this task output
       tags: send_notification
 
