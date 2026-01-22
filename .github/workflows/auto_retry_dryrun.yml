@@ -20,8 +20,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Run Dry-Run Auto-Retry Script
+      - name: Run Org-Wide Dry-Run Script
         env:
-          GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}  
+          ORG_GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
           MAX_RETRIES: 2
         run: python PYTHON_Script/auto_retry_prs_dryrun.py
+
