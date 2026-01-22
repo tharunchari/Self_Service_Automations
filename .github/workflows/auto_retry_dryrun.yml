@@ -31,5 +31,6 @@ jobs:
         env:
           ORG_GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
           MAX_RETRIES: 2
+          SNS_TOPIC: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching
         run: python PYTHON_Script/auto_retry_prs_dryrun.py
 
