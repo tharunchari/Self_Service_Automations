@@ -15,13 +15,14 @@ HEADERS = {"Authorization": f"Bearer {TOKEN}"}
 ORG = "vitechsystems"
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 2))
 SNS_TOPIC = os.environ.get("SNS_TOPIC")
+DRY_RUN = True  # Change to False to enable retry
 
 INFRA_FAILURE_PATTERNS = [
     "runner unexpectedly disconnected",
     "received a shutdown signal",
     "lost communication with the server",
     "the operation was canceled",
-    "Job canceled",
+    "job canceled",
     "terminated by spot interruption"
 ]
 
@@ -131,7 +132,6 @@ def get_repo_workflows(repo):
             for run in runs_info:
                 all_failed_runs.append({"run": run, "prs": prs, "repo": repo})
 
-        # PR pagination
         page_info = repo_data.get("pullRequests", {}).get("pageInfo", {})
         if page_info.get("hasNextPage"):
             cursor = page_info.get("endCursor")
@@ -144,8 +144,6 @@ def get_repo_workflows(repo):
 # Fetch workflow run logs
 # -----------------------------
 def fetch_run_logs(run_url):
-    # Construct API URL to fetch job logs
-    # Example: convert run.url to API jobs endpoint
     try:
         parts = run_url.split("/")
         owner, repo, run_id = parts[3], parts[4], parts[-1]
@@ -193,7 +191,7 @@ def classify_run(run_info):
             reason = "Unknown Failure"
             color = "#FFFF99"
 
-    record_retry(run, repo, dry_run=True)
+    record_retry(run, repo, dry_run=DRY_RUN)
     return {"repo": repo, "pr_link": pr_link, "reason": reason, "color": color}
 
 # -----------------------------
@@ -215,15 +213,38 @@ def record_retry(run, repo, dry_run=True):
 # -----------------------------
 # SNS notification (batch)
 # -----------------------------
-def send_sns_summary(failures):
+def send_sns_summary(failures, total_repos):
     if not SNS_TOPIC or not failures:
         print("No failures or SNS_TOPIC not set. Skipping email notification.")
         return
 
-    html_table = """
-    <html>
-    <body>
+    # Summary counts
+    infra_count = sum(1 for f in failures if f["reason"] == "Infra Failure")
+    app_count = sum(1 for f in failures if f["reason"] == "App Failure")
+    unknown_count = sum(1 for f in failures if f["reason"] == "Unknown Failure")
+
+    # HTML top summary
+    html_summary = f"""
+    <html><body>
     <h2>Org-Wide PR Failures Dry-Run Report</h2>
+    <table border='1' style='border-collapse: collapse; width: 50%;'>
+        <tr style='background-color:#4CAF50; color:white;'>
+            <th>Organization</th><th>Total Repos Scanned</th><th>Total Failures</th><th>Infra</th><th>App</th><th>Unknown</th>
+        </tr>
+        <tr style='text-align:center;'>
+            <td>{ORG}</td>
+            <td>{total_repos}</td>
+            <td>{len(failures)}</td>
+            <td>{infra_count}</td>
+            <td>{app_count}</td>
+            <td>{unknown_count}</td>
+        </tr>
+    </table>
+    <br>
+    """
+
+    # HTML detailed table
+    html_table = """
     <table border='1' style='border-collapse: collapse; width: 100%;'>
         <tr style='background-color:#4CAF50; color:white;'>
             <th>Repo</th><th>PR Link</th><th>Reason</th>
@@ -239,10 +260,12 @@ def send_sns_summary(failures):
         """
     html_table += "</table></body></html>"
 
+    message = html_summary + html_table
+
     sns_client.publish(
         TopicArn=SNS_TOPIC,
         Subject="Org-Wide PR Failures Report",
-        Message=html_table
+        Message=message
     )
     print("SNS email sent.")
 
@@ -252,7 +275,8 @@ def send_sns_summary(failures):
 def main():
     print(f"Dry-Run Org-Wide Auto-Retry for org: {ORG}")
     repos = get_all_repos()
-    print(f"Total repos found: {len(repos)}")
+    total_repos = len(repos)
+    print(f"Total repos found: {total_repos}")
     all_failures = []
 
     for repo in repos:
@@ -266,9 +290,9 @@ def main():
             all_failures.append(failure_info)
 
     if all_failures:
-        send_sns_summary(all_failures)
+        send_sns_summary(all_failures, total_repos)
     else:
-        print("No failures detected across org.")
+        print(f"No failures detected across org ({total_repos} repos).")
 
 if __name__ == "__main__":
     main()
