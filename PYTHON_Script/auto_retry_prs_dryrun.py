@@ -65,35 +65,57 @@ def get_failed_workflow_runs(repo, limit=10):
     pr_runs = [run for run in all_runs if run.get("event") == "pull_request"]
     return pr_runs[:limit]
 
-def log_contains_patterns(repo, run_id, infra_patterns, app_patterns):
+def fetch_associated_pr_link(repo, run):
+    """
+    Try to determine PR links for this workflow run.
+    """
+    pr_links = []
+    # First, try the direct 'pull_requests' field (sometimes not filled)
+    if run.get("pull_requests"):
+        for pr in run["pull_requests"]:
+            if "number" in pr:
+                pr_links.append(f"https://github.com/{ORG}/{repo}/pull/{pr['number']}")
+    # If not found, use the head SHA to look up open PRs with that commit
+    if not pr_links and run.get("head_sha"):
+        pr_url = f"https://api.github.com/repos/{ORG}/{repo}/pulls"
+        qs = {"state": "open", "head": f"{ORG}:{run.get('head_branch')}"}
+        resp = requests.get(pr_url, headers=HEADERS, params=qs, timeout=10)
+        if resp.status_code == 200:
+            for pr in resp.json():
+                if pr.get("head") and pr["head"].get("sha") == run.get("head_sha"):
+                    pr_links.append(pr["html_url"])
+    return ", ".join(pr_links) if pr_links else "Not a PR run"
+
+def log_contains_patterns_and_debug(repo, run_id, infra_patterns, app_patterns):
     """
     Download zipped logs, scan for patterns line by line.
-    Returns: "infra", "app", or None
+    Returns: "infra", "app", or None, and also prints up to 20 lines of logs for debug if no pattern matched.
     """
     url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/logs"
-    for attempt in range(3):
-        try:
-            resp = requests.get(url, headers=HEADERS, timeout=60, stream=True)
-            resp.raise_for_status()
-            with io.BytesIO(resp.content) as b, zipfile.ZipFile(b) as z:
-                for filename in z.namelist():
-                    with z.open(filename) as f:
-                        for raw_line in f:
-                            try:
-                                line = raw_line.decode(errors='ignore').lower()
-                            except Exception:
-                                continue
-                            for pattern in infra_patterns:
-                                if pattern.lower() in line:
-                                    return "infra"
-                            for pattern in app_patterns:
-                                if pattern.lower() in line:
-                                    return "app"
-            return None
-        except Exception as e:
-            print(f"Failed to scan logs for {repo}/{run_id} (attempt {attempt+1}): {e}")
-            time.sleep(2)
-    return None
+    matched = None
+    log_sample = []
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=60, stream=True)
+        resp.raise_for_status()
+        with io.BytesIO(resp.content) as b, zipfile.ZipFile(b) as z:
+            for filename in z.namelist():
+                with z.open(filename) as f:
+                    for i, raw_line in enumerate(f):
+                        try:
+                            line = raw_line.decode(errors='ignore').lower()
+                        except Exception:
+                            continue
+                        for pattern in infra_patterns:
+                            if pattern.lower() in line:
+                                matched = "infra"
+                        for pattern in app_patterns:
+                            if pattern.lower() in line:
+                                matched = "app"
+                        if len(log_sample) < 20:
+                            log_sample.append(line.strip())
+    except Exception as e:
+        print(f"Failed to scan logs for {repo}/{run_id}: {e}")
+    return matched, log_sample
 
 def rerun_workflow(repo, run_id):
     url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/rerun"
@@ -115,15 +137,8 @@ def rerun_workflow(repo, run_id):
 
 def classify_run(repo, run, dry_run=True):
     run_id = run["id"]
-    # Try to get PR link(s)
-    pr_links = []
-    if run.get("pull_requests"):
-        for pr in run["pull_requests"]:
-            if "number" in pr:
-                pr_links.append(f"https://github.com/{ORG}/{repo}/pull/{pr['number']}")
-    pr_link = ", ".join(pr_links) if pr_links else "Not a PR run"
-
-    pattern_hit = log_contains_patterns(repo, run_id, INFRA_FAILURE_PATTERNS, APP_FAILURE_PATTERNS)
+    pr_link = fetch_associated_pr_link(repo, run)
+    pattern_hit, log_sample = log_contains_patterns_and_debug(repo, run_id, INFRA_FAILURE_PATTERNS, APP_FAILURE_PATTERNS)
     reason = "Unknown Failure"
     color = "#FFFF99"
     retriggered = "No"
@@ -139,9 +154,16 @@ def classify_run(repo, run, dry_run=True):
     elif pattern_hit == "app":
         reason = "App Failure"
         color = "#66CCFF"
-    # else: keep default "Unknown Failure"
 
     record_retry(run, repo, dry_run)
+    # Always print log sample to workflow logs for all runs
+    print(f"==== Log sample for run {run_id} in {repo} ====")
+    print("PR Link:", pr_link)
+    print("Matched reason:", reason)
+    for log_line in log_sample:
+        print(log_line)
+    print("==== END Log sample ====")
+
     return {
         "repo": repo,
         "pr_link": pr_link,
@@ -169,13 +191,15 @@ def record_retry(run, repo, dry_run=True):
 # -----------------------------
 
 def send_sns_summary(failures, total_repos):
-    if not SNS_TOPIC or not failures:
-        print("No failures or SNS_TOPIC not set. Skipping email notification.")
+    # Only send if there is at least one real infra or app failure!
+    real = [f for f in failures if f["reason"] in ("Infra Failure", "App Failure")]
+    if not SNS_TOPIC or not real:
+        print("No infra/app failures or SNS_TOPIC not set. Skipping email notification.")
         return
 
-    total_failures = len(failures)
-    infra_failures = sum(1 for f in failures if "Infra" in f["reason"])
-    app_failures = sum(1 for f in failures if "App" in f["reason"])
+    total_failures = len(real)
+    infra_failures = sum(1 for f in real if f["reason"] == "Infra Failure")
+    app_failures = sum(1 for f in real if f["reason"] == "App Failure")
 
     lines = [
         "Org-Wide PR Failures Report\n",
@@ -188,7 +212,7 @@ def send_sns_summary(failures, total_repos):
         "\nFailed PRs / Workflows:"
     ]
 
-    for f in failures:
+    for f in real:
         lines.append(
             f"Repo: {f['repo']}\n"
             f"  PR Link: {f['pr_link']}\n"
@@ -197,7 +221,6 @@ def send_sns_summary(failures, total_repos):
         )
 
     text_report = "\n".join(lines)
-    # also print in console for debug
     print("="*40 + "\n" + text_report + "\n" + "="*40)
 
     sns_client.publish(
@@ -229,9 +252,9 @@ def main():
             failure_info = classify_run(repo, run, dry_run=dry_run)
             all_failures.append(failure_info)
 
-    if all_failures:
-        send_sns_summary(all_failures, total_repos=len(repos))
-    else:
+    send_sns_summary(all_failures, total_repos=len(repos))
+
+    if not all_failures:
         print("No failures detected across selected repos.")
 
 if __name__ == "__main__":
