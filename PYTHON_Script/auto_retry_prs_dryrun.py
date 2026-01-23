@@ -164,6 +164,10 @@ def record_retry(run, repo, dry_run=True):
     with open(file_path, "w") as f:
         json.dump(data, f, indent=2)
 
+# -----------------------------
+# Plain Text SNS Report
+# -----------------------------
+
 def send_sns_summary(failures, total_repos):
     if not SNS_TOPIC or not failures:
         print("No failures or SNS_TOPIC not set. Skipping email notification.")
@@ -173,45 +177,33 @@ def send_sns_summary(failures, total_repos):
     infra_failures = sum(1 for f in failures if "Infra" in f["reason"])
     app_failures = sum(1 for f in failures if "App" in f["reason"])
 
-    html = f"""
-    <html>
-    <body>
-    <h2>Org-Wide PR Failures Report</h2>
-    <h3>Summary</h3>
-    <table border='1' style='border-collapse: collapse; width: 60%;'>
-        <tr style='background-color:#4CAF50; color:white;'>
-            <th>Org</th><th>Total Repos</th><th>Total Failures</th><th>Infra Failures</th><th>App Failures</th>
-        </tr>
-        <tr>
-            <td>{ORG}</td>
-            <td>{total_repos}</td>
-            <td>{total_failures}</td>
-            <td>{infra_failures}</td>
-            <td>{app_failures}</td>
-        </tr>
-    </table>
-    <br>
-    <h3>Failed PRs / Workflows</h3>
-    <table border='1' style='border-collapse: collapse; width: 100%;'>
-        <tr style='background-color:#4CAF50; color:white;'>
-            <th>Repo</th><th>PR Link</th><th>Reason</th><th>Retriggered</th>
-        </tr>
-    """
+    lines = [
+        "Org-Wide PR Failures Report\n",
+        "Summary:",
+        f"- Org: {ORG}",
+        f"- Total Repos: {total_repos}",
+        f"- Total Failures: {total_failures}",
+        f"- Infra Failures: {infra_failures}",
+        f"- App Failures: {app_failures}",
+        "\nFailed PRs / Workflows:"
+    ]
+
     for f in failures:
-        html += f"""
-        <tr style='background-color:{f['color']}'>
-            <td>{f['repo']}</td>
-            <td><a href="{f['pr_link']}">{f['pr_link']}</a></td>
-            <td>{f['reason']}</td>
-            <td style='background-color:{f['retrigger_color']}; color:white;'>{f['retriggered']}</td>
-        </tr>
-        """
-    html += "</table></body></html>"
+        lines.append(
+            f"Repo: {f['repo']}\n"
+            f"  PR Link: {f['pr_link']}\n"
+            f"  Reason: {f['reason']}\n"
+            f"  Retriggered: {f['retriggered']}\n"
+        )
+
+    text_report = "\n".join(lines)
+    # also print in console for debug
+    print("="*40 + "\n" + text_report + "\n" + "="*40)
 
     sns_client.publish(
         TopicArn=SNS_TOPIC,
         Subject="Org-Wide PR Failures Report",
-        Message=html
+        Message=text_report
     )
     print("SNS email sent.")
 
