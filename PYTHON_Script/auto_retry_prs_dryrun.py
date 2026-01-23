@@ -17,7 +17,7 @@ HEADERS = {
     "Accept": "application/vnd.github+json"
 }
 ORG = "vitechsystems"
-REPOS_TO_SCAN = ["CoreAdmin"]  # Add more repos here later
+REPOS_TO_SCAN = ["CoreAdmin"]  # Add more repos here as needed
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 2))
 SNS_TOPIC = os.environ.get("SNS_TOPIC")
 
@@ -45,31 +45,11 @@ sns_client = boto3.client("sns")
 # REST API Helpers
 # -----------------------------
 
-def get_open_prs(repo):
-    prs = []
-    page = 1
-    while True:
-        url = f"https://api.github.com/repos/{ORG}/{repo}/pulls"
-        resp = requests.get(url, headers=HEADERS, params={"state": "open", "per_page": 50, "page": page}, timeout=20)
-        if resp.status_code != 200:
-            print(f"Warning: Could not fetch PRs for repo {repo}: {resp.status_code} - {resp.text}")
-            break
-        data = resp.json()
-        if not data:
-            break
-        for pr in data:
-            prs.append({"number": pr["number"], "url": pr["html_url"]})
-        if len(data) < 50:
-            break
-        page += 1
-    return prs
-
 def get_failed_workflow_runs(repo):
     runs = []
     page = 1
     while True:
         url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs"
-        # Filter for runs on PRs and with 'failure' conclusion/status
         params = {
             "status": "completed",
             "conclusion": "failure",
@@ -88,28 +68,48 @@ def get_failed_workflow_runs(repo):
         page += 1
     return runs
 
-def fetch_run_logs(repo, run_id):
-    try:
-        url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/logs"
-        resp = requests.get(url, headers=HEADERS, timeout=60)
-        resp.raise_for_status()
-        z = zipfile.ZipFile(io.BytesIO(resp.content))
-        logs_text = ""
-        for filename in z.namelist():
-            logs_text += z.read(filename).decode(errors='ignore')
-        return logs_text
-    except Exception as e:
-        print(f"Failed to fetch logs for {repo}/{run_id}: {e}")
-        return ""
+def log_contains_patterns(repo, run_id, infra_patterns, app_patterns):
+    """
+    Download zipped logs, scan for patterns line by line.
+    Returns: "infra", "app", or None
+    """
+    url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/logs"
+    for attempt in range(3):
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=60, stream=True)
+            resp.raise_for_status()
+            with io.BytesIO(resp.content) as b, zipfile.ZipFile(b) as z:
+                for filename in z.namelist():
+                    with z.open(filename) as f:
+                        for raw_line in f:
+                            try:
+                                line = raw_line.decode(errors='ignore').lower()
+                            except Exception:
+                                continue
+                            for pattern in infra_patterns:
+                                if pattern.lower() in line:
+                                    return "infra"
+                            for pattern in app_patterns:
+                                if pattern.lower() in line:
+                                    return "app"
+            return None
+        except Exception as e:
+            print(f"Failed to scan logs for {repo}/{run_id} (attempt {attempt+1}): {e}")
+            time.sleep(2)
+    return None
 
 def rerun_workflow(repo, run_id):
     url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/rerun"
-    resp = requests.post(url, headers=HEADERS)
-    if resp.status_code == 201:
-        print(f"Workflow run {run_id} in repo {repo} rerun triggered successfully.")
-        return True
-    else:
-        print(f"Failed to rerun workflow {run_id} for {repo}: {resp.text}")
+    try:
+        resp = requests.post(url, headers=HEADERS)
+        if resp.status_code == 201:
+            print(f"Workflow run {run_id} in repo {repo} rerun triggered successfully.")
+            return True
+        else:
+            print(f"Failed to rerun workflow {run_id} for {repo}: {resp.text}")
+            return False
+    except Exception as e:
+        print(f"Failed to rerun workflow {run_id} in {repo}: {e}")
         return False
 
 # -----------------------------
@@ -118,38 +118,31 @@ def rerun_workflow(repo, run_id):
 
 def classify_run(repo, run, dry_run=True):
     run_id = run["id"]
-    pr_link = None
+    # Try to get PR link(s)
+    pr_links = []
     if run.get("pull_requests"):
-        pr_nums = [pr["number"] for pr in run["pull_requests"] if "number" in pr]
-        pr_link = ", ".join([f"https://github.com/{ORG}/{repo}/pull/{num}" for num in pr_nums]) or "Not a PR run"
-    else:
-        pr_link = "Not a PR run"
+        for pr in run["pull_requests"]:
+            if "number" in pr:
+                pr_links.append(f"https://github.com/{ORG}/{repo}/pull/{pr['number']}")
+    pr_link = ", ".join(pr_links) if pr_links else "Not a PR run"
 
-    logs = fetch_run_logs(repo, run_id)
-
-    reason = "Unknown"
+    pattern_hit = log_contains_patterns(repo, run_id, INFRA_FAILURE_PATTERNS, APP_FAILURE_PATTERNS)
+    reason = "Unknown Failure"
     color = "#FFFF99"
     retriggered = "No"
     retrigger_color = "#CCCCCC"
 
-    for pattern in INFRA_FAILURE_PATTERNS:
-        if pattern.lower() in logs.lower():
-            reason = "Infra Failure"
-            color = "#FF6666"
-            if not dry_run:
-                if rerun_workflow(repo, run_id):
-                    retriggered = "Yes"
-                    retrigger_color = "#00CC00"
-            break
-    else:
-        for pattern in APP_FAILURE_PATTERNS:
-            if pattern.lower() in logs.lower():
-                reason = "App Failure"
-                color = "#66CCFF"
-                break
-        else:
-            reason = "Unknown Failure"
-            color = "#FFFF99"
+    if pattern_hit == "infra":
+        reason = "Infra Failure"
+        color = "#FF6666"
+        if not dry_run:
+            if rerun_workflow(repo, run_id):
+                retriggered = "Yes"
+                retrigger_color = "#00CC00"
+    elif pattern_hit == "app":
+        reason = "App Failure"
+        color = "#66CCFF"
+    # else: keep default "Unknown Failure"
 
     record_retry(run, repo, dry_run)
     return {
