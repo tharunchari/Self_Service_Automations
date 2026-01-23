@@ -57,6 +57,10 @@ jobs:
           ls -la
           sudo ansible-playbook BambooAgetns_patching/Agentstatusmail.yml --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv
         continue-on-error: false
+
+      - name: Run Ansible Playbook
+        run: |
+          ansible-playbook BambooAgetns_patching/stoptest.yml -i BambooAgetns_patching/Inventory_test.yml --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no"
         
    #   - name: Stop the System Service
   #      run: |
