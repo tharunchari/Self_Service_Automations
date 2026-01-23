@@ -45,28 +45,25 @@ sns_client = boto3.client("sns")
 # REST API Helpers
 # -----------------------------
 
-def get_failed_workflow_runs(repo):
-    runs = []
-    page = 1
-    while True:
-        url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs"
-        params = {
-            "status": "completed",
-            "conclusion": "failure",
-            "per_page": 30,
-            "page": page
-        }
-        resp = requests.get(url, headers=HEADERS, params=params, timeout=20)
-        if resp.status_code != 200:
-            print(f"Warning: Could not fetch failed workflow runs for repo {repo}: {resp.status_code} {resp.text}")
-            break
-        page_runs = resp.json().get("workflow_runs", [])
-        for run in page_runs:
-            runs.append(run)
-        if len(page_runs) < 30:
-            break
-        page += 1
-    return runs
+def get_failed_workflow_runs(repo, limit=10):
+    """
+    Fetch up to `limit` most recent failed workflow runs triggered by PR.
+    """
+    url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs"
+    params = {
+        "status": "completed",
+        "conclusion": "failure",
+        "per_page": 20,  # Fetch 20 and then filter, because not all are PR runs
+        "page": 1
+    }
+    resp = requests.get(url, headers=HEADERS, params=params, timeout=20)
+    if resp.status_code != 200:
+        print(f"Warning: Could not fetch failed workflow runs for repo {repo}: {resp.status_code} {resp.text}")
+        return []
+    all_runs = resp.json().get("workflow_runs", [])
+    # Only keep runs triggered by PRs
+    pr_runs = [run for run in all_runs if run.get("event") == "pull_request"]
+    return pr_runs[:limit]
 
 def log_contains_patterns(repo, run_id, infra_patterns, app_patterns):
     """
@@ -232,7 +229,7 @@ def main():
 
     for repo in repos:
         print(f"\nScanning repo: {repo}")
-        failed_runs = get_failed_workflow_runs(repo)
+        failed_runs = get_failed_workflow_runs(repo, limit=10)
         if not failed_runs:
             print("No failed workflow runs found.")
             continue
