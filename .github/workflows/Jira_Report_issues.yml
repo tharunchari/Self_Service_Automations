@@ -43,4 +43,4 @@ jobs:
           aws-region: us-east-1
  
       - name: Run Jira Report Script
-        run: python3 PYTHON_Script/JIRA_PROJECT_ISSUES1.py
+        run: python3 PYTHON_Script/JIRA_PROJECT_ISSUESQA.py
