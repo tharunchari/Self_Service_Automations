@@ -15,7 +15,7 @@ HEADERS = {
 }
 ORG = "vitechsystems"
 REPOS_TO_SCAN = ["CoreAdmin"]
-MAX_RUNS_TO_CHECK = 200
+MAX_RUNS_TO_CHECK = 100   # <--- CHANGED HERE!
 SNS_TOPIC = os.environ.get("SNS_TOPIC")
 
 INFRA_FAILURE_PATTERNS = [
@@ -85,6 +85,9 @@ def fetch_associated_pr_link(repo, run):
     return ", ".join(pr_links) if pr_links else "Not a PR run"
 
 def log_contains_patterns_and_debug(repo, run_id, infra_patterns, app_patterns):
+    """
+    Scan zipped logs for failure patterns.
+    """
     url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/logs"
     matched_infra = None
     matched_app = None
@@ -103,57 +106,81 @@ def log_contains_patterns_and_debug(repo, run_id, infra_patterns, app_patterns):
                         lower_line = line.lower()
                         for pattern in infra_patterns:
                             if pattern in lower_line:
-                                print(f"Matched INFRA pattern: '{pattern}' in line: {line.strip()}")
+                                print(f"Matched INFRA pattern (LOG): '{pattern}' in line: {line.strip()}")
                                 matched_infra = pattern
                         for pattern in app_patterns:
                             if pattern in lower_line:
-                                print(f"Matched APP pattern: '{pattern}' in line: {line.strip()}")
+                                print(f"Matched APP pattern (LOG): '{pattern}' in line: {line.strip()}")
                                 matched_app = pattern
-                        # For log sample, just first 20 lines
                         if len(log_sample) < 20:
                             log_sample.append(line.strip())
     except Exception as e:
         print(f"Failed to scan logs for {repo}/{run_id}: {e}")
-    # Always prefer infra if both found
-    if matched_infra:
-        return "infra", log_sample
-    elif matched_app:
-        return "app", log_sample
-    else:
-        return None, log_sample
+    return matched_infra, matched_app, log_sample
 
-def rerun_workflow(repo, run_id):
-    url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/rerun"
+def annotations_contains_infra(repo, run_id, infra_patterns):
+    """Fetch job annotations and scan for infra patterns."""
+    jobs_url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/jobs"
     try:
-        resp = requests.post(url, headers=HEADERS)
-        if resp.status_code == 201:
-            print(f"Workflow run {run_id} in repo {repo} rerun triggered successfully.")
-            return True
-        else:
-            print(f"Failed to rerun workflow {run_id} for {repo}: {resp.text}")
-            return False
+        jobs_resp = requests.get(jobs_url, headers=HEADERS, timeout=30)
+        jobs_resp.raise_for_status()
+        jobs = jobs_resp.json().get("jobs", [])
+        for job in jobs:
+            # Scan error messages in steps, and in failure_message (API v3)
+            if "steps" in job:
+                for step in job["steps"]:
+                    if "name" in step and step.get("conclusion") == "failure":
+                        step_name = step["name"].lower()
+                        for pattern in infra_patterns:
+                            if pattern in step_name:
+                                print(f"Matched INFRA pattern (ANNOTATION STEP NAME): '{pattern}' in: {step['name']}")
+                                return True, f"[Step: {step['name']}]"
+                        if "number" in step and step.get("name"):
+                            if step.get("name"):
+                                text = step.get("name").lower()
+                                for pattern in infra_patterns:
+                                    if pattern in text:
+                                        print(f"Matched INFRA pattern (ANNOTATION STEP STRING): '{pattern}' in step: {text}")
+                                        return True, f"[Step: {text}]"
+            # Scan job-level error
+            if "conclusion" in job and job.get("conclusion") == "failure":
+                for relevant in [job.get("name", ""), job.get("runner_name", ""), job.get("failure_message", "")]:
+                    if relevant:
+                        for pattern in infra_patterns:
+                            if pattern in str(relevant).lower():
+                                print(f"Matched INFRA pattern (ANNOTATION JOB): '{pattern}' in job string: {relevant}")
+                                return True, f"[Job: {job.get('name')}]"
     except Exception as e:
-        print(f"Failed to rerun workflow {run_id} in {repo}: {e}")
-        return False
+        print(f"Failed to check annotations for run {run_id} in {repo}: {e}")
+    # Try checking check_runs API (future extension)
+    return False, ""
 
 def classify_run(repo, run, dry_run=True):
     run_id = run["id"]
     pr_link = fetch_associated_pr_link(repo, run)
     print(f"Analyzing run ID: {run_id} | PR Link: {pr_link} | Name: {run['name']} | Event: {run.get('event')}")
-    pattern_hit, log_sample = log_contains_patterns_and_debug(repo, run_id, INFRA_FAILURE_PATTERNS, APP_FAILURE_PATTERNS)
+    # --- First, scan the zipped logs
+    matched_infra, matched_app, log_sample = log_contains_patterns_and_debug(repo, run_id, INFRA_FAILURE_PATTERNS, APP_FAILURE_PATTERNS)
     reason = "Unknown Failure"
     color = "#FFFF99"
     retriggered = "No"
     retrigger_color = "#CCCCCC"
 
-    if pattern_hit == "infra":
+    # --- If not matched in logs, check annotations/jobs
+    ann_infra, ann_context = (False, "")
+    if not matched_infra:
+        ann_infra, ann_context = annotations_contains_infra(repo, run_id, INFRA_FAILURE_PATTERNS)
+
+    if matched_infra or ann_infra:
         reason = "Infra Failure"
         color = "#FF6666"
+        if ann_context:
+            print(f"Matched INFRA pattern in Job Annotation: {ann_context}")
         if not dry_run:
             if rerun_workflow(repo, run_id):
                 retriggered = "Yes"
                 retrigger_color = "#00CC00"
-    elif pattern_hit == "app":
+    elif matched_app:
         reason = "App Failure"
         color = "#66CCFF"
 
@@ -189,12 +216,12 @@ def record_retry(run, repo, dry_run=True):
 
 def send_sns_summary(failures, total_repos, repo_name):
     # Only "Infra Failure" triggers email
-    real = [f for f in failures if f["reason"] == "Infra Failure"]
-    if not SNS_TOPIC or not real:
+    infra_only = [f for f in failures if f["reason"] == "Infra Failure"]
+    if not SNS_TOPIC or not infra_only:
         print("No infra failures or SNS_TOPIC not set. Skipping email notification.")
         return
 
-    total_failures = len(real)
+    total_failures = len(infra_only)
     lines = [
         f"CoreAdmin PR Infra Failures Report\n",
         "Summary:",
@@ -204,7 +231,7 @@ def send_sns_summary(failures, total_repos, repo_name):
         "\nInfra Failed PRs / Workflows:"
     ]
 
-    for f in real:
+    for f in infra_only:
         lines.append(
             f"Repo: {f['repo']}\n"
             f"  PR Link: {f['pr_link']}\n"
