@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
  
 # -------------------- Configuration --------------------
 JIRA_URL = "https://jira.vitechinc.com/jira"
-JIRA_USERNAME = "bgattoji"
+JIRA_USERNAME = "svallabhuni"
 JIRA_PASSWORD = os.environ.get("JIRA_PASSWORD")
 JIRA_PROJECT = os.environ.get("JIRA_PROJECT", "").strip()
 DURATION_MONTHS = os.environ.get("DURATION_MONTHS", "").strip()
