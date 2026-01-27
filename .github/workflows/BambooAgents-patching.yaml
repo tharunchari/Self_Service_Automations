@@ -18,10 +18,15 @@ jobs:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
   
+  
   execute-job:
     name: Execute Job on Self-Hosted Runner
     needs: start-runner
     runs-on: Internal_Tools_Automation_Server
+
+    env:
+      ANSIBLE_PASSWORD: ${{ secrets.ANSIBLE_SSH_PASS }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
