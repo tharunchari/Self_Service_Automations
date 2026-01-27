@@ -15,7 +15,7 @@ HEADERS = {
 }
 ORG = "vitechsystems"
 REPOS_TO_SCAN = ["CoreAdmin"]
-MAX_RUNS_TO_CHECK = 100   # <--- CHANGED HERE!
+MAX_RUNS_TO_CHECK = 100  # process up to 100 failed PR workflow runs per repo
 SNS_TOPIC = os.environ.get("SNS_TOPIC")
 
 INFRA_FAILURE_PATTERNS = [
@@ -85,9 +85,6 @@ def fetch_associated_pr_link(repo, run):
     return ", ".join(pr_links) if pr_links else "Not a PR run"
 
 def log_contains_patterns_and_debug(repo, run_id, infra_patterns, app_patterns):
-    """
-    Scan zipped logs for failure patterns.
-    """
     url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/logs"
     matched_infra = None
     matched_app = None
@@ -119,41 +116,53 @@ def log_contains_patterns_and_debug(repo, run_id, infra_patterns, app_patterns):
     return matched_infra, matched_app, log_sample
 
 def annotations_contains_infra(repo, run_id, infra_patterns):
-    """Fetch job annotations and scan for infra patterns."""
+    """Fetch job annotation fields and scan for infra patterns anywhere in any string field."""
     jobs_url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/jobs"
     try:
         jobs_resp = requests.get(jobs_url, headers=HEADERS, timeout=30)
         jobs_resp.raise_for_status()
         jobs = jobs_resp.json().get("jobs", [])
         for job in jobs:
-            # Scan error messages in steps, and in failure_message (API v3)
-            if "steps" in job:
-                for step in job["steps"]:
-                    if "name" in step and step.get("conclusion") == "failure":
-                        step_name = step["name"].lower()
+            # Check all string values in the job struct
+            for key, val in job.items():
+                if isinstance(val, str):
+                    for pattern in infra_patterns:
+                        if pattern in val.lower():
+                            print(f"Matched INFRA pattern (ANNOTATION JOB FIELD): '{pattern}' in {key}: {val}")
+                            return True, f"[Job field: {key}]"
+            # Check top-level job failure_message
+            if job.get("failure_message"):
+                text = job.get("failure_message").lower()
+                for pattern in infra_patterns:
+                    if pattern in text:
+                        print(f"Matched INFRA pattern (ANNOTATION failure_message): '{pattern}' in {text}")
+                        return True, "[failure_message]"
+            # Check all steps
+            for step in job.get("steps", []):
+                # Check all string values in the step
+                for skey, sval in step.items():
+                    if isinstance(sval, str):
                         for pattern in infra_patterns:
-                            if pattern in step_name:
-                                print(f"Matched INFRA pattern (ANNOTATION STEP NAME): '{pattern}' in: {step['name']}")
-                                return True, f"[Step: {step['name']}]"
-                        if "number" in step and step.get("name"):
-                            if step.get("name"):
-                                text = step.get("name").lower()
-                                for pattern in infra_patterns:
-                                    if pattern in text:
-                                        print(f"Matched INFRA pattern (ANNOTATION STEP STRING): '{pattern}' in step: {text}")
-                                        return True, f"[Step: {text}]"
-            # Scan job-level error
-            if "conclusion" in job and job.get("conclusion") == "failure":
-                for relevant in [job.get("name", ""), job.get("runner_name", ""), job.get("failure_message", "")]:
-                    if relevant:
-                        for pattern in infra_patterns:
-                            if pattern in str(relevant).lower():
-                                print(f"Matched INFRA pattern (ANNOTATION JOB): '{pattern}' in job string: {relevant}")
-                                return True, f"[Job: {job.get('name')}]"
+                            if pattern in sval.lower():
+                                print(f"Matched INFRA pattern (ANNOTATION STEP FIELD): '{pattern}' in {skey}: {sval}")
+                                return True, f"[Step field: {skey}]"
     except Exception as e:
         print(f"Failed to check annotations for run {run_id} in {repo}: {e}")
-    # Try checking check_runs API (future extension)
     return False, ""
+
+def rerun_workflow(repo, run_id):
+    url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs/{run_id}/rerun"
+    try:
+        resp = requests.post(url, headers=HEADERS)
+        if resp.status_code == 201:
+            print(f"Workflow run {run_id} in repo {repo} rerun triggered successfully.")
+            return True
+        else:
+            print(f"Failed to rerun workflow {run_id} for {repo}: {resp.text}")
+            return False
+    except Exception as e:
+        print(f"Failed to rerun workflow {run_id} in {repo}: {e}")
+        return False
 
 def classify_run(repo, run, dry_run=True):
     run_id = run["id"]
@@ -166,7 +175,7 @@ def classify_run(repo, run, dry_run=True):
     retriggered = "No"
     retrigger_color = "#CCCCCC"
 
-    # --- If not matched in logs, check annotations/jobs
+    # --- If not matched in logs, check annotations/jobs (full scan of all string fields)
     ann_infra, ann_context = (False, "")
     if not matched_infra:
         ann_infra, ann_context = annotations_contains_infra(repo, run_id, INFRA_FAILURE_PATTERNS)
