@@ -72,9 +72,9 @@ jobs:
           pwd
           ls -la
           sudo ansible-playbook BambooAgetns_patching/snapshot.yml -\
-          --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" \
-          --extra-vars "vcusername=${{ vars.VC_USERNAME }}" \
-          --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv
+           --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" \
+           --extra-vars "vcusername=${{ vars.VC_USERNAME }}" \
+           --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv
         continue-on-error: false
         
    #   - name: Stop the System Service
