@@ -18,44 +18,47 @@
       - name: Debug VM names from vars file
         debug:
           msg: "VM names to snapshot: {{ vm_names }}"
- 
-      - name: Create snapshots for VMs in XAND DataCenter
+               - name: Generate timestamp
+        set_fact:
+           timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M-%S') }}"
+
+      - name: snapshots for XAND DATACENTER......
         vmware_guest_snapshot:
           validate_certs: no
           hostname: "172.26.44.50"
           username: "{{ vcusername }}@vitechinc.com"
           password: "{{ vcpassword }}"
-          datacenter: "{{ vcdc }}"
-          folder: "/{{ vcdc }}/"
-          name: "{{ item }}"
+          datacenter: "XAND"
+          folder: "/XAND/"
+          name: "{{ item }}"   
           state: present
-          snapshot_name: "created_by_svallabhuni_{{ timestamp }}"
-        register: out
+          snapshot_name: "opsbackup_{{ timestamp }}"
+        register: snapshot_result
         delegate_to: localhost
         with_items: "{{ vm_names }}"
-      #  ignore_errors: true
-      
+ 
+    
       - name: Debug VM names from vars file
         debug:
-          msg: "VM names to snapshot: {{ vm_names1 }}"
+          msg: "VM names to snapshot: {{ vm_names }}"
 
       - name: snapshots for NJ DATACENTER .....
         vmware_guest_snapshot:
           validate_certs: no
           hostname: "172.90.38.90"
-          username: "{{ vcusername1 }}@vitechinc.com"
-          password: "{{ vcpassword1 }}"
-          datacenter: "{{ vcdc1 }}"
-          folder: "/{{ vcdc1 }}/"
+          username: "{{ vcusername }}@vitechinc.com"
+          password: "{{ vcpassword }}"
+          datacenter: "NJ"
+          folder: "/NJ/"
           name: "{{ item }}"    
           state: present
-          snapshot_name: "creeated_by_svallabhuni_{{ timestamp }}"
+          snapshot_name: "opsbackup_{{ timestamp }}"
       #    snapshot_name: backup
-        register: snapshot_result
+        register: snapshot_result1
         delegate_to: localhost
         with_items: "{{ vm_names1 }}"
-    #    ignore_errors: true
+        ignore_errors: true
         
-      - name: Debug snapshot results
+      - name: Debug NJ VM names from vars file
         debug:
-          var: snapshot_result
+          msg: "VM names to snapshot: {{ vm_names1 }}"
