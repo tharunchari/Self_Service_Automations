@@ -20,6 +20,7 @@ SNS_TOPIC = os.environ.get("SNS_TOPIC")
 
 INFRA_FAILURE_PATTERNS = [
     "lost communication",
+    "the self-hosted runner lost communication",
     "runner unexpectedly disconnected",
     "received a shutdown signal",
     "the operation was canceled",
@@ -28,8 +29,7 @@ INFRA_FAILURE_PATTERNS = [
     "connect error",
     "connection error",
     "network error",
-    "failed to connect",
-    "the self-hosted runner lost communication"
+    "failed to connect"
 ]
 
 APP_FAILURE_PATTERNS = [
@@ -69,20 +69,17 @@ def get_failed_workflow_runs(repo, limit=MAX_RUNS_TO_CHECK):
     return runs[:limit]
 
 def fetch_associated_pr_link(repo, run):
-    # Try 'pull_requests' field first (may be empty)
     pr_links = []
     if run.get("pull_requests"):
         for pr in run["pull_requests"]:
             if "number" in pr:
                 pr_links.append(f"https://github.com/{ORG}/{repo}/pull/{pr['number']}")
-    # Try open PRs with same head SHA
     if not pr_links and run.get("head_sha"):
         pr_url = f"https://api.github.com/repos/{ORG}/{repo}/pulls"
         qs = {"state": "open", "per_page": 100}
         pr_resp = requests.get(pr_url, headers=HEADERS, params=qs, timeout=10)
         if pr_resp.status_code == 200:
             for pr in pr_resp.json():
-                # Compare by SHA only
                 if pr.get("head", {}).get("sha", "") == run.get("head_sha"):
                     pr_links.append(pr["html_url"])
     return ", ".join(pr_links) if pr_links else "Not a PR run"
@@ -98,7 +95,7 @@ def log_contains_patterns_and_debug(repo, run_id, infra_patterns, app_patterns):
         with io.BytesIO(resp.content) as b, zipfile.ZipFile(b) as z:
             for filename in z.namelist():
                 with z.open(filename) as f:
-                    for i, raw_line in enumerate(f):
+                    for raw_line in f:
                         try:
                             line = raw_line.decode(errors='ignore')
                         except Exception:
@@ -112,6 +109,7 @@ def log_contains_patterns_and_debug(repo, run_id, infra_patterns, app_patterns):
                             if pattern in lower_line:
                                 print(f"Matched APP pattern: '{pattern}' in line: {line.strip()}")
                                 matched_app = pattern
+                        # For log sample, just first 20 lines
                         if len(log_sample) < 20:
                             log_sample.append(line.strip())
     except Exception as e:
@@ -190,24 +188,20 @@ def record_retry(run, repo, dry_run=True):
         json.dump(data, f, indent=2)
 
 def send_sns_summary(failures, total_repos, repo_name):
-    real = [f for f in failures if f["reason"] in ("Infra Failure", "App Failure")]
+    # Only "Infra Failure" triggers email
+    real = [f for f in failures if f["reason"] == "Infra Failure"]
     if not SNS_TOPIC or not real:
-        print("No infra/app failures or SNS_TOPIC not set. Skipping email notification.")
+        print("No infra failures or SNS_TOPIC not set. Skipping email notification.")
         return
 
     total_failures = len(real)
-    infra_failures = sum(1 for f in real if f["reason"] == "Infra Failure")
-    app_failures = sum(1 for f in real if f["reason"] == "App Failure")
-
     lines = [
-        f"{repo_name} PR Failures Report\n",
+        f"CoreAdmin PR Infra Failures Report\n",
         "Summary:",
         f"- Org: {ORG}",
         f"- Repo: {repo_name}",
-        f"- Total Failures: {total_failures}",
-        f"- Infra Failures: {infra_failures}",
-        f"- App Failures: {app_failures}",
-        "\nFailed PRs / Workflows:"
+        f"- Total Infra Failures: {total_failures}",
+        "\nInfra Failed PRs / Workflows:"
     ]
 
     for f in real:
@@ -223,17 +217,15 @@ def send_sns_summary(failures, total_repos, repo_name):
 
     sns_client.publish(
         TopicArn=SNS_TOPIC,
-        Subject=f"{repo_name} PR Failures Report",
+        Subject=f"CoreAdmin PR Infra Failures Report",
         Message=text_report
     )
     print("SNS email sent.")
 
 def main():
-    dry_run = True  # Set to False to enable reruns
-
+    dry_run = True  # Change to False to enable rerun
     repos = REPOS_TO_SCAN
     print(f"Repos to scan: {repos}")
-
     for repo in repos:
         print(f"\nScanning repo: {repo}")
         all_failures = []
