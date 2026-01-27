@@ -15,7 +15,7 @@ HEADERS = {
 }
 ORG = "vitechsystems"
 REPOS_TO_SCAN = ["CoreAdmin"]
-MAX_RUNS_TO_CHECK = 100  # process up to 100 failed PR workflow runs per repo
+MAX_RUNS_TO_CHECK = 200  # process up to 100 failed PR workflow runs per repo
 SNS_TOPIC = os.environ.get("SNS_TOPIC")
 
 INFRA_FAILURE_PATTERNS = [
