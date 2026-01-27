@@ -49,14 +49,14 @@ jobs:
 
 
 
-      - name: Send the Mail Notification 
-        env:
-          BAMBOO_PASSWORD: ${{ secrets.BAMBOO_PASSWORD }}
-        run: |
-          pwd
-          ls -la
-          sudo ansible-playbook BambooAgetns_patching/Agentstatusmail.yml --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv
-        continue-on-error: false
+   #   - name: Send the Mail Notification 
+   #     env:
+   #       BAMBOO_PASSWORD: ${{ secrets.BAMBOO_PASSWORD }}
+   #     run: |
+   #       pwd
+   #       ls -la
+   #       sudo ansible-playbook BambooAgetns_patching/Agentstatusmail.yml --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv
+   #     continue-on-error: false
 
       - name: Run Ansible Playbook
         run: |
