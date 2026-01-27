@@ -7,7 +7,9 @@ from email.mime.application import MIMEApplication
 from botocore.exceptions import ClientError
 import os
 from datetime import datetime, timedelta
- 
+import zipfile
+import shutil
+
 # -------------------- Configuration --------------------
 JIRA_URL = "https://jiraqa.vitechinc.com/jiraqa"
 JIRA_USERNAME = "svallabhuni"
@@ -18,18 +20,18 @@ JIRA_JQL = os.environ.get("JIRA_JQL", "").strip()
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 SES_SENDER = "v3atlassianops@vitechinc.com"
 SES_RECIPIENT = "v3atlassianops@vitechinc.com"
- 
+
 # -------------------- Jira Authentication --------------------
 jira = JIRA(server=JIRA_URL, basic_auth=(JIRA_USERNAME, JIRA_PASSWORD))
- 
+
 # -------------------- Chunk Utility --------------------
 def chunk_list(lst, size):
     for i in range(0, len(lst), size):
         yield lst[i:i + size]
- 
+
 # -------------------- Build the JQL Query --------------------
 issue_keys = []
- 
+
 if JIRA_JQL and JIRA_JQL.startswith("issues in (") and JIRA_JQL.endswith(")"):
     raw_keys = JIRA_JQL[len("issues in ("):-1]
     issue_keys = [key.strip() for key in raw_keys.split(",") if key.strip()]
@@ -56,11 +58,11 @@ else:
         print(f"📥 Using default query:\n{jql_query}")
     else:
         raise ValueError("❌ ERROR: Either 'jira_jql' or 'jira_project' must be provided.")
- 
+
 # -------------------- Fetch Issues from Jira --------------------
 all_issues = []
 print(f"\n📡 Fetching issues from Jira...\n")
- 
+
 if issue_keys:
     for i, chunk in enumerate(chunk_list(issue_keys, 200), start=1):
         jql_chunk = f"issue in ({','.join(chunk)})"
@@ -84,13 +86,13 @@ else:
         all_issues.extend(issues)
         print(f"Fetched {len(all_issues)} issues so far...")
         start_at += max_results
- 
+
 print(f"\n✅ Done. Total issues fetched: {len(all_issues)}")
- 
+
 # -------------------- Export to CSV --------------------
 CSV_FILENAME = f"jira_issues_{filename_suffix}.csv"
 print(f"💾 Exporting to {CSV_FILENAME}...\n")
- 
+
 # Fetch all possible field names from the first issue (if available)
 if all_issues:
     first_issue = all_issues[0]
@@ -107,9 +109,19 @@ if all_issues:
         for issue in all_issues:
             issue_data = [getattr(issue.fields, field, "") for field in header]
             writer.writerow(issue_data)
- 
+
 print(f"📄 Export completed: {CSV_FILENAME}")
- 
+
+# -------------------- Compress CSV File --------------------
+ZIP_FILENAME = f"jira_issues_{filename_suffix}.zip"
+
+with zipfile.ZipFile(ZIP_FILENAME, 'w', zipfile.ZIP_DEFLATED) as zipf:
+    zipf.write(CSV_FILENAME, os.path.basename(CSV_FILENAME))
+
+# Clean up the original CSV file after compression
+os.remove(CSV_FILENAME)
+print(f"📦 Compressed CSV to: {ZIP_FILENAME}")
+
 # -------------------- Send Email via AWS SES --------------------
 try:
     ses = boto3.client("ses", region_name=AWS_REGION)
@@ -117,20 +129,21 @@ try:
     msg["Subject"] = f"Jira Issue Report - {mode_label}"
     msg["From"] = SES_SENDER
     msg["To"] = SES_RECIPIENT
- 
-    email_body = f"Attached is the Jira issue report using the following query:\n\n{JIRA_JQL or jql_query}"
+
+    email_body = f"Attached is the Jira issue report. You can download it from the attachment.\n\n{JIRA_JQL or jql_query}"
     msg.attach(MIMEText(email_body, "plain"))
- 
-    with open(CSV_FILENAME, "rb") as file:
+
+    with open(ZIP_FILENAME, "rb") as file:
         part = MIMEApplication(file.read())
-        part.add_header("Content-Disposition", f"attachment; filename={CSV_FILENAME}")
+        part.add_header("Content-Disposition", f"attachment; filename={ZIP_FILENAME}")
         msg.attach(part)
- 
+
     response = ses.send_raw_email(
         Source=SES_SENDER,
         Destinations=[SES_RECIPIENT],
         RawMessage={"Data": msg.as_string()}
     )
     print("📧 Email sent successfully via AWS SES.")
+
 except ClientError as e:
     print(f"❌ Failed to send email: {e}")
