@@ -8,9 +8,9 @@ import boto3
 import zipfile
 import io
 
-# -----------------------------
+# =============================
 # Config
-# -----------------------------
+# =============================
 TOKEN = os.environ.get("ORG_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
@@ -18,7 +18,7 @@ HEADERS = {
 }
 ORG = "vitechsystems"
 REPOS_TO_SCAN = ["CoreAdmin"]  # Add more repos here as needed
-MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 2))
+MAX_RUNS_TO_CHECK = 200        # Increase this for heavy activity
 SNS_TOPIC = os.environ.get("SNS_TOPIC")
 
 INFRA_FAILURE_PATTERNS = [
@@ -27,7 +27,12 @@ INFRA_FAILURE_PATTERNS = [
     "received a shutdown signal",
     "the operation was canceled",
     "job canceled",
-    "terminated by spot interruption"
+    "terminated by spot interruption",
+    "connect error",
+    "connection error",
+    "network error",
+    "failed to connect",
+    "the self-hosted runner lost communication"
 ]
 
 APP_FAILURE_PATTERNS = [
@@ -41,29 +46,37 @@ STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 sns_client = boto3.client("sns")
 
-# -----------------------------
+# =============================
 # REST API Helpers
-# -----------------------------
+# =============================
 
-def get_failed_workflow_runs(repo, limit=10):
+def get_failed_workflow_runs(repo, limit=MAX_RUNS_TO_CHECK):
     """
-    Fetch up to `limit` most recent failed workflow runs triggered by PR.
+    Paginate to fetch up to `limit` most recent failed workflow runs triggered by PR.
     """
-    url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs"
-    params = {
-        "status": "completed",
-        "conclusion": "failure",
-        "per_page": 20,  # Fetch 20 and then filter, because not all are PR runs
-        "page": 1
-    }
-    resp = requests.get(url, headers=HEADERS, params=params, timeout=20)
-    if resp.status_code != 200:
-        print(f"Warning: Could not fetch failed workflow runs for repo {repo}: {resp.status_code} {resp.text}")
-        return []
-    all_runs = resp.json().get("workflow_runs", [])
-    # Only keep runs triggered by PRs
-    pr_runs = [run for run in all_runs if run.get("event") == "pull_request"]
-    return pr_runs[:limit]
+    runs = []
+    page = 1
+    print(f"Fetching up to {limit} recent failed PR workflow runs for repo: {repo}")
+    while len(runs) < limit:
+        url = f"https://api.github.com/repos/{ORG}/{repo}/actions/runs"
+        params = {
+            "status": "completed",
+            "conclusion": "failure",
+            "per_page": 50,
+            "page": page
+        }
+        resp = requests.get(url, headers=HEADERS, params=params, timeout=30)
+        if resp.status_code != 200:
+            print(f"Warning: Could not fetch failed workflow runs for repo {repo}: {resp.status_code} {resp.text}")
+            break
+        all_runs = resp.json().get("workflow_runs", [])
+        pr_runs = [run for run in all_runs if run.get("event") == "pull_request"]
+        runs.extend(pr_runs)
+        if len(all_runs) < 50:
+            break
+        page += 1
+    print(f"Found {len(runs)} failed PR workflow runs.")
+    return runs[:limit]
 
 def fetch_associated_pr_link(repo, run):
     """
@@ -95,21 +108,27 @@ def log_contains_patterns_and_debug(repo, run_id, infra_patterns, app_patterns):
     matched = None
     log_sample = []
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=60, stream=True)
+        resp = requests.get(url, headers=HEADERS, timeout=90, stream=True)
         resp.raise_for_status()
         with io.BytesIO(resp.content) as b, zipfile.ZipFile(b) as z:
             for filename in z.namelist():
                 with z.open(filename) as f:
                     for i, raw_line in enumerate(f):
                         try:
-                            line = raw_line.decode(errors='ignore').lower()
+                            line = raw_line.decode(errors='ignore')
                         except Exception:
                             continue
+                        lower_line = line.lower()
+                        # Print all lines containing fail, error, connect for debug
+                        if any(word in lower_line for word in ('fail', 'error', 'connect', 'network')):
+                            print(f"[log-match] {line.strip()}")
                         for pattern in infra_patterns:
-                            if pattern.lower() in line:
+                            if pattern in lower_line:
+                                print(f"Matched INFRA pattern: '{pattern}' in line: {line.strip()}")
                                 matched = "infra"
                         for pattern in app_patterns:
-                            if pattern.lower() in line:
+                            if pattern in lower_line:
+                                print(f"Matched APP pattern: '{pattern}' in line: {line.strip()}")
                                 matched = "app"
                         if len(log_sample) < 20:
                             log_sample.append(line.strip())
@@ -131,13 +150,14 @@ def rerun_workflow(repo, run_id):
         print(f"Failed to rerun workflow {run_id} in {repo}: {e}")
         return False
 
-# -----------------------------
+# =============================
 # Classification etc.
-# -----------------------------
+# =============================
 
 def classify_run(repo, run, dry_run=True):
     run_id = run["id"]
     pr_link = fetch_associated_pr_link(repo, run)
+    print(f"Analyzing run ID: {run_id} | PR Link: {pr_link} | Name: {run['name']} | Event: {run.get('event')}")
     pattern_hit, log_sample = log_contains_patterns_and_debug(repo, run_id, INFRA_FAILURE_PATTERNS, APP_FAILURE_PATTERNS)
     reason = "Unknown Failure"
     color = "#FFFF99"
@@ -186,9 +206,9 @@ def record_retry(run, repo, dry_run=True):
     with open(file_path, "w") as f:
         json.dump(data, f, indent=2)
 
-# -----------------------------
+# =============================
 # Plain Text SNS Report
-# -----------------------------
+# =============================
 
 def send_sns_summary(failures, total_repos):
     # Only send if there is at least one real infra or app failure!
@@ -230,9 +250,9 @@ def send_sns_summary(failures, total_repos):
     )
     print("SNS email sent.")
 
-# -----------------------------
+# =============================
 # MAIN FUNCTION
-# -----------------------------
+# =============================
 
 def main():
     dry_run = True  # Set to False to enable reruns
@@ -244,7 +264,7 @@ def main():
 
     for repo in repos:
         print(f"\nScanning repo: {repo}")
-        failed_runs = get_failed_workflow_runs(repo, limit=10)
+        failed_runs = get_failed_workflow_runs(repo, limit=MAX_RUNS_TO_CHECK)
         if not failed_runs:
             print("No failed workflow runs found.")
             continue
