@@ -22,9 +22,9 @@ MAX_RETRIES = int(os.environ.get("MAX_RETRIES", 2))
 SNS_TOPIC = os.environ.get("SNS_TOPIC")
 
 INFRA_FAILURE_PATTERNS = [
+    "lost communication",
     "runner unexpectedly disconnected",
     "received a shutdown signal",
-    "lost communication with the server",
     "the operation was canceled",
     "job canceled",
     "terminated by spot interruption"
