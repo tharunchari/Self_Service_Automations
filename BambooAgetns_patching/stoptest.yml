@@ -10,7 +10,7 @@
       become: true 
       become_user: bamboo  
       when:  ansible_host == '172.26.46.219'  # only run on specified host
-         - agent_status | json_query('[?name==`VM-BAMBOOPREPRD-AGENT.vitech.com`].busy | [0]') == False 
+        - agent_status | json_query('[?name==`VM-BAMBOOPREPRD-AGENT.vitech.com`].busy | [0]') == False 
       register: stop_result   
 
     - name: Debug task output   
