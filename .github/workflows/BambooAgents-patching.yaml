@@ -66,6 +66,16 @@ jobs:
       - name: Run Ansible Playbook
         run: |
           ansible-playbook BambooAgetns_patching/stoptest.yml -i BambooAgetns_patching/Inventory_test --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no"
+
+      - name: Take System Snapshot
+        run: |
+          pwd
+          ls -la
+          sudo ansible-playbook Jenkins_Patching/snapshot.yml -i $INVENTORY_PATH1 \
+          --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" \
+          --extra-vars "vcusername=${{ vars.VC_USERNAME }}" \
+          --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv
+        continue-on-error: false
         
    #   - name: Stop the System Service
   #      run: |
