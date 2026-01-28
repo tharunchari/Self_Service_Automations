@@ -2,9 +2,9 @@
 - hosts: localhost
 #  var_files:
 #    - hostname.yaml
-  vars:
-    ansible_python_interpreter: /usr/bin/python3.9  # Ensure Python 3 interpreter is used
-  gather_facts: no
+ # vars:
+  #  ansible_python_interpreter: /usr/bin/python3.9  # Ensure Python 3 interpreter is used
+ # gather_facts: no
   
   vars_files:
     - names.yml
