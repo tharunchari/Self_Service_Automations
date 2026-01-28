@@ -1,59 +1,59 @@
 ---
 # tasks file for BAMBOOAGENETSPIPELINE
 - hosts: localhost
-#  vars:
-#      ansible_python_interpreter: /usr/bin/python3
-#  gather_facts: no
+  vars:
+    ansible_python_interpreter: /usr/bin/python3  # Ensure Python 3 interpreter is used
+  gather_facts: no
   vars_files:
     - names.yml
   tasks:
-   - name: Generate timestamp
-     set_fact:
-       timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M-%S') }}"
+    - name: Generate timestamp
+      set_fact:
+        timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M-%S') }}"
 
-   - name: Debug the generated timestamp
-     debug:
-       msg: "Generated timestamp: {{ timestamp }}"
+    - name: Debug the generated timestamp
+      debug:
+        msg: "Generated timestamp: {{ timestamp }}"
 
-   - name: Debug VM names from vars file
-     debug:
-       msg: "VM names to snapshot: {{ vm_names }}"
+    - name: Debug VM names from vars file
+      debug:
+        msg: "VM names to snapshot: {{ vm_names }}"
 
-   - name: snapshots for XAND DATACENTER......
-     vmware_guest_snapshot:
-       validate_certs: no
-       hostname: "172.26.44.50"
-       username: "{{ vcusername }}@vitechinc.com"
-       password: "{{ vcpassword }}"
-       datacenter: "XAND"
-       folder: "/XAND/"
-       name: "{{ item }}"
-       state: present
-       snapshot_name: "opsbackup_{{ timestamp }}"
-     register: snapshot_result
-     delegate_to: localhost
-     with_items: "{{ vm_names }}"
+    - name: snapshots for XAND DATACENTER......
+      vmware_guest_snapshot:
+        validate_certs: no
+        hostname: "172.26.44.50"
+        username: "{{ vcusername }}@vitechinc.com"
+        password: "{{ vcpassword }}"
+        datacenter: "XAND"
+        folder: "/XAND/"
+        name: "{{ item }}"
+        state: present
+        snapshot_name: "opsbackup_{{ timestamp }}"
+      register: snapshot_result
+      delegate_to: localhost
+      with_items: "{{ vm_names }}"
 
-   - name: Debug VM names from vars file
-     debug:
-       msg: "VM names to snapshot: {{ vm_names }}"
+    - name: Debug VM names from vars file
+      debug:
+        msg: "VM names to snapshot: {{ vm_names }}"
 
-   - name: snapshots for NJ DATACENTER .....
-     vmware_guest_snapshot:
-       validate_certs: no
-       hostname: "172.90.38.90"
-       username: "{{ vcusername }}@vitechinc.com"
-       password: "{{ vcpassword }}"
-       datacenter: "NJ"
-       folder: "/NJ/"
-       name: "{{ item }}"
-       state: present
-       snapshot_name: "opsbackup_{{ timestamp }}"
-     register: snapshot_result1
-     delegate_to: localhost
-     with_items: "{{ vm_names1 }}"
-     ignore_errors: true
+    - name: snapshots for NJ DATACENTER .....
+      vmware_guest_snapshot:
+        validate_certs: no
+        hostname: "172.90.38.90"
+        username: "{{ vcusername }}@vitechinc.com"
+        password: "{{ vcpassword }}"
+        datacenter: "NJ"
+        folder: "/NJ/"
+        name: "{{ item }}"
+        state: present
+        snapshot_name: "opsbackup_{{ timestamp }}"
+      register: snapshot_result1
+      delegate_to: localhost
+      with_items: "{{ vm_names1 }}"
+      ignore_errors: true
 
-   - name: Debug NJ VM names from vars file
-     debug:
-       msg: "VM names to snapshot: {{ vm_names1 }}"
+    - name: Debug NJ VM names from vars file
+      debug:
+        msg: "VM names to snapshot: {{ vm_names1 }}"
