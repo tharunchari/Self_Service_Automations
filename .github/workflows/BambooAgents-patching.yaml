@@ -80,7 +80,7 @@ jobs:
         run: |
          pwd
          ls -la
-         ansible-playbook -i BambooAgetns_patching/snapshot1.yml --extra-vars "vcusername=${{ vars.VC_USERNAME }}" --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv
+         ansible-playbook  BambooAgetns_patching/snapshot1.yml -i BambooAgetns_patching/localhostenv --extra-vars "vcusername=${{ vars.VC_USERNAME }}" --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv
         continue-on-error: false
 
         
