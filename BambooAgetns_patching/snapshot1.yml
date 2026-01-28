@@ -1,0 +1,48 @@
+---
+- hosts: localhost
+#  var_files:
+#    - hostname.yaml
+  vars_files:
+    - names.yml
+  tasks:
+      - name: Generate timestamp
+        set_fact:
+           timestamp: "{{ lookup('pipe', 'date +%Y-%m-%d-%H-%M-%S') }}"
+
+      - name: snapshots for XAND DATACENTER......
+        vmware_guest_snapshot:
+          validate_certs: no
+          hostname: "172.26.44.50"
+          username: "{{ vcusername }}@vitechinc.com"
+          password: "{{ vcpassword }}"
+          datacenter: "XAND"
+          folder: "/XAND/"
+          name: "{{ item }}"
+          state: present
+          snapshot_name: "opsbackup_{{ timestamp }}"
+        register: out
+        delegate_to: localhost
+        with_items: "{{ vm_names }}"
+
+      - name: Debug XAND VM names from vars file
+        debug:
+          msg: "VM names to snapshot: {{ vm_names }}"      
+    
+      - name: snapshots for XAND DATACENTER......
+        vmware_guest_snapshot:
+          validate_certs: no
+          hostname: "172.90.38.90"
+          username: "{{ vcusername }}@vitechinc.com"
+          password: "{{ vcpassword }}"
+          datacenter: "NJ"
+          folder: "/NJ/"
+          name: "{{ item }}"
+          state: present
+          snapshot_name: "opsbackup_{{ timestamp }}"
+        register: out
+        delegate_to: localhost
+        with_items: "{{ vm_names1 }}"
+
+      - name: Debug NJ VM names from vars file
+        debug:
+          msg: "VM names to snapshot: {{ vm_names1 }}" 
