@@ -1,9 +1,9 @@
 ---
 # tasks file for BAMBOOAGENETSPIPELINE
 - hosts: localhost
-#  vars:
-#      ansible_python_interpreter: /usr/bin/python3
-#  gather_facts: no
+  vars:
+      ansible_python_interpreter: /usr/share/ansible/plugins/modules
+  gather_facts: no
   vars_files:
     - names.yml
   tasks:
