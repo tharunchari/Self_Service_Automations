@@ -30,9 +30,9 @@
         with_items: "{{ vm_names }}"
         ignore_errors: true
 
-      - name: Debug XAND VM names from vars file
-        debug:
-          msg: "VM names to snapshot: {{ vm_names }}"      
+#      - name: Debug XAND VM names from vars file
+#        debug:
+#          msg: "VM names to snapshot: {{ vm_names }}"      
     
       - name: snapshots for NJ DATACENTER......
         vmware_guest_snapshot:
