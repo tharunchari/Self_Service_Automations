@@ -34,7 +34,7 @@
         debug:
           msg: "VM names to snapshot: {{ vm_names }}"      
     
-      - name: snapshots for XAND DATACENTER......
+      - name: snapshots for NJ DATACENTER......
         vmware_guest_snapshot:
           validate_certs: no
           hostname: "172.90.38.90"
