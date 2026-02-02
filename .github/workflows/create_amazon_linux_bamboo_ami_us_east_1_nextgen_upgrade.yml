@@ -1,0 +1,162 @@
+name: "Create Amazon Linux Bamboo AMI US-EAST-1 Nextgen Upgrade"
+on:
+  workflow_dispatch:
+
+env:
+  BAMBOO_BASEURL: "https://bamboo.vitechinc.com/bamboo"
+  BAMBOO_TOKEN: ${{ secrets.BAMBOO_PROD_PAT }}
+  CONFIG_PATTERN: "Nextgen Upgrade Digital Image"
+jobs:
+  Creating-Amazon-Linux-Bamboo-AMI:
+    if: github.event.repository.fork == false
+    runs-on: ubuntu-latest
+    outputs:
+      genrun: ${{ steps.gen_step.outputs.INSTANCE_ID }}
+    steps:
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Step 1 - Find the latest Amazon Linux 2023 AMI
+        id: find_ami
+        run: |
+          LATEST_AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --query 'Parameter.Value' --output text)
+          echo "LATEST_AMI=$LATEST_AMI" >> $GITHUB_ENV
+      - name: Step 2 - Start EC2 instance using an AMI
+        id: start_ec2
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ env.LATEST_AMI }}  \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE_C5_4XLARGE }} \
+            --key-name InternalTools \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id subnet-074f1c628d472d492 \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Amazon-Linux-AMI-BAMBOO},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=bambooagent},{Key=category,Value=app},{Key=fincode,Value=vit-corp-bamboo},{Key=provision-method,Value=cli}]' \
+            --iam-instance-profile Name=VitechTools \
+            --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":200}},{"DeviceName":"/dev/xvdb","Ebs":{"VolumeSize":50}}]' \
+            --user-data '#!/bin/bash
+            mkfs.xfs /dev/xvdb
+            mkdir /tmp
+            mount /dev/xvdb /tmp
+            chmod 1777 /tmp
+            echo "/dev/xvdb /tmp xfs defaults 0 0" >> /etc/fstab' > /tmp/ec2_output.json
+ 
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+        shell: bash
+      - name: Workflow sleep until EC2 is available to use
+        run: sleep 300
+      - name: Step 3 - Configure AWS CLI and other dependencies
+        run: |
+          aws ssm send-command \
+            --instance-ids ${{ env.INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands='aws configure set aws_access_key_id ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }} && aws configure set aws_secret_access_key ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }} && aws configure set default.region ${{ vars.AWS_REGION }} && aws s3 cp s3://bamboo-jdks-resources/shell_scripts/install_bamboo_packages_us-east_nextgen_upgrade.sh /tmp/install_bamboo_packages_us-east_nextgen_upgrade.sh && chmod +x /tmp/install_bamboo_packages_us-east_nextgen_upgrade.sh && sudo /tmp/install_bamboo_packages_us-east_nextgen_upgrade.sh' \
+            --region ${{ vars.AWS_REGION }} > /tmp/command_output.json
+          COMMAND_ID=$(jq -r '.Command.CommandId' < /tmp/command_output.json)
+          echo "COMMAND_ID=$COMMAND_ID" >> $GITHUB_ENV
+ 
+      - name: Step 4 - Verify script execution with retries
+        run: |
+          END_TIME=$(( $(date +%s) + 5000 )) # 5000 seconds timeout
+          while [ $(date +%s) -lt $END_TIME ]; do
+            STATUS=$(aws ssm list-command-invocations \
+              --command-id ${{ env.COMMAND_ID }} \
+              --details \
+              --query "CommandInvocations[0].Status" \
+              --output text)
+            if [ "$STATUS" == "Success" ]; then
+              echo "Shell script executed successfully!"
+              break
+            elif [ "$STATUS" == "Failed" ]; then
+              echo "Shell script execution failed."
+              exit 1
+            else
+              echo "Shell script not yet successful. Retrying in 100 seconds..."
+              sleep 100
+            fi
+          done
+
+      - name: Step 5 - Create an AMI from the instance
+        id: create_ami
+        run: |
+          AMI_ID=$(aws ec2 create-image --instance-id ${{ env.INSTANCE_ID }} --name "Bamboo_Elastic_Agent_AMI-$(date +%Y-%m-%d_%H-%M)" --no-reboot \
+            --tag-specifications 'ResourceType=image,Tags=[{Key=Name,Value=Bamboo_Elastic_Agent_AMI},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=bambooagent},{Key=category,Value=app},{Key=fincode,Value=vit-corp-bamboo},{Key=provision-method,Value=cli}]' \
+            --query 'ImageId' --output text)
+          echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
+
+      - name: Step 6 - Workflow sleep until AMI is available to use
+        id: wait_for_ami
+        run: |
+          while true; do
+            AMI_STATE=$(aws ec2 describe-images --image-ids ${{ env.AMI_ID }} --query 'Images[0].State' --output text)
+            echo "Current AMI state: $AMI_STATE"
+            if [ "$AMI_STATE" = "available" ]; then
+              echo "AMI is now available."
+              break
+            fi
+            echo "AMI is still pending. Waiting for 100 seconds..."
+            sleep 100
+          done
+
+      - name: Step 7 - Fetch and Update Image Configurations in Bamboo.
+        id: update_bamboo
+        env:
+          NEW_AMI_ID: ${{ env.AMI_ID }}
+        run: |
+          MAIL_BODY="Configuration Updates:\n\n"
+
+          # Fetch configurations matching the pattern
+          CONFIG_IDS=$(curl -s -X GET \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $BAMBOO_TOKEN" \
+            --url "$BAMBOO_BASEURL/rest/api/latest/elasticConfiguration" \
+            --header 'Accept: application/json' | jq -r ".[] | select(.configurationName | test(\"$CONFIG_PATTERN\")) | .configurationId")
+
+          echo "Found configuration IDs: $CONFIG_IDS"
+
+          for ID in $CONFIG_IDS; do
+            echo "Processing configuration ID: $ID"
+
+            # Get configuration details
+            CONFIG_DATA=$(curl -s -X GET \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $BAMBOO_TOKEN" \
+              --url "$BAMBOO_BASEURL/rest/api/latest/elasticConfiguration/$ID" \
+              --header 'Accept: application/json')
+
+            CURRENT_AMI_ID=$(echo "$CONFIG_DATA" | jq -r '.imageId')
+            CONFIG_NAME=$(echo "$CONFIG_DATA" | jq -r '.configurationName')
+            echo "Current AMI ID: $CURRENT_AMI_ID"
+
+            # Update only the AMI ID
+            UPDATED_CONFIG=$(echo "$CONFIG_DATA" | jq --arg new_ami "$NEW_AMI_ID" '.imageId = $new_ami')
+
+            # Push updated configuration back to Bamboo
+            RESPONSE=$(curl -s -X PUT \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $BAMBOO_TOKEN" \
+              --url "$BAMBOO_BASEURL/rest/api/latest/elasticConfiguration/$ID" \
+              --data "$UPDATED_CONFIG" \
+              --header 'Accept: application/json')
+
+            echo "Updated configuration for ID $ID. Response: $RESPONSE"
+            echo "Old AMI ID: $CURRENT_AMI_ID"
+            echo "New AMI ID: $NEW_AMI_ID"
+
+            # Append details to mail body
+            MAIL_BODY+="Configuration ID: $ID\n"
+            MAIL_BODY+="Name: $CONFIG_NAME\n"
+            MAIL_BODY+="Current AMI ID: $CURRENT_AMI_ID\n"
+            MAIL_BODY+="Updated AMI ID: $NEW_AMI_ID\n\n"
+          done
+
+          # Use printf for proper formatting
+          printf "%b" "$MAIL_BODY" > mail_body.txt
+
+
+      - name: Step 9 - Terminate Self Hosted Runner instance
+        run: |
+          aws ec2 terminate-instances --instance-ids "${{ env.INSTANCE_ID }}" --region ${{ vars.AWS_REGION }}
