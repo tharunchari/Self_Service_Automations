@@ -1,44 +1,77 @@
-name: Auto–Rerun Failed PRs on Connection Error
+name: Rerun PRs With Connection Errors (API)
 
 on:
   workflow_dispatch:
 
-env:
-  REPO: vitechsystems/CoreAdmin
-
 jobs:
-  rerun-failed-prs:
+  rerun-connection-error-jobs:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (optional for scripts/files)
+      - name: Checkout (optional if script in repo)
         uses: actions/checkout@v4
 
-      - name: Set up GitHub CLI
-        uses: cli/cli-action@v2
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq unzip
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Authenticate gh with PAT
+      - name: Rerun failed PRs (API method)
         env:
-          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
-          echo "${GH_TOKEN}" | gh auth login --with-token
+          #!/bin/bash
 
-      - name: Find & Rerun Failed PRs with Connection Error
-        env:
-          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-          ERROR_SIGNATURE: "lost communication with the server"
-        run: |
-          prs=$(gh pr list --repo "$REPO" --state open --json number --limit 25 | jq '.[].number')
+          TOKEN="${PROD_FINE_GRAINED_PAT}"
+          OWNER="vitechsystems"
+          REPO="CoreAdmin"
+          ERROR_SIGNATURE="lost communication with the server"
+
+          # 1. List top 25 open PRs
+          prs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&per_page=25" |
+              jq '.[].number')
+
           for pr in $prs; do
             echo "Checking PR #$pr"
-            runs=$(gh run list --repo "$REPO" --pr "$pr" --json databaseId,status,conclusion | jq -r '.[] | select(.conclusion=="failure") | .databaseId')
-            for run_id in $runs; do
-              gh run view "$run_id" --repo "$REPO" --log > log.txt
-              if grep -qE "$ERROR_SIGNATURE" log.txt; then
-                echo "Connection error found on PR #$pr run $run_id. Re-running failed jobs."
-                gh run rerun "$run_id" --failed --repo "$REPO"
+            # 2. List workflow runs for PR
+            runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?event=pull_request&per_page=20" |
+              jq -c '.workflow_runs[] | {id: .id, conclusion: .conclusion, pr_numbers: [.pull_requests[].number]}')
+
+            echo "$runs" | while IFS= read -r run; do
+              run_id=$(echo "$run" | jq -r '.id')
+              conclusion=$(echo "$run" | jq -r '.conclusion')
+              pr_numbers=$(echo "$run" | jq -r '.pr_numbers[]')
+
+              if [[ "$conclusion" == "failure" ]] && echo "$pr_numbers" | grep -q -w "$pr"; then
+                echo "  -> Failed run $run_id for PR #$pr"
+                # 3. Download API log ZIP
+                curl -sL \
+                  -H "Authorization: Bearer ${TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/logs" \
+                  -o logs.zip
+
+                unzip -o logs.zip -d logs_dir &> /dev/null
+                found=""
+                for f in logs_dir/*; do
+                  if grep -qF "$ERROR_SIGNATURE" "$f"; then
+                    found="yes"
+                    break
+                  fi
+                done
+                rm -rf logs_dir logs.zip
+
+                if [[ $found == "yes" ]]; then
+                  echo "    Connection error found! Re-running run $run_id for PR #$pr..."
+                  curl -s -X POST \
+                    -H "Authorization: Bearer ${TOKEN}" \
+                    -H "Accept: application/vnd.github+json" \
+                    "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun"
+                  sleep 2
+                else
+                  echo "    No connection error found."
+                fi
               fi
             done
           done
