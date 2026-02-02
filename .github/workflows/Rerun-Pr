@@ -1,0 +1,44 @@
+name: Auto–Rerun Failed PRs on Connection Error
+
+on:
+  workflow_dispatch:
+
+env:
+  REPO: vitechsystems/CoreAdmin
+
+jobs:
+  rerun-failed-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (optional for scripts/files)
+        uses: actions/checkout@v4
+
+      - name: Set up GitHub CLI
+        uses: cli/cli-action@v2
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Authenticate gh with PAT
+        env:
+          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+        run: |
+          echo "${GH_TOKEN}" | gh auth login --with-token
+
+      - name: Find & Rerun Failed PRs with Connection Error
+        env:
+          GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          ERROR_SIGNATURE: "lost communication with the server"
+        run: |
+          prs=$(gh pr list --repo "$REPO" --state open --json number --limit 25 | jq '.[].number')
+          for pr in $prs; do
+            echo "Checking PR #$pr"
+            runs=$(gh run list --repo "$REPO" --pr "$pr" --json databaseId,status,conclusion | jq -r '.[] | select(.conclusion=="failure") | .databaseId')
+            for run_id in $runs; do
+              gh run view "$run_id" --repo "$REPO" --log > log.txt
+              if grep -qE "$ERROR_SIGNATURE" log.txt; then
+                echo "Connection error found on PR #$pr run $run_id. Re-running failed jobs."
+                gh run rerun "$run_id" --failed --repo "$REPO"
+              fi
+            done
+          done
