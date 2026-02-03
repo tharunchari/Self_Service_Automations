@@ -10,7 +10,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Rerun PRs failed with runner connection error (check all PR runs)
+      - name: Rerun PRs failed with runner connection error (comprehensive search)
         env:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -34,24 +34,39 @@ jobs:
             exit 1
           fi
 
+          echo "Fetching ALL recent workflow runs..."
+          all_runs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=200")
+
+          if ! echo "$all_runs_json" | jq empty 2>/dev/null; then
+            echo "Error: Failed to get valid JSON for workflow runs."
+            echo "Raw response: $all_runs_json"
+            exit 1
+          fi
+
           for pr in $prs; do
             echo "--------------------------------------------------------"
             echo "Checking PR #$pr"
 
-            echo "  Fetching ALL workflow runs for PR #$pr (not just current commit)..."
-            
-            # Get ALL workflow runs that reference this PR number
-            runs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?event=pull_request&per_page=100")
+            # Find all workflow runs that are associated with this PR
+            pr_runs=$(echo "$all_runs_json" | jq -c ".workflow_runs[] | select(.pull_requests? and (.pull_requests | length > 0) and (.pull_requests[] | .number == $pr))")
 
-            if ! echo "$runs_json" | jq empty 2>/dev/null; then
-              echo "  Error: Invalid JSON received for workflow runs. Skipping PR #$pr."
-              continue
+            if [ -z "$pr_runs" ]; then
+              echo "  No workflow runs found for PR #$pr using direct PR association."
+              
+              # Fallback: get PR details and search by branch
+              pr_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+                "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}")
+              
+              if echo "$pr_json" | jq empty 2>/dev/null; then
+                branch_name=$(echo "$pr_json" | jq -r '.head.ref' 2>/dev/null || echo "")
+                if [ -n "$branch_name" ]; then
+                  echo "  Trying to find runs by branch: $branch_name"
+                  pr_runs=$(echo "$all_runs_json" | jq -c ".workflow_runs[] | select(.head_branch == \"$branch_name\")")
+                fi
+              fi
             fi
-
-            # Filter runs that are associated with this PR number
-            pr_runs=$(echo "$runs_json" | jq -c ".workflow_runs[] | select(.pull_requests[]?.number == $pr)")
 
             if [ -z "$pr_runs" ]; then
               echo "  No workflow runs found for PR #$pr."
@@ -59,50 +74,65 @@ jobs:
             fi
 
             found_runner_error=0
+            run_count=0
 
             echo "$pr_runs" | while IFS= read -r run; do
               if [ -z "$run" ]; then
                 continue
               fi
 
+              run_count=$((run_count + 1))
               run_id=$(echo "$run" | jq -r '.id' 2>/dev/null || echo "")
               conclusion=$(echo "$run" | jq -r '.conclusion' 2>/dev/null || echo "")
               commit_sha=$(echo "$run" | jq -r '.head_sha' 2>/dev/null || echo "")
+              workflow_name=$(echo "$run" | jq -r '.name' 2>/dev/null || echo "unknown")
 
               if [ -z "$run_id" ]; then
                 continue
               fi
 
-              echo "    Checking workflow run $run_id (commit: ${commit_sha:0:7}) with conclusion [$conclusion]..."
+              echo "    Run $run_count: workflow '$workflow_name' (ID: $run_id, commit: ${commit_sha:0:7}) [$conclusion]"
 
-              # Skip successful runs
+              # Check failed, cancelled, or null conclusion runs
               if [ "$conclusion" == "success" ]; then
                 echo "      Skipping successful run."
                 continue
               fi
 
+              echo "      Checking jobs for connection errors..."
               jobs_resp=$(curl -s \
                 -H "Authorization: Bearer ${TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
 
               if echo "$jobs_resp" | jq empty 2>/dev/null; then
-                matches=$(echo "$jobs_resp" | grep -iF "$ERROR_SIGNATURE" | wc -l)
+                # Debug: show what we're searching in
+                echo "      Searching for '$ERROR_SIGNATURE' in jobs response..."
+                
+                matches=$(echo "$jobs_resp" | grep -i "$ERROR_SIGNATURE" | wc -l)
 
                 if [ "$matches" -gt 0 ]; then
                   echo "    [MATCH] Connection error found in run $run_id. Sending rerun request."
-                  curl -s -X POST \
+                  
+                  rerun_resp=$(curl -s -w "%{http_code}" -X POST \
                     -H "Authorization: Bearer ${TOKEN}" \
                     -H "Accept: application/vnd.github+json" \
-                    "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun"
-                  echo "    [ACTION] Rerun requested for workflow run $run_id (PR #$pr)."
+                    "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun")
+                  
+                  http_code="${rerun_resp: -3}"
+                  if [ "$http_code" -eq 201 ] || [ "$http_code" -eq 202 ]; then
+                    echo "    [ACTION] Rerun requested successfully for workflow run $run_id (PR #$pr)."
+                  else
+                    echo "    [ERROR] Rerun request failed with HTTP $http_code for run $run_id."
+                  fi
+                  
                   found_runner_error=1
                   sleep 2
                 else
-                  echo "    No connection error found in run $run_id."
+                  echo "      No connection error found in run $run_id."
                 fi
               else
-                echo "    Error: Invalid JSON received for jobs in run $run_id."
+                echo "      Error: Invalid JSON received for jobs in run $run_id."
               fi
             done
 
