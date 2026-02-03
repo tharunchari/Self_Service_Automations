@@ -142,15 +142,44 @@ jobs:
                 echo "    JOB $job_number/$job_count: $job_name"
                 echo "      Status: $job_status | Conclusion: $job_conclusion"
                 
-                # Get full job data to search for error
-                job_data=$(echo "$jobs_json" | jq -c ".jobs[] | select(.id == $job_id)" 2>/dev/null)
+                # Get full job data including steps to search for error
+                job_data=$(echo "$jobs_json" | jq ".jobs[] | select(.id == $job_id)" 2>/dev/null)
                 
-                # Search for connection error in this specific job
-                if echo "$job_data" | grep -qi "$ERROR_SIGNATURE"; then
-                  echo "      *** CONNECTION ERROR DETECTED ***"
-                  found_connection_error=1
+                # Check if job failed
+                if [ "$job_conclusion" = "failure" ]; then
+                  echo "      ⚠ Job failed - checking for connection error..."
+                  
+                  # Search for connection error in the entire job data (including steps)
+                  if echo "$job_data" | grep -qi "$ERROR_SIGNATURE"; then
+                    echo "      *** CONNECTION ERROR DETECTED ***"
+                    found_connection_error=1
+                  else
+                    # Also check by searching the raw jobs JSON
+                    if echo "$jobs_json" | jq -r ".jobs[] | select(.id == $job_id) | .steps[]?.conclusion" 2>/dev/null | grep -q "failure"; then
+                      # Failed step found, check logs more thoroughly
+                      step_names=$(echo "$job_data" | jq -r '.steps[]? | select(.conclusion == "failure") | .name' 2>/dev/null)
+                      echo "      Failed steps: $step_names"
+                      
+                      # If we can't find the specific error but job failed, assume it might be connection error
+                      # Let's search more broadly in the entire jobs response
+                      if echo "$jobs_json" | grep -qi "runner"; then
+                        echo "      *** RUNNER-RELATED FAILURE DETECTED ***"
+                        found_connection_error=1
+                      else
+                        echo "      Job failed but no connection error signature found"
+                      fi
+                    else
+                      echo "      Job failed but no connection error signature found"
+                    fi
+                  fi
                 else
-                  echo "      ✓ No error"
+                  # Even if not failed, still check for error signature
+                  if echo "$job_data" | grep -qi "$ERROR_SIGNATURE"; then
+                    echo "      *** CONNECTION ERROR DETECTED ***"
+                    found_connection_error=1
+                  else
+                    echo "      ✓ No error"
+                  fi
                 fi
                 echo ""
               done
