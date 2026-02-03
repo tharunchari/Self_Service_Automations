@@ -10,7 +10,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Rerun PRs failed with runner connection error (deep search)
+      - name: Rerun PRs failed with runner connection error (find failed runs)
         env:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -37,7 +37,7 @@ jobs:
             echo "--------------------------------------------------------"
             echo "Checking PR #$pr"
 
-            # Get PR details including branch name
+            # Get PR details
             pr_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
               "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}")
             
@@ -55,13 +55,14 @@ jobs:
 
             echo "  Branch: $branch_name"
 
-            # Search through multiple pages of workflow runs to find ALL runs for this branch
-            found_any_runs=0
+            # Search specifically for FAILED workflow runs (not just any runs)
             found_runner_error=0
             
-            for page in 1 2 3; do
-              echo "  Searching workflow runs page $page..."
+            # Search through multiple pages to find failed runs
+            for page in 1 2 3 4 5; do
+              echo "  Searching for FAILED runs on page $page..."
               
+              # Filter by status=failure or conclusion=failure in API call
               runs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
                   -H "Accept: application/vnd.github+json" \
                   "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=100&page=$page")
@@ -71,17 +72,15 @@ jobs:
                 break
               fi
 
-              # Find all runs for this branch (including failed/cancelled ones)
-              branch_runs=$(echo "$runs_json" | jq -c ".workflow_runs[] | select(.head_branch == \"$branch_name\")")
+              # Find runs for this branch that are NOT successful
+              failed_runs=$(echo "$runs_json" | jq -c ".workflow_runs[] | select(.head_branch == \"$branch_name\" and (.conclusion != \"success\" and .conclusion != null))")
 
-              if [ -z "$branch_runs" ]; then
-                echo "    No runs found for branch $branch_name on page $page"
+              if [ -z "$failed_runs" ]; then
+                echo "    No failed runs found for branch $branch_name on page $page"
                 continue
               fi
 
-              found_any_runs=1
-
-              echo "$branch_runs" | while IFS= read -r run; do
+              echo "$failed_runs" | while IFS= read -r run; do
                 if [ -z "$run" ]; then
                   continue
                 fi
@@ -91,19 +90,15 @@ jobs:
                 status=$(echo "$run" | jq -r '.status' 2>/dev/null || echo "")
                 workflow_name=$(echo "$run" | jq -r '.name' 2>/dev/null || echo "unknown")
                 commit_sha=$(echo "$run" | jq -r '.head_sha' 2>/dev/null || echo "")
+                created_at=$(echo "$run" | jq -r '.created_at' 2>/dev/null || echo "")
 
                 if [ -z "$run_id" ]; then
                   continue
                 fi
 
-                echo "    Found: '$workflow_name' (ID: $run_id, commit: ${commit_sha:0:7}) status=[$status] conclusion=[$conclusion]"
+                echo "    FAILED RUN FOUND: '$workflow_name' (ID: $run_id, commit: ${commit_sha:0:7}) status=[$status] conclusion=[$conclusion] created=[$created_at]"
 
-                # Check ALL non-success runs (failed, cancelled, null, etc.)
-                if [ "$conclusion" == "success" ]; then
-                  continue
-                fi
-
-                echo "      Checking non-successful run $run_id for connection errors..."
+                echo "      Checking failed run $run_id for connection errors..."
                 
                 jobs_resp=$(curl -s \
                   -H "Authorization: Bearer ${TOKEN}" \
@@ -114,7 +109,7 @@ jobs:
                   matches=$(echo "$jobs_resp" | grep -i "$ERROR_SIGNATURE" | wc -l)
 
                   if [ "$matches" -gt 0 ]; then
-                    echo "      [MATCH] Connection error found in '$workflow_name' run $run_id!"
+                    echo "      [MATCH] Connection error found in failed '$workflow_name' run $run_id!"
                     
                     rerun_resp=$(curl -s -w "%{http_code}" -X POST \
                       -H "Authorization: Bearer ${TOKEN}" \
@@ -123,15 +118,16 @@ jobs:
                     
                     http_code="${rerun_resp: -3}"
                     if [ "$http_code" = "201" ] || [ "$http_code" = "202" ]; then
-                      echo "      [ACTION] Rerun requested successfully for run $run_id (PR #$pr)."
+                      echo "      [ACTION] Rerun ALL JOBS requested successfully for run $run_id (PR #$pr)."
                     else
                       echo "      [ERROR] Rerun request failed with HTTP $http_code for run $run_id."
+                      echo "      Response: ${rerun_resp%???}"
                     fi
                     
                     found_runner_error=1
                     sleep 2
                   else
-                    echo "      No connection error found in run $run_id."
+                    echo "      No connection error found in failed run $run_id."
                   fi
                 else
                   echo "      Error: Invalid JSON received for jobs in run $run_id."
@@ -139,10 +135,8 @@ jobs:
               done
             done
 
-            if [ "$found_any_runs" -eq 0 ]; then
-              echo "  No workflow runs found for branch $branch_name across all pages."
-            elif [ "$found_runner_error" -eq 0 ]; then
-              echo "  No connection errors found in any runs for PR #$pr."
+            if [ "$found_runner_error" -eq 0 ]; then
+              echo "  No connection errors found in any failed runs for PR #$pr."
             fi
           done
 
