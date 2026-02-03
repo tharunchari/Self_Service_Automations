@@ -40,8 +40,8 @@
           hostname: "172.90.38.90"
           username: "{{ vcusername }}@vitechinc.com"
           password: "{{ vcpassword }}"
-          datacenter: "NJ"
-          folder: "/NJ/"
+          datacenter: "VitechDR"
+          folder: "/VitechDR/"
           name: "{{ item }}"
           state: present
           snapshot_name: "opsbackup_{{ timestamp }}"
