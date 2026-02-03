@@ -19,20 +19,23 @@ jobs:
           REPO="CoreAdmin"
           ERROR_SIGNATURE="lost communication with the server"
 
-          # Get top 25 open PR numbers
+          echo "========= BEGIN SELF-HOSTED RUNNER CONNECTION ERROR CHECKS ========="
+
           prs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&per_page=25" |
               jq '.[].number')
 
           for pr in $prs; do
+            echo "--------------------------------------------------------"
             echo "Checking PR #$pr"
 
-            # Fetch workflow runs for this PR (event: pull_request)
             runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?event=pull_request&per_page=20" |
               jq -c '.workflow_runs[] | {id: .id, conclusion: .conclusion, pr_numbers: [.pull_requests[].number]}')
+
+            run_found=0
 
             echo "$runs" | while IFS= read -r run; do
               run_id=$(echo "$run" | jq -r '.id')
@@ -40,24 +43,30 @@ jobs:
               pr_numbers=$(echo "$run" | jq -r '.pr_numbers[]')
 
               if [[ "$conclusion" == "failure" ]] && echo "$pr_numbers" | grep -q -w "$pr"; then
-                echo "  -> Failed run $run_id for PR #$pr"
-
-                # Check jobs/steps for runner connection error
+                run_found=1
+                echo "  -> Failed run ID $run_id for PR #$pr"
                 jobs=$(curl -s \
                   -H "Authorization: Bearer ${TOKEN}" \
                   -H "Accept: application/vnd.github+json" \
                   "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
 
                 if echo "$jobs" | jq -r '.. | .name?, .failure_message? // empty' | grep -qi "$ERROR_SIGNATURE"; then
-                  echo "    Connection error detected! Re-running all jobs for run $run_id (PR #$pr)..."
+                  echo "    [MATCH] Connection error detected for run $run_id -> Sending rerun request."
                   curl -s -X POST \
                     -H "Authorization: Bearer ${TOKEN}" \
                     -H "Accept: application/vnd.github+json" \
                     "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun"
+                  echo "    [ACTION] Rerun requested for run $run_id (PR #$pr)."
                   sleep 2
                 else
-                  echo "    No runner connection error detected in jobs."
+                  echo "    [SKIP] No runner connection error detected in jobs for run $run_id."
                 fi
               fi
             done
+
+            if [ $run_found -eq 0 ]; then
+              echo "  No failed workflow runs found for PR #$pr"
+            fi
           done
+
+          echo "========= COMPLETED ALL PR CHECKS ========="
