@@ -19,166 +19,209 @@ jobs:
           REPO="CoreAdmin"
           ERROR_SIGNATURE="lost communication with the server"
 
-          echo "========= BEGIN SELF-HOSTED RUNNER CONNECTION ERROR CHECKS ========="
+          echo "=========================================="
+          echo "  RUNNER CONNECTION ERROR DETECTION"
+          echo "=========================================="
+          echo ""
 
-          # Get list of open PR numbers
+          # Fetch open PRs
           echo "Fetching open PRs..."
-          open_pr_numbers=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+          prs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&per_page=25" | \
               jq -r '.[].number' 2>/dev/null)
 
-          if [ -z "$open_pr_numbers" ]; then
+          if [ -z "$prs" ]; then
             echo "No open PRs found"
             exit 1
           fi
 
-          echo "Found $(echo "$open_pr_numbers" | wc -l) open PRs"
+          pr_count=$(echo "$prs" | wc -l)
+          echo "Found $pr_count open PRs"
           echo ""
 
-          rerun_count=0
-          checked_runs=0
+          total_runs_checked=0
           total_jobs_checked=0
+          total_reruns=0
+          current_pr=0
 
-          # Fetch recent workflow runs
-          for page in 1 2 3; do
+          # Process each PR
+          for pr in $prs; do
+            current_pr=$((current_pr + 1))
             echo "=========================================="
-            echo "Fetching workflow runs page $page..."
+            echo "PR $current_pr/$pr_count: #$pr"
             echo "=========================================="
-            
-            runs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=100&page=$page")
 
-            if ! echo "$runs_json" | jq empty 2>/dev/null; then
-              echo "ERROR: Failed to fetch runs on page $page"
+            # Get PR details
+            pr_data=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}")
+
+            branch=$(echo "$pr_data" | jq -r '.head.ref' 2>/dev/null)
+            head_sha=$(echo "$pr_data" | jq -r '.head.sha' 2>/dev/null)
+
+            if [ -z "$head_sha" ] || [ "$head_sha" = "null" ]; then
+              echo "  ERROR: Cannot get head SHA for PR #$pr, skipping"
+              echo ""
               continue
             fi
 
-            run_ids=$(echo "$runs_json" | jq -r '.workflow_runs[].id' 2>/dev/null)
+            echo "  Branch: $branch"
+            echo "  Latest commit: ${head_sha:0:7}"
+            echo ""
 
-            for run_id in $run_ids; do
-              run_name=$(echo "$runs_json" | jq -r ".workflow_runs[] | select(.id == $run_id) | .name" 2>/dev/null)
-              run_conclusion=$(echo "$runs_json" | jq -r ".workflow_runs[] | select(.id == $run_id) | .conclusion" 2>/dev/null)
-              run_status=$(echo "$runs_json" | jq -r ".workflow_runs[] | select(.id == $run_id) | .status" 2>/dev/null)
-              
-              # Check if associated with open PR
-              run_pr_numbers=$(echo "$runs_json" | jq -r ".workflow_runs[] | select(.id == $run_id) | .pull_requests[]?.number" 2>/dev/null)
+            # Get ALL commits in this PR
+            echo "  Fetching all commits in PR..."
+            pr_commits=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}/commits" | \
+              jq -r '.[].sha' 2>/dev/null)
 
-              is_open_pr=0
-              associated_pr=""
-              for pr_num in $run_pr_numbers; do
-                if echo "$open_pr_numbers" | grep -q "^${pr_num}$"; then
-                  is_open_pr=1
-                  associated_pr=$pr_num
-                  break
-                fi
-              done
+            if [ -z "$pr_commits" ]; then
+              echo "  WARNING: No commits found for PR #$pr"
+              echo ""
+              continue
+            fi
 
-              if [ $is_open_pr -eq 0 ]; then
+            commit_count=$(echo "$pr_commits" | wc -l)
+            echo "  Found $commit_count commits in this PR"
+            echo "  Checking workflow runs for all commits..."
+            echo ""
+
+            found_error_in_pr=0
+            commit_number=0
+
+            # Check workflow runs for each commit in the PR
+            for commit_sha in $pr_commits; do
+              commit_number=$((commit_number + 1))
+
+              # Get workflow runs for this specific commit
+              commit_runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=50" | \
+                  jq -c ".workflow_runs[] | select(.head_sha == \"$commit_sha\")" 2>/dev/null)
+
+              if [ -z "$commit_runs" ]; then
                 continue
               fi
 
-              checked_runs=$((checked_runs + 1))
-
-              echo ""
-              echo "=========================================="
-              echo "WORKFLOW RUN #$checked_runs"
-              echo "=========================================="
-              echo "  Workflow: $run_name"
-              echo "  Run ID: $run_id"
-              echo "  PR: #$associated_pr"
-              echo "  Status: $run_status"
-              echo "  Conclusion: $run_conclusion"
-              echo "  Fetching jobs for this run..."
-
-              # Fetch ALL jobs in this workflow run
-              jobs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-                  -H "Accept: application/vnd.github+json" \
-                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
-
-              if ! echo "$jobs_json" | jq empty 2>/dev/null; then
-                echo "  ERROR: Failed to fetch jobs for run $run_id"
-                continue
-              fi
-
-              # Get job count
-              job_count=$(echo "$jobs_json" | jq '.jobs | length' 2>/dev/null)
-              echo "  Found $job_count jobs in this workflow run"
-              echo ""
-
-              # Check each job for failures and connection errors
-              job_ids=$(echo "$jobs_json" | jq -r '.jobs[].id' 2>/dev/null)
+              # Process each run for this commit
+              run_ids=$(echo "$commit_runs" | jq -r '.id' 2>/dev/null)
               
-              found_connection_error=0
-              job_number=0
-              
-              for job_id in $job_ids; do
-                job_number=$((job_number + 1))
-                total_jobs_checked=$((total_jobs_checked + 1))
+              for run_id in $run_ids; do
+                if [ -z "$run_id" ]; then
+                  continue
+                fi
+
+                total_runs_checked=$((total_runs_checked + 1))
+
+                run_name=$(echo "$commit_runs" | jq -r "select(.id == $run_id) | .name" 2>/dev/null | head -1)
+                run_status=$(echo "$commit_runs" | jq -r "select(.id == $run_id) | .status" 2>/dev/null | head -1)
+                run_conclusion=$(echo "$commit_runs" | jq -r "select(.id == $run_id) | .conclusion" 2>/dev/null | head -1)
                 
-                job_name=$(echo "$jobs_json" | jq -r ".jobs[] | select(.id == $job_id) | .name" 2>/dev/null)
-                job_conclusion=$(echo "$jobs_json" | jq -r ".jobs[] | select(.id == $job_id) | .conclusion" 2>/dev/null)
-                job_status=$(echo "$jobs_json" | jq -r ".jobs[] | select(.id == $job_id) | .status" 2>/dev/null)
+                if [ "$run_conclusion" = "null" ] || [ -z "$run_conclusion" ]; then
+                  run_conclusion="(no conclusion)"
+                fi
                 
                 echo "  ----------------------------------------"
-                echo "  JOB $job_number/$job_count: $job_name"
+                echo "  WORKFLOW RUN: $run_name"
                 echo "  ----------------------------------------"
-                echo "    Job ID: $job_id"
-                echo "    Status: $job_status"
-                echo "    Conclusion: $job_conclusion"
-                
-                # Get the full job data to search for error
-                job_data=$(echo "$jobs_json" | jq -c ".jobs[] | select(.id == $job_id)" 2>/dev/null)
-                
-                # Search for connection error in job data
-                if echo "$job_data" | grep -qi "$ERROR_SIGNATURE"; then
-                  echo "    *** CONNECTION ERROR DETECTED ***"
-                  echo "    Error signature found: '$ERROR_SIGNATURE'"
-                  found_connection_error=1
+                echo "    Run ID: $run_id"
+                echo "    Commit: ${commit_sha:0:7} ($commit_number/$commit_count)"
+                echo "    Status: $run_status"
+                echo "    Conclusion: $run_conclusion"
+                echo ""
+
+                # Fetch ALL jobs in this workflow run
+                echo "    Fetching jobs for this run..."
+                jobs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+                    -H "Accept: application/vnd.github+json" \
+                    "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
+
+                if ! echo "$jobs_json" | jq empty 2>/dev/null; then
+                  echo "    ERROR: Failed to fetch jobs"
+                  echo ""
+                  continue
+                fi
+
+                job_count=$(echo "$jobs_json" | jq '.jobs | length' 2>/dev/null)
+                echo "    Found $job_count jobs in this workflow"
+                echo ""
+
+                # Check each job individually
+                job_ids=$(echo "$jobs_json" | jq -r '.jobs[].id' 2>/dev/null)
+                job_number=0
+                found_connection_error=0
+
+                for job_id in $job_ids; do
+                  job_number=$((job_number + 1))
+                  total_jobs_checked=$((total_jobs_checked + 1))
+
+                  job_name=$(echo "$jobs_json" | jq -r ".jobs[] | select(.id == $job_id) | .name" 2>/dev/null)
+                  job_conclusion=$(echo "$jobs_json" | jq -r ".jobs[] | select(.id == $job_id) | .conclusion" 2>/dev/null)
+                  job_status=$(echo "$jobs_json" | jq -r ".jobs[] | select(.id == $job_id) | .status" 2>/dev/null)
+                  
+                  echo "    JOB $job_number/$job_count: $job_name"
+                  echo "      Status: $job_status | Conclusion: $job_conclusion"
+                  
+                  # Get full job data to search for error
+                  job_data=$(echo "$jobs_json" | jq -c ".jobs[] | select(.id == $job_id)" 2>/dev/null)
+                  
+                  # Search for connection error in this specific job
+                  if echo "$job_data" | grep -qi "$ERROR_SIGNATURE"; then
+                    echo "      *** CONNECTION ERROR DETECTED ***"
+                    found_connection_error=1
+                  else
+                    echo "      ✓ No error"
+                  fi
+                  echo ""
+                done
+
+                # If any job has connection error, rerun the entire workflow
+                if [ $found_connection_error -eq 1 ]; then
+                  echo "    =========================================="
+                  echo "    [ACTION] CONNECTION ERROR FOUND!"
+                  echo "    =========================================="
+                  echo "    Requesting rerun of ALL jobs in run $run_id..."
+
+                  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+                    -H "Authorization: Bearer ${TOKEN}" \
+                    -H "Accept: application/vnd.github+json" \
+                    "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun")
+
+                  if [ "$http_code" = "201" ] || [ "$http_code" = "202" ]; then
+                    echo "    ✓ [SUCCESS] Rerun requested for workflow: $run_name"
+                    echo "    ✓ All jobs (including failed ones) will be rerun"
+                    echo "    ✓ Run ID: $run_id | PR: #$pr"
+                    total_reruns=$((total_reruns + 1))
+                    found_error_in_pr=1
+                  elif [ "$http_code" = "403" ]; then
+                    echo "    ✗ [WARNING] Rerun forbidden (HTTP 403)"
+                    echo "    This may mean the run is already queued or in progress"
+                  else
+                    echo "    ✗ [ERROR] Rerun request failed with HTTP $http_code"
+                  fi
+                  echo ""
+
+                  sleep 1
                 else
-                  echo "    No connection error found"
+                  echo "    No connection errors found in any jobs"
+                  echo ""
                 fi
               done
-
-              echo ""
-              # If any job in this run has connection error, rerun the entire workflow
-              if [ $found_connection_error -eq 1 ]; then
-                echo "  =========================================="
-                echo "  [ACTION] CONNECTION ERROR FOUND IN THIS RUN"
-                echo "  =========================================="
-                echo "  Requesting rerun of ALL jobs in workflow run $run_id..."
-
-                http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-                  -H "Authorization: Bearer ${TOKEN}" \
-                  -H "Accept: application/vnd.github+json" \
-                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun")
-
-                if [ "$http_code" = "201" ] || [ "$http_code" = "202" ]; then
-                  echo "  ✓ [SUCCESS] Rerun requested for workflow run $run_id"
-                  echo "  ✓ This will rerun ALL jobs including failed ones"
-                  echo "  ✓ Associated with PR #$associated_pr"
-                  rerun_count=$((rerun_count + 1))
-                elif [ "$http_code" = "403" ]; then
-                  echo "  ✗ [WARNING] Rerun forbidden (HTTP 403) - may already be queued or in progress"
-                else
-                  echo "  ✗  Rerun request failed with HTTP $http_code"
-                fi
-
-                sleep 1
-              else
-                echo "  No connection errors found in any jobs for this run"
-              fi
             done
+
+            if [ $found_error_in_pr -eq 0 ]; then
+              echo "  No connection errors found in any workflows for PR #$pr"
+            fi
+            echo ""
           done
 
-          echo ""
           echo "=========================================="
           echo "           FINAL SUMMARY"
           echo "=========================================="
-          echo "Total workflow runs checked: $checked_runs"
+          echo "Total PRs checked: $pr_count"
+          echo "Total workflow runs checked: $total_runs_checked"
           echo "Total jobs examined: $total_jobs_checked"
-          echo "Reruns requested: $rerun_count"
+          echo "Total reruns requested: $total_reruns"
           echo "=========================================="
           echo "COMPLETED ALL CHECKS"
           echo "=========================================="
