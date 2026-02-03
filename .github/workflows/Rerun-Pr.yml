@@ -45,6 +45,13 @@ jobs:
               -H "Authorization: Bearer ${TOKEN}" \
               "https://api.github.com/repos/${OWNER}/${REPO}/commits/${commit_sha}/check-runs")
 
+            num_checks=$(echo "$check_runs" | jq '.check_runs | length')
+            if [ "$num_checks" -eq 0 ]; then
+              echo "  No check runs found for commit $commit_sha of PR #$pr."
+              echo "  No check run detected with runner connection error for PR #$pr"
+              continue
+            fi
+
             found_runner_error=0
 
             for check in $(echo "$check_runs" | jq -c '.check_runs[]'); do
