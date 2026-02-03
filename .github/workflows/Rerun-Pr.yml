@@ -10,7 +10,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Rerun PRs failed with runner connection error (job annotation detection)
+      - name: Rerun PRs failed with runner connection error (check all PR runs)
         env:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -26,9 +26,7 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&per_page=25")
 
-          # Check if we got valid JSON for PRs
           if echo "$prs_json" | jq empty 2>/dev/null; then
-            echo "Successfully fetched PRs list."
             prs=$(echo "$prs_json" | jq -r '.[].number' 2>/dev/null || echo "")
           else
             echo "Error: Failed to get valid JSON for PRs list."
@@ -36,79 +34,59 @@ jobs:
             exit 1
           fi
 
-          if [ -z "$prs" ]; then
-            echo "No PRs found or failed to parse PR numbers."
-            exit 1
-          fi
-
           for pr in $prs; do
             echo "--------------------------------------------------------"
             echo "Checking PR #$pr"
 
-            echo "  Fetching PR details for #$pr..."
-            pr_json=$(curl -s \
-              -H "Authorization: Bearer ${TOKEN}" \
-              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}")
-
-            # Check if we got valid JSON for this PR
-            if echo "$pr_json" | jq empty 2>/dev/null; then
-              commit_sha=$(echo "$pr_json" | jq -r '.head.sha' 2>/dev/null || echo "")
-            else
-              echo "  Error: Invalid JSON received for PR #$pr. Skipping."
-              echo "  Raw response: $pr_json"
-              continue
-            fi
-
-            if [[ -z "$commit_sha" || "$commit_sha" == "null" ]]; then
-              echo "  Could not find commit SHA for PR #$pr, skipping."
-              continue
-            fi
-
-            echo "  Commit SHA: $commit_sha"
-            echo "  Fetching workflow runs..."
+            echo "  Fetching ALL workflow runs for PR #$pr (not just current commit)..."
+            
+            # Get ALL workflow runs that reference this PR number
             runs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=40")
+                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?event=pull_request&per_page=100")
 
-            # Check if we got valid JSON for workflow runs
-            if echo "$runs_json" | jq empty 2>/dev/null; then
-              runs=$(echo "$runs_json" | jq -c ".workflow_runs[] | select(.head_sha==\"$commit_sha\")" 2>/dev/null || echo "")
-            else
-              echo "  Error: Invalid JSON received for workflow runs for PR #$pr. Skipping."
-              echo "  Raw response: $runs_json"
+            if ! echo "$runs_json" | jq empty 2>/dev/null; then
+              echo "  Error: Invalid JSON received for workflow runs. Skipping PR #$pr."
               continue
             fi
 
-            if [ -z "$runs" ]; then
-              echo "  No workflow runs found for commit $commit_sha of PR #$pr."
+            # Filter runs that are associated with this PR number
+            pr_runs=$(echo "$runs_json" | jq -c ".workflow_runs[] | select(.pull_requests[]?.number == $pr)")
+
+            if [ -z "$pr_runs" ]; then
+              echo "  No workflow runs found for PR #$pr."
               continue
             fi
 
             found_runner_error=0
 
-            echo "$runs" | while IFS= read -r run; do
+            echo "$pr_runs" | while IFS= read -r run; do
               if [ -z "$run" ]; then
                 continue
               fi
 
               run_id=$(echo "$run" | jq -r '.id' 2>/dev/null || echo "")
               conclusion=$(echo "$run" | jq -r '.conclusion' 2>/dev/null || echo "")
+              commit_sha=$(echo "$run" | jq -r '.head_sha' 2>/dev/null || echo "")
 
               if [ -z "$run_id" ]; then
-                echo "    Could not parse run ID, skipping this run."
                 continue
               fi
 
-              echo "    Checking workflow run $run_id with conclusion [$conclusion]..."
+              echo "    Checking workflow run $run_id (commit: ${commit_sha:0:7}) with conclusion [$conclusion]..."
+
+              # Skip successful runs
+              if [ "$conclusion" == "success" ]; then
+                echo "      Skipping successful run."
+                continue
+              fi
 
               jobs_resp=$(curl -s \
                 -H "Authorization: Bearer ${TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
 
-              # Check if we got valid JSON for jobs
               if echo "$jobs_resp" | jq empty 2>/dev/null; then
-                # Search for the error signature in the raw JSON response
                 matches=$(echo "$jobs_resp" | grep -iF "$ERROR_SIGNATURE" | wc -l)
 
                 if [ "$matches" -gt 0 ]; then
@@ -118,12 +96,13 @@ jobs:
                     -H "Accept: application/vnd.github+json" \
                     "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun"
                   echo "    [ACTION] Rerun requested for workflow run $run_id (PR #$pr)."
+                  found_runner_error=1
                   sleep 2
                 else
                   echo "    No connection error found in run $run_id."
                 fi
               else
-                echo "    Error: Invalid JSON received for jobs in run $run_id. Skipping."
+                echo "    Error: Invalid JSON received for jobs in run $run_id."
               fi
             done
 
