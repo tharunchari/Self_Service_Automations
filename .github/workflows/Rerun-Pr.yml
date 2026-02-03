@@ -10,7 +10,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq curl
 
-      - name: Rerun PRs failed with runner connection error (all commits)
+      - name: Rerun PRs failed with runner connection error (reverse search)
         env:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -21,118 +21,99 @@ jobs:
 
           echo "========= BEGIN SELF-HOSTED RUNNER CONNECTION ERROR CHECKS ========="
 
-          # Fetch open PRs
-          prs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+          # Get list of open PR numbers
+          echo "Fetching open PRs..."
+          open_pr_numbers=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&per_page=25" | \
               jq -r '.[].number' 2>/dev/null)
 
-          if [ -z "$prs" ]; then
+          if [ -z "$open_pr_numbers" ]; then
             echo "No open PRs found"
             exit 1
           fi
 
-          # Process each PR
-          for pr in $prs; do
-            echo "--------------------------------------------------------"
-            echo "Checking PR #$pr"
+          echo "Found open PRs: $(echo $open_pr_numbers | tr '\n' ' ')"
+          echo ""
 
-            # Get PR details
-            pr_data=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}")
+          # Fetch ALL recent workflow runs (not filtered by anything)
+          echo "Fetching ALL recent workflow runs (checking for failures)..."
+          
+          rerun_count=0
+          checked_runs=0
 
-            branch=$(echo "$pr_data" | jq -r '.head.ref' 2>/dev/null)
-            head_sha=$(echo "$pr_data" | jq -r '.head.sha' 2>/dev/null)
+          for page in 1 2 3; do
+            echo "Fetching workflow runs page $page..."
+            
+            runs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=100&page=$page")
 
-            if [ -z "$head_sha" ] || [ "$head_sha" = "null" ]; then
-              echo "  Cannot get head SHA for PR #$pr, skipping"
+            if ! echo "$runs_json" | jq empty 2>/dev/null; then
+              echo "Error fetching runs on page $page"
               continue
             fi
 
-            echo "  Branch: $branch"
-            echo "  Latest commit SHA: $head_sha"
+            # Get all run IDs from this page
+            run_ids=$(echo "$runs_json" | jq -r '.workflow_runs[].id' 2>/dev/null)
 
-            # Get ALL commits in this PR
-            echo "  Fetching all commits in PR..."
-            pr_commits=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}/commits" | \
-              jq -r '.[].sha' 2>/dev/null)
+            for run_id in $run_ids; do
+              checked_runs=$((checked_runs + 1))
 
-            if [ -z "$pr_commits" ]; then
-              echo "  No commits found for PR #$pr"
-              continue
-            fi
+              # Get run details
+              run_name=$(echo "$runs_json" | jq -r ".workflow_runs[] | select(.id == $run_id) | .name" 2>/dev/null)
+              run_conclusion=$(echo "$runs_json" | jq -r ".workflow_runs[] | select(.id == $run_id) | .conclusion" 2>/dev/null)
+              run_status=$(echo "$runs_json" | jq -r ".workflow_runs[] | select(.id == $run_id) | .status" 2>/dev/null)
+              
+              # Check if this run is associated with any open PR
+              run_pr_numbers=$(echo "$runs_json" | jq -r ".workflow_runs[] | select(.id == $run_id) | .pull_requests[]?.number" 2>/dev/null)
 
-            commit_count=$(echo "$pr_commits" | wc -l)
-            echo "  Found $commit_count commits in this PR"
+              # Skip if not associated with any open PR
+              is_open_pr=0
+              for pr_num in $run_pr_numbers; do
+                if echo "$open_pr_numbers" | grep -q "^${pr_num}$"; then
+                  is_open_pr=1
+                  associated_pr=$pr_num
+                  break
+                fi
+              done
 
-            found_error=0
-            total_checked=0
-
-            # Check workflow runs for each commit in the PR
-            for commit_sha in $pr_commits; do
-              echo "  Checking commit ${commit_sha:0:7}..."
-
-              # Get workflow runs for this specific commit
-              commit_runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-                  -H "Accept: application/vnd.github+json" \
-                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=50" | \
-                  jq -c ".workflow_runs[] | select(.head_sha == \"$commit_sha\")" 2>/dev/null)
-
-              if [ -z "$commit_runs" ]; then
+              if [ $is_open_pr -eq 0 ]; then
                 continue
               fi
 
-              # Process each run for this commit
-              echo "$commit_runs" | jq -r '.id' | while read -r run_id; do
-                if [ -z "$run_id" ]; then
-                  continue
+              echo "  Run $checked_runs: $run_name [conclusion: $run_conclusion] (ID: $run_id) - PR #$associated_pr"
+
+              # Check jobs for connection errors
+              jobs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
+
+              if echo "$jobs_json" | grep -qi "$ERROR_SIGNATURE"; then
+                echo "    [MATCH] Connection error found in run $run_id!"
+                echo "    [ACTION] Requesting rerun of all jobs..."
+
+                http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+                  -H "Authorization: Bearer ${TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun")
+
+                if [ "$http_code" = "201" ] || [ "$http_code" = "202" ]; then
+                  echo "    [SUCCESS] Rerun requested for run $run_id (PR #$associated_pr)"
+                  rerun_count=$((rerun_count + 1))
+                elif [ "$http_code" = "403" ]; then
+                  echo "    [WARNING] Rerun forbidden (HTTP 403) - may already be queued"
+                else
+                  echo "    [ERROR] Rerun failed with HTTP $http_code"
                 fi
 
-                total_checked=$((total_checked + 1))
-
-                run_name=$(echo "$commit_runs" | jq -r "select(.id == $run_id) | .name" 2>/dev/null | head -1)
-                run_status=$(echo "$commit_runs" | jq -r "select(.id == $run_id) | .status" 2>/dev/null | head -1)
-                run_conclusion=$(echo "$commit_runs" | jq -r "select(.id == $run_id) | .conclusion" 2>/dev/null | head -1)
-                
-                if [ "$run_conclusion" = "null" ] || [ -z "$run_conclusion" ]; then
-                  run_conclusion="(no conclusion)"
-                fi
-                
-                echo "    Found: $run_name [status: $run_status, conclusion: $run_conclusion] (ID: $run_id)"
-
-                # Fetch jobs and check for connection errors
-                jobs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-                    -H "Accept: application/vnd.github+json" \
-                    "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
-
-                # Search for error signature
-                if echo "$jobs_json" | grep -qi "$ERROR_SIGNATURE"; then
-                  echo "      [MATCH] Connection error found in run $run_id!"
-                  echo "      [ACTION] Requesting rerun of ALL jobs..."
-
-                  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-                    -H "Authorization: Bearer ${TOKEN}" \
-                    -H "Accept: application/vnd.github+json" \
-                    "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun")
-
-                  if [ "$http_code" = "201" ] || [ "$http_code" = "202" ]; then
-                    echo "      [SUCCESS] Rerun requested for all jobs in run $run_id (PR #$pr)"
-                    found_error=1
-                  elif [ "$http_code" = "403" ]; then
-                    echo "      [WARNING] Rerun forbidden (HTTP 403)"
-                  else
-                    echo "      [ERROR] Rerun failed with HTTP $http_code"
-                  fi
-
-                  sleep 1
-                fi
-              done
+                sleep 1
+              fi
             done
-
-            if [ $found_error -eq 0 ]; then
-              echo "  No connection errors found across all commits for PR #$pr"
-            fi
           done
 
-          echo "========= COMPLETED ALL PR CHECKS ========="
+          echo ""
+          echo "========= SUMMARY ========="
+          echo "Checked $checked_runs workflow runs"
+          echo "Requested reruns: $rerun_count"
+          echo "========= COMPLETED ========="
