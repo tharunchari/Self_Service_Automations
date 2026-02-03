@@ -14,6 +14,7 @@ jobs:
         env:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
+          set -e
           TOKEN="${PROD_FINE_GRAINED_PAT}"
           OWNER="vitechsystems"
           REPO="CoreAdmin"
@@ -21,29 +22,44 @@ jobs:
 
           echo "========= BEGIN SELF-HOSTED RUNNER CONNECTION ERROR CHECKS ========="
 
-          prs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+          prs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
               -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&per_page=25" |
-              jq '.[].number')
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&per_page=25")
+
+          if [ -z "$prs_json" ] || [[ "$prs_json" =~ "rate limit" ]] || [[ "$prs_json" =~ "Bad credentials" ]]; then
+            echo "  Error: Could not fetch PRs or hit rate limit or bad token!"
+            echo "$prs_json"
+            exit 1
+          fi
+
+          prs=$(echo "$prs_json" | jq '.[].number')
 
           for pr in $prs; do
             echo "--------------------------------------------------------"
             echo "Checking PR #$pr"
-            
-            commit_sha=$(curl -s \
-              -H "Authorization: Bearer ${TOKEN}" \
-              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}" | jq -r '.head.sha')
 
-            if [[ -z "$commit_sha" ]]; then
+            pr_json=$(curl -s \
+              -H "Authorization: Bearer ${TOKEN}" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}")
+
+            commit_sha=$(echo "$pr_json" | jq -r '.head.sha')
+
+            if [[ -z "$commit_sha" || "$commit_sha" == "null" ]]; then
               echo "  Could not find commit SHA for PR #$pr, skipping."
               continue
             fi
 
-            # Find workflow runs for this PR commit
-            runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+            runs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=40" |
-                jq -c ".workflow_runs[] | select(.head_sha==\"$commit_sha\")")
+                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=40")
+
+            if [ -z "$runs_json" ] || [[ "$runs_json" =~ "rate limit" ]]; then
+              echo "  Error: Could not fetch workflow runs or hit rate limit!"
+              echo "$runs_json"
+              continue
+            fi
+
+            runs=$(echo "$runs_json" | jq -c ".workflow_runs[] | select(.head_sha==\"$commit_sha\")")
 
             found_runner_error=0
 
@@ -52,13 +68,17 @@ jobs:
               conclusion=$(echo "$run" | jq -r '.conclusion')
               echo "    Checking workflow run $run_id with conclusion [$conclusion] for commit $commit_sha."
 
-              # Get jobs for this workflow run
               jobs_resp=$(curl -s \
                 -H "Authorization: Bearer ${TOKEN}" \
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
-              
-              # Robust free-text search for runner connection error
+
+              if [ -z "$jobs_resp" ] || [[ "$jobs_resp" =~ "rate limit" ]]; then
+                echo "      Error: Could not fetch jobs or hit rate limit!"
+                echo "$jobs_resp"
+                continue
+              fi
+
               matches=$(echo "$jobs_resp" | grep -iF "$ERROR_SIGNATURE" | wc -l)
 
               if [ "$matches" -gt 0 ]; then
