@@ -10,7 +10,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq curl
 
-      - name: Rerun PRs failed with runner connection error (handle forks)
+      - name: Rerun PRs failed with runner connection error (check null conclusions)
         env:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -21,7 +21,7 @@ jobs:
 
           echo "========= BEGIN SELF-HOSTED RUNNER CONNECTION ERROR CHECKS ========="
 
-          # Fetch ALL recent workflow runs first (we'll filter by PR later)
+          # Fetch ALL recent workflow runs
           echo "Fetching recent workflow runs..."
           all_runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
               -H "Accept: application/vnd.github+json" \
@@ -60,7 +60,7 @@ jobs:
             echo "  Head SHA: $head_sha"
             echo "  Head Repo: $head_repo"
 
-            # Find workflow runs that reference this PR (by checking pull_requests array)
+            # Find workflow runs that reference this PR
             echo "  Searching for workflow runs associated with PR #$pr..."
             
             pr_run_ids=$(echo "$all_runs" | jq -r ".workflow_runs[] | select(.pull_requests[]?.number == $pr) | .id" 2>/dev/null)
@@ -90,8 +90,26 @@ jobs:
                 break
               fi
 
-              run_info=$(echo "$all_runs" | jq -r ".workflow_runs[] | select(.id == $run_id) | .name + \" [\" + .conclusion + \"]\"" 2>/dev/null)
-              echo "    Run $run_count: $run_info (ID: $run_id)"
+              # Get run details with both status and conclusion
+              run_name=$(echo "$all_runs" | jq -r ".workflow_runs[] | select(.id == $run_id) | .name" 2>/dev/null)
+              run_status=$(echo "$all_runs" | jq -r ".workflow_runs[] | select(.id == $run_id) | .status" 2>/dev/null)
+              run_conclusion=$(echo "$all_runs" | jq -r ".workflow_runs[] | select(.id == $run_id) | .conclusion" 2>/dev/null)
+              
+              # Display null as empty string for clarity
+              if [ "$run_conclusion" = "null" ]; then
+                run_conclusion="(no conclusion)"
+              fi
+              
+              echo "    Run $run_count: $run_name [status: $run_status, conclusion: $run_conclusion] (ID: $run_id)"
+
+              # Check runs that are NOT successful (including null conclusions)
+              # Skip only if explicitly successful
+              if [ "$run_conclusion" = "success" ]; then
+                echo "      Skipping successful run"
+                continue
+              fi
+
+              echo "      Checking non-successful run for connection errors..."
 
               # Get jobs and search for error
               jobs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
@@ -111,11 +129,15 @@ jobs:
                 if [ "$http_code" = "201" ] || [ "$http_code" = "202" ]; then
                   echo "      [SUCCESS] Rerun requested for run $run_id (PR #$pr)"
                   found_error=1
+                elif [ "$http_code" = "403" ]; then
+                  echo "      [ERROR] Rerun forbidden (HTTP 403) - run may already be in progress or completed"
                 else
                   echo "      [ERROR] Rerun failed with HTTP $http_code"
                 fi
 
                 sleep 1
+              else
+                echo "      No connection error found in this run"
               fi
             done
 
