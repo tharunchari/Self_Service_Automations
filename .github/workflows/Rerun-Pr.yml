@@ -10,7 +10,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Rerun PRs failed with runner connection error
+      - name: Rerun PRs failed with runner connection error (check runs detection)
         env:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -30,42 +30,63 @@ jobs:
             echo "--------------------------------------------------------"
             echo "Checking PR #$pr"
 
-            runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?event=pull_request&per_page=20" |
-              jq -c '.workflow_runs[] | {id: .id, conclusion: .conclusion, pr_numbers: [.pull_requests[].number]}')
+            # Get latest commit SHA for the PR
+            commit_sha=$(curl -s \
+              -H "Authorization: Bearer ${TOKEN}" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}" | jq -r '.head.sha')
 
-            run_found=0
+            if [[ -z "$commit_sha" ]]; then
+              echo "  Could not find commit SHA for PR #$pr, skipping."
+              continue
+            fi
 
-            echo "$runs" | while IFS= read -r run; do
-              run_id=$(echo "$run" | jq -r '.id')
-              conclusion=$(echo "$run" | jq -r '.conclusion')
-              pr_numbers=$(echo "$run" | jq -r '.pr_numbers[]')
+            # Get all check runs for the commit
+            check_runs=$(curl -s \
+              -H "Authorization: Bearer ${TOKEN}" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/commits/${commit_sha}/check-runs")
 
-              if [[ "$conclusion" == "failure" ]] && echo "$pr_numbers" | grep -q -w "$pr"; then
-                run_found=1
-                echo "  -> Failed run ID $run_id for PR #$pr"
-                jobs=$(curl -s \
-                  -H "Authorization: Bearer ${TOKEN}" \
+            found_runner_error=0
+
+            for check in $(echo "$check_runs" | jq -c '.check_runs[]'); do
+              name=$(echo "$check" | jq -r '.name')
+              conclusion=$(echo "$check" | jq -r '.conclusion')
+              output=$(echo "$check" | jq -r '.output.text // empty')
+
+              if [[ "$conclusion" == "failure" ]] && echo "$output" | grep -qi "$ERROR_SIGNATURE"; then
+                echo "  [MATCH] Check run \"$name\" failed for PR #$pr due to runner connection error."
+
+                found_runner_error=1
+
+                # Find workflow runs triggered by this commit
+                runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
                   -H "Accept: application/vnd.github+json" \
-                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
+                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=40" |
+                  jq -c ".workflow_runs[] | select(.head_sha==\"$commit_sha\")")
 
-                if echo "$jobs" | jq -r '.. | .name?, .failure_message? // empty' | grep -qi "$ERROR_SIGNATURE"; then
-                  echo "    [MATCH] Connection error detected for run $run_id -> Sending rerun request."
+                workflow_found=0
+                for run in $runs; do
+                  run_id=$(echo "$run" | jq -r '.id')
+                  conclusion=$(echo "$run" | jq -r '.conclusion')
+                  echo "    Found workflow run $run_id with conclusion [$conclusion] for commit $commit_sha."
+                  # Re-run workflow
                   curl -s -X POST \
                     -H "Authorization: Bearer ${TOKEN}" \
                     -H "Accept: application/vnd.github+json" \
                     "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun"
-                  echo "    [ACTION] Rerun requested for run $run_id (PR #$pr)."
+                  echo "    [ACTION] Rerun requested for workflow run $run_id (PR #$pr, commit $commit_sha)."
+                  workflow_found=1
                   sleep 2
-                else
-                  echo "    [SKIP] No runner connection error detected in jobs for run $run_id."
+                done
+
+                if [ "$workflow_found" -eq 0 ]; then
+                  echo "    No workflow run found for commit $commit_sha."
                 fi
+
               fi
             done
 
-            if [ $run_found -eq 0 ]; then
-              echo "  No failed workflow runs found for PR #$pr"
+            if [ "$found_runner_error" -eq 0 ]; then
+              echo "  No check run detected with runner connection error for PR #$pr"
             fi
           done
 
