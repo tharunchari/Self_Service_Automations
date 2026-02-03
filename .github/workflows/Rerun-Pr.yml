@@ -26,9 +26,10 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&per_page=25")
 
-          if [ -z "$prs_json" ] || [[ "$prs_json" =~ "rate limit" ]] || [[ "$prs_json" =~ "Bad credentials" ]]; then
-            echo "  Error: Could not fetch PRs or hit rate limit or bad token!"
-            echo "$prs_json"
+          # Defensive check JSON validity
+          if ! echo "$prs_json" | jq empty >/dev/null 2>&1; then
+            echo "Error: Invalid JSON received for PRs list."
+            echo "Raw response: $prs_json"
             exit 1
           fi
 
@@ -42,6 +43,11 @@ jobs:
               -H "Authorization: Bearer ${TOKEN}" \
               "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}")
 
+            if ! echo "$pr_json" | jq empty >/dev/null 2>&1; then
+              echo "  Error: Invalid JSON received for PR details for PR #$pr. Skipping."
+              continue
+            fi
+
             commit_sha=$(echo "$pr_json" | jq -r '.head.sha')
 
             if [[ -z "$commit_sha" || "$commit_sha" == "null" ]]; then
@@ -53,9 +59,8 @@ jobs:
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=40")
 
-            if [ -z "$runs_json" ] || [[ "$runs_json" =~ "rate limit" ]]; then
-              echo "  Error: Could not fetch workflow runs or hit rate limit!"
-              echo "$runs_json"
+            if ! echo "$runs_json" | jq empty >/dev/null 2>&1; then
+              echo "  Error: Invalid JSON received for workflow runs for PR #$pr. Skipping."
               continue
             fi
 
@@ -73,12 +78,12 @@ jobs:
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
 
-              if [ -z "$jobs_resp" ] || [[ "$jobs_resp" =~ "rate limit" ]]; then
-                echo "      Error: Could not fetch jobs or hit rate limit!"
-                echo "$jobs_resp"
+              if ! echo "$jobs_resp" | jq empty >/dev/null 2>&1; then
+                echo "      Error: Invalid JSON received for workflow jobs for run $run_id. Skipping."
                 continue
               fi
 
+              # Search jobs for runner lost communication error text:
               matches=$(echo "$jobs_resp" | grep -iF "$ERROR_SIGNATURE" | wc -l)
 
               if [ "$matches" -gt 0 ]; then
