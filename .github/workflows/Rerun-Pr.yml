@@ -17,7 +17,14 @@ jobs:
           TOKEN="${PROD_FINE_GRAINED_PAT}"
           OWNER="vitechsystems"
           REPO="CoreAdmin"
-          ERROR_SIGNATURE="lost communication with the server"
+          
+          # Multiple error signatures for runner connection issues
+          ERROR_PATTERNS=(
+            "lost communication with the server"
+            "Broken pipe"
+            "write error"
+            "Debug Instance ID"
+          )
 
           echo "=========================================="
           echo "  RUNNER CONNECTION ERROR DETECTION"
@@ -142,44 +149,34 @@ jobs:
                 echo "    JOB $job_number/$job_count: $job_name"
                 echo "      Status: $job_status | Conclusion: $job_conclusion"
                 
-                # Get full job data including steps to search for error
-                job_data=$(echo "$jobs_json" | jq ".jobs[] | select(.id == $job_id)" 2>/dev/null)
-                
                 # Check if job failed
                 if [ "$job_conclusion" = "failure" ]; then
-                  echo "      ⚠ Job failed - checking for connection error..."
+                  echo "      ⚠ Job failed - checking for runner connection error..."
                   
-                  # Search for connection error in the entire job data (including steps)
-                  if echo "$job_data" | grep -qi "$ERROR_SIGNATURE"; then
-                    echo "      *** CONNECTION ERROR DETECTED ***"
+                  # Get full job data including steps
+                  job_data=$(echo "$jobs_json" | jq ".jobs[] | select(.id == $job_id)" 2>/dev/null)
+                  
+                  # Check for any of our error patterns
+                  error_found=0
+                  detected_pattern=""
+                  
+                  for pattern in "${ERROR_PATTERNS[@]}"; do
+                    if echo "$job_data" | grep -qi "$pattern"; then
+                      error_found=1
+                      detected_pattern="$pattern"
+                      break
+                    fi
+                  done
+                  
+                  if [ $error_found -eq 1 ]; then
+                    echo "      *** RUNNER CONNECTION ERROR DETECTED ***"
+                    echo "      Pattern matched: '$detected_pattern'"
                     found_connection_error=1
                   else
-                    # Also check by searching the raw jobs JSON
-                    if echo "$jobs_json" | jq -r ".jobs[] | select(.id == $job_id) | .steps[]?.conclusion" 2>/dev/null | grep -q "failure"; then
-                      # Failed step found, check logs more thoroughly
-                      step_names=$(echo "$job_data" | jq -r '.steps[]? | select(.conclusion == "failure") | .name' 2>/dev/null)
-                      echo "      Failed steps: $step_names"
-                      
-                      # If we can't find the specific error but job failed, assume it might be connection error
-                      # Let's search more broadly in the entire jobs response
-                      if echo "$jobs_json" | grep -qi "runner"; then
-                        echo "      *** RUNNER-RELATED FAILURE DETECTED ***"
-                        found_connection_error=1
-                      else
-                        echo "      Job failed but no connection error signature found"
-                      fi
-                    else
-                      echo "      Job failed but no connection error signature found"
-                    fi
+                    echo "      Job failed but no runner connection error pattern found"
                   fi
                 else
-                  # Even if not failed, still check for error signature
-                  if echo "$job_data" | grep -qi "$ERROR_SIGNATURE"; then
-                    echo "      *** CONNECTION ERROR DETECTED ***"
-                    found_connection_error=1
-                  else
-                    echo "      ✓ No error"
-                  fi
+                  echo "      ✓ No error"
                 fi
                 echo ""
               done
@@ -187,7 +184,7 @@ jobs:
               # If any job has connection error, rerun the entire workflow
               if [ $found_connection_error -eq 1 ]; then
                 echo "    =========================================="
-                echo "    [ACTION] CONNECTION ERROR FOUND!"
+                echo "    [ACTION] RUNNER CONNECTION ERROR FOUND!"
                 echo "    =========================================="
                 echo "    Requesting rerun of ALL jobs in run $run_id..."
 
@@ -212,13 +209,13 @@ jobs:
 
                 sleep 1
               else
-                echo "    No connection errors found in any jobs"
+                echo "    No runner connection errors found in any jobs"
                 echo ""
               fi
             done
 
             if [ $found_error_in_pr -eq 0 ]; then
-              echo "  No connection errors found in any workflows for PR #$pr"
+              echo "  No runner connection errors found in any workflows for PR #$pr"
             fi
             echo ""
           done
