@@ -10,7 +10,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Rerun PRs failed with runner connection error (check runs detection)
+      - name: Rerun PRs failed with runner connection error (job annotation detection)
         env:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -29,8 +29,7 @@ jobs:
           for pr in $prs; do
             echo "--------------------------------------------------------"
             echo "Checking PR #$pr"
-
-            # Get latest commit SHA for the PR
+            
             commit_sha=$(curl -s \
               -H "Authorization: Bearer ${TOKEN}" \
               "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${pr}" | jq -r '.head.sha')
@@ -40,60 +39,42 @@ jobs:
               continue
             fi
 
-            # Get all check runs for the commit
-            check_runs=$(curl -s \
-              -H "Authorization: Bearer ${TOKEN}" \
-              "https://api.github.com/repos/${OWNER}/${REPO}/commits/${commit_sha}/check-runs")
-
-            num_checks=$(echo "$check_runs" | jq '.check_runs | length')
-            if [ "$num_checks" -eq 0 ]; then
-              echo "  No check runs found for commit $commit_sha of PR #$pr."
-              echo "  No check run detected with runner connection error for PR #$pr"
-              continue
-            fi
+            # Find workflow runs for this PR commit
+            runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=40" |
+                jq -c ".workflow_runs[] | select(.head_sha==\"$commit_sha\")")
 
             found_runner_error=0
 
-            for check in $(echo "$check_runs" | jq -c '.check_runs[]'); do
-              name=$(echo "$check" | jq -r '.name')
-              conclusion=$(echo "$check" | jq -r '.conclusion')
-              output=$(echo "$check" | jq -r '.output.text // empty')
+            for run in $runs; do
+              run_id=$(echo "$run" | jq -r '.id')
+              conclusion=$(echo "$run" | jq -r '.conclusion')
+              echo "    Checking workflow run $run_id with conclusion [$conclusion] for commit $commit_sha."
 
-              if [[ "$conclusion" == "failure" ]] && echo "$output" | grep -qi "$ERROR_SIGNATURE"; then
-                echo "  [MATCH] Check run \"$name\" failed for PR #$pr due to runner connection error."
+              # Get jobs for this workflow run
+              jobs_resp=$(curl -s \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/jobs")
+              
+              # Robust free-text search for runner connection error
+              matches=$(echo "$jobs_resp" | grep -iF "$ERROR_SIGNATURE" | wc -l)
 
-                found_runner_error=1
-
-                # Find workflow runs triggered by this commit
-                runs=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
+              if [ "$matches" -gt 0 ]; then
+                echo "    [MATCH] Connection error found in run $run_id. Sending rerun request."
+                curl -s -X POST \
+                  -H "Authorization: Bearer ${TOKEN}" \
                   -H "Accept: application/vnd.github+json" \
-                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=40" |
-                  jq -c ".workflow_runs[] | select(.head_sha==\"$commit_sha\")")
-
-                workflow_found=0
-                for run in $runs; do
-                  run_id=$(echo "$run" | jq -r '.id')
-                  conclusion=$(echo "$run" | jq -r '.conclusion')
-                  echo "    Found workflow run $run_id with conclusion [$conclusion] for commit $commit_sha."
-                  # Re-run workflow
-                  curl -s -X POST \
-                    -H "Authorization: Bearer ${TOKEN}" \
-                    -H "Accept: application/vnd.github+json" \
-                    "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun"
-                  echo "    [ACTION] Rerun requested for workflow run $run_id (PR #$pr, commit $commit_sha)."
-                  workflow_found=1
-                  sleep 2
-                done
-
-                if [ "$workflow_found" -eq 0 ]; then
-                  echo "    No workflow run found for commit $commit_sha."
-                fi
-
+                  "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs/${run_id}/rerun"
+                echo "    [ACTION] Rerun requested for workflow run $run_id (PR #$pr, commit $commit_sha)."
+                found_runner_error=1
+                sleep 2
               fi
             done
 
             if [ "$found_runner_error" -eq 0 ]; then
-              echo "  No check run detected with runner connection error for PR #$pr"
+              echo "  No workflow run jobs detected runner connection error for PR #$pr."
             fi
           done
 
