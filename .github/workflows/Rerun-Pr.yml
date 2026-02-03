@@ -10,7 +10,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Rerun PRs failed with runner connection error (check runs API)
+      - name: Rerun PRs failed with runner connection error (check runs API with error handling)
         env:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
@@ -49,7 +49,7 @@ jobs:
             head_sha=$(echo "$pr_json" | jq -r '.head.sha' 2>/dev/null || echo "")
             branch_name=$(echo "$pr_json" | jq -r '.head.ref' 2>/dev/null || echo "")
             
-            if [ -z "$head_sha" ]; then
+            if [ -z "$head_sha" ] || [ "$head_sha" = "null" ]; then
               echo "  Cannot determine head SHA for PR #$pr"
               continue
             fi
@@ -63,16 +63,51 @@ jobs:
                 -H "Accept: application/vnd.github+json" \
                 "https://api.github.com/repos/${OWNER}/${REPO}/commits/${head_sha}/check-runs?per_page=100")
 
+            # Validate check runs response
             if ! echo "$check_runs_json" | jq empty 2>/dev/null; then
               echo "  Error: Cannot get check runs for commit $head_sha"
+              echo "  Raw response: $check_runs_json"
               continue
             fi
 
+            # Check if check_runs array exists and is not null
+            check_runs_count=$(echo "$check_runs_json" | jq '.check_runs | length' 2>/dev/null || echo "0")
+            
+            if [ "$check_runs_count" -eq 0 ]; then
+              echo "  No check runs found for commit $head_sha"
+              continue
+            fi
+
+            echo "  Found $check_runs_count check runs"
+
             # Look for failed check runs
-            failed_checks=$(echo "$check_runs_json" | jq -c '.check_runs[] | select(.conclusion == "failure")')
+            failed_checks=$(echo "$check_runs_json" | jq -c '.check_runs[] | select(.conclusion == "failure")' 2>/dev/null || echo "")
 
             if [ -z "$failed_checks" ]; then
               echo "  No failed check runs found for commit $head_sha"
+              
+              # Also check for any check runs with our error signature (regardless of conclusion)
+              echo "  Searching ALL check runs for connection errors..."
+              all_checks=$(echo "$check_runs_json" | jq -c '.check_runs[]' 2>/dev/null || echo "")
+              
+              if [ -n "$all_checks" ]; then
+                echo "$all_checks" | while IFS= read -r check; do
+                  if [ -z "$check" ]; then
+                    continue
+                  fi
+                  
+                  check_name=$(echo "$check" | jq -r '.name' 2>/dev/null || echo "")
+                  conclusion=$(echo "$check" | jq -r '.conclusion' 2>/dev/null || echo "")
+                  
+                  echo "    Check: '$check_name' conclusion=[$conclusion]"
+                  
+                  # Search the full check data for error signature
+                  if echo "$check" | grep -qi "$ERROR_SIGNATURE"; then
+                    echo "      [MATCH] Connection error found in check '$check_name'!"
+                    # Continue with workflow run lookup and rerun logic here
+                  fi
+                done
+              fi
               continue
             fi
 
@@ -86,32 +121,32 @@ jobs:
               check_name=$(echo "$check" | jq -r '.name' 2>/dev/null || echo "")
               check_id=$(echo "$check" | jq -r '.id' 2>/dev/null || echo "")
               conclusion=$(echo "$check" | jq -r '.conclusion' 2>/dev/null || echo "")
-              output_title=$(echo "$check" | jq -r '.output.title // empty' 2>/dev/null || echo "")
-              output_summary=$(echo "$check" | jq -r '.output.summary // empty' 2>/dev/null || echo "")
               
               echo "    FAILED CHECK: '$check_name' (ID: $check_id) conclusion=[$conclusion]"
 
               # Check if this failed check contains our error signature
-              full_output=$(echo "$check" | jq -r '.output | tostring' 2>/dev/null || echo "")
-              
-              if echo "$full_output" | grep -qi "$ERROR_SIGNATURE"; then
+              if echo "$check" | grep -qi "$ERROR_SIGNATURE"; then
                 echo "      [MATCH] Connection error found in check '$check_name'!"
                 
-                # Now we need to find the workflow run associated with this check
-                # Try to find workflow runs for this commit
+                # Find workflow runs for this commit and check name
                 runs_json=$(curl -s -H "Authorization: Bearer ${TOKEN}" \
                     -H "Accept: application/vnd.github+json" \
                     "https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?per_page=50")
 
                 if echo "$runs_json" | jq empty 2>/dev/null; then
-                  # Find workflow run with matching commit SHA
-                  matching_run=$(echo "$runs_json" | jq -c ".workflow_runs[] | select(.head_sha == \"$head_sha\" and .name == \"$check_name\")" | head -1)
+                  # Try to find matching workflow run
+                  matching_runs=$(echo "$runs_json" | jq -c ".workflow_runs[] | select(.head_sha == \"$head_sha\")" 2>/dev/null || echo "")
                   
-                  if [ -n "$matching_run" ]; then
-                    run_id=$(echo "$matching_run" | jq -r '.id' 2>/dev/null || echo "")
-                    
-                    if [ -n "$run_id" ]; then
-                      echo "      Found matching workflow run: $run_id"
+                  if [ -n "$matching_runs" ]; then
+                    echo "$matching_runs" | while IFS= read -r run; do
+                      if [ -z "$run" ]; then
+                        continue
+                      fi
+                      
+                      run_id=$(echo "$run" | jq -r '.id' 2>/dev/null || echo "")
+                      run_name=$(echo "$run" | jq -r '.name' 2>/dev/null || echo "")
+                      
+                      echo "      Found workflow run: '$run_name' (ID: $run_id)"
                       echo "      [ACTION] Requesting rerun for workflow run $run_id..."
                       
                       rerun_resp=$(curl -s -w "%{http_code}" -X POST \
@@ -124,26 +159,22 @@ jobs:
                         echo "      [SUCCESS] Rerun requested successfully for run $run_id (PR #$pr)."
                       else
                         echo "      [ERROR] Rerun request failed with HTTP $http_code for run $run_id."
-                        echo "      Response: ${rerun_resp%???}"
                       fi
                       
-                      found_runner_error=1
                       sleep 2
-                    fi
+                      break  # Only rerun first matching workflow
+                    done
                   else
-                    echo "      No matching workflow run found for check '$check_name'"
+                    echo "      No matching workflow runs found for commit $head_sha"
                   fi
                 else
-                  echo "      Error: Cannot get workflow runs to find matching run"
+                  echo "      Error: Cannot get workflow runs"
                 fi
               else
                 echo "      No connection error found in check '$check_name'"
               fi
             done
 
-            if [ "$found_runner_error" -eq 0 ]; then
-              echo "  No connection errors found in failed checks for PR #$pr."
-            fi
           done
 
           echo "========= COMPLETED ALL PR CHECKS ========="
