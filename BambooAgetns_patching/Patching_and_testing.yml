@@ -22,60 +22,30 @@
           IP Address: {{ ansible_default_ipv4.address }}
           Kernel Version: {{ kversion.stdout }}
 
-    - name: Send email with kernel version details using SNS
+    - name: Generate ASCII table for Kernel Version Details
+      set_fact:
+        table_output: |
+          Kernel Version Details Before Patching
+          
+          +----+-------------------+-------------------------+-------------------------------------+
+          | #  | IP Address        | Hostname                | Kernel Version                     |
+          +----+-------------------+-------------------------+-------------------------------------+
+          {% set serial_no = 1 %}
+          {% for host in play_hosts %}
+          | {{ serial_no }}  | {{ hostvars[host].ansible_default_ipv4.address }}     | {{ hostvars[host].hostname.stdout }}    | {{ hostvars[host].kversion.stdout }} |
+          +----+-------------------+-------------------------+-------------------------------------+
+          {% set serial_no = serial_no + 1 %}
+          {% endfor %}
+      tags:
+        - generate_ascii_table
+
+    - name: Send email with kernel version details using SNS (ASCII table format)
       run_once: true
       delegate_to: localhost
       community.aws.sns:
         region: "us-east-1"  # Replace with your AWS region
-        topic: "{{ sns_topic_arn }}"  # Correct argument for SNS topic ARN
-        msg: |
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              table {
-                border-collapse: collapse;
-                width: 100%;
-                text-align: left;
-              }
-              th, td {
-                border: 1px solid black;
-                padding: 8px;
-              }
-              th {
-                background-color: #f2f2f2;
-              }
-              td {
-                text-align: center;
-              }
-            </style>
-          </head>
-          <body>
-            <h2>Kernel Version Details Before Patching</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>IP Address</th>
-                  <th>Hostname</th>
-                  <th>Kernel Version</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% set serial_no = 1 %}
-                {% for host in play_hosts %}
-                <tr>
-                  <td>{{ serial_no }}</td>
-                  <td>{{ hostvars[host].ansible_default_ipv4.address }}</td>
-                  <td>{{ hostvars[host].hostname.stdout }}</td>
-                  <td>{{ hostvars[host].kversion.stdout }}</td>
-                </tr>
-                {% set serial_no = serial_no + 1 %}
-                {% endfor %}
-              </tbody>
-            </table>
-          </body>
-          </html>
+        topic: "{{ sns_topic_arn }}"
+        msg: "{{ table_output }}"
         subject: "Before Patching Kernel Version Report"
       ignore_errors: yes
 
