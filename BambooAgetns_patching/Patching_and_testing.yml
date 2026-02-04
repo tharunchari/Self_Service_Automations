@@ -3,7 +3,7 @@
   become: true
   become_user: root
   vars:
-    ansible_python_interpreter: /usr/bin/python
+    ansible_python_interpreter: /usr/bin/python3
     sns_topic_arn: "arn:aws:sns:us-east-1:389180911583:Testing"  # Replace with your SNS Topic ARN
   tasks:
     - name: Check the kernel version before webserver patching
