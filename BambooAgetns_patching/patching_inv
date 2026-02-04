@@ -1,0 +1,85 @@
+[all]
+
+#VM-BAMBOOPREPRD-AGENT.vitech.com
+172.26.46.219 ansible_user=bamboo 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-01-H.vitech.com
+172.26.57.13 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-02.vitech.com
+172.26.57.14 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-03.vitech.com
+172.26.57.15 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-04.vitech.com
+172.26.52.172 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-05.vitech.com
+172.26.52.173 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-06.vitech.com
+172.26.52.174 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-07.vitech.com
+172.26.52.163 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-08.vitech.com
+172.26.52.169 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-09.vitech.com
+172.26.52.170 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-10.vitech.com
+172.26.52.171 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-11.vitech.com
+172.26.45.88 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-12-H.vitech.com
+172.26.48.231 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-13-H.vitech.com
+172.26.47.142 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-14.vitech.com
+172.26.56.19 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-15.vitech.com
+172.26.52.167 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-16.vitech.com
+172.26.52.168 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-17.vitech.com
+172.26.56.16 ansible_user=root
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-18.vitech.com
+172.26.56.17 ansible_user=root
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-19.vitech.com
+172.26.56.18 ansible_user=root
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-20.vitech.com
+172.26.56.46 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-21.vitech.com
+172.26.56.47 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-22.vitech.com
+172.26.47.141 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-23.vitech.com
+172.26.56.15 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-24.vitech.com
+172.26.45.112 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-25.vitech.com
+172.26.45.113 ansible_user=root 
+
+#Host Name BAMBOO-OEL9-CLOUDAGNT-26.vitech.com
+172.26.45.114 ansible_user=root 
+
+#Host Name  VITECH-BAMBOO-SONAR-AGENT01.vitech.com
+10.172.2.180 ansible_user=root 
