@@ -25,9 +25,9 @@
     - name: Send email with kernel version details using SNS
       run_once: true
       delegate_to: localhost
-      amazon.aws.aws_sns:
+      community.aws.sns:
         region: "us-east-1"  # Replace with your AWS region
-        arn: "{{ sns_topic_arn }}"
+        topic_arn: "{{ sns_topic_arn }}"
         message: |
           <!DOCTYPE html>
           <html>
