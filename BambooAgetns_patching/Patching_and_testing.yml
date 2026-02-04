@@ -1,3 +1,4 @@
+---
 - name: Update and reboot 
   hosts: all
   become: true
@@ -20,11 +21,11 @@
           Hostname: {{ hostname.stdout }}
           IP Address: {{ ansible_default_ipv4.address }}
           Kernel Version: {{ kversion.stdout }}
-          
+
     - name: Send email with kernel version details using SNS
       run_once: true
       delegate_to: localhost
-      boto3_sns:
+      amazon.aws.aws_sns:
         region: "us-east-1"  # Replace with your AWS region
         arn: "{{ sns_topic_arn }}"
         message: |
