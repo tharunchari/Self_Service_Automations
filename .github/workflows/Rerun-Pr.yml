@@ -2,6 +2,8 @@ name: Rerun PRs With Self-hosted Runner Connection Errors
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * 1-5'  
 
 jobs:
   rerun-connection-error-jobs:
@@ -30,6 +32,9 @@ jobs:
           echo "  RUNNER CONNECTION ERROR DETECTION"
           echo "=========================================="
           echo ""
+
+          # Array to track rerun PR numbers
+          rerun_prs=()
 
           # Fetch open PRs
           echo "Fetching open PRs..."
@@ -199,6 +204,11 @@ jobs:
                   echo "    ✓ Run ID: $run_id | PR: #$pr"
                   total_reruns=$((total_reruns + 1))
                   found_error_in_pr=1
+                  
+                  # Add to rerun list if not already added
+                  if [[ ! " ${rerun_prs[@]} " =~ " ${pr} " ]]; then
+                    rerun_prs+=("$pr")
+                  fi
                 elif [ "$http_code" = "403" ]; then
                   echo "    ✗ [WARNING] Rerun forbidden (HTTP 403)"
                   echo "    This may mean the run is already queued or in progress"
@@ -227,6 +237,21 @@ jobs:
           echo "Total workflow runs checked: $total_runs_checked"
           echo "Total jobs examined: $total_jobs_checked"
           echo "Total reruns requested: $total_reruns"
-          echo "=========================================="
+          echo ""
+          
+          if [ ${#rerun_prs[@]} -gt 0 ]; then
+            echo "=========================================="
+            echo "  PRs WITH RERUNS REQUESTED (${#rerun_prs[@]})"
+            echo "=========================================="
+            for pr_num in "${rerun_prs[@]}"; do
+              pr_url="https://github.com/${OWNER}/${REPO}/pull/${pr_num}"
+              echo "  • PR #$pr_num: $pr_url"
+            done
+            echo "=========================================="
+          else
+            echo "No PRs required reruns"
+          fi
+          
+          echo ""
           echo "COMPLETED ALL CHECKS"
           echo "=========================================="
