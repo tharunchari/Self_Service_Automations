@@ -80,7 +80,7 @@ jobs:
 
           ls -la
 
-          sudo ansible-playbook BambooAgetns_patching/Patching_and_testing.yml -i  BambooAgetns_patching/patching_inv --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
+          sudo ansible-playbook BambooAgetns_patching/Patching_and_testing.yml -i  BambooAgetns_patching/patching_inv --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" -vvv
         continue-on-error: false
 
         
