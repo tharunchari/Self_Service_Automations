@@ -31,23 +31,46 @@
         msg: |
           <!DOCTYPE html>
           <html>
+          <head>
+            <style>
+              table {
+                border-collapse: collapse;
+                width: 100%;
+                text-align: left;
+              }
+              th, td {
+                border: 1px solid black;
+                padding: 8px;
+              }
+              th {
+                background-color: #f2f2f2;
+              }
+              td {
+                text-align: center;
+              }
+            </style>
+          </head>
           <body>
             <h2>Kernel Version Details Before Patching</h2>
-            <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%; text-align: left;">
+            <table>
               <thead>
-                <tr style="background-color: #f2f2f2;">
+                <tr>
+                  <th>#</th>
                   <th>IP Address</th>
                   <th>Hostname</th>
                   <th>Kernel Version</th>
                 </tr>
               </thead>
               <tbody>
+                {% set serial_no = 1 %}
                 {% for host in play_hosts %}
                 <tr>
+                  <td>{{ serial_no }}</td>
                   <td>{{ hostvars[host].ansible_default_ipv4.address }}</td>
                   <td>{{ hostvars[host].hostname.stdout }}</td>
                   <td>{{ hostvars[host].kversion.stdout }}</td>
                 </tr>
+                {% set serial_no = serial_no + 1 %}
                 {% endfor %}
               </tbody>
             </table>
@@ -55,19 +78,6 @@
           </html>
         subject: "Before Patching Kernel Version Report"
       ignore_errors: yes
-
-    # - name: Upgrade ALL OS packages
-    #     shell: yum update -y
-    #     register: yum_update_result
-    #     ignore_errors: yes
-
-    # - name: Reboot the server
-    #   shell: |
-    #     sleep 5
-    #     reboot
-    #   async: 1
-    #   poll: 0
-    #   ignore_errors: yes
 
     - name: Pause for 180 seconds after upgrading packages
       pause:
