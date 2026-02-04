@@ -54,9 +54,7 @@
           </body>
           </html>
         subject: "Before Patching Kernel Version Report"
-        message_attributes:
-          "type": "html"
-    #  ignore_errors: yes
+      ignore_errors: yes
 
     # - name: Upgrade ALL OS packages
     #     shell: yum update -y
