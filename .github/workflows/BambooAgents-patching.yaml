@@ -83,6 +83,15 @@ jobs:
           sudo ansible-playbook BambooAgetns_patching/Patching_and_testing.yml -i  BambooAgetns_patching/patching_inv --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" -vvv
         continue-on-error: false
 
+      - name: Apply System Patches and Reboot
+        run: >
+          pwd
+
+          ls -la
+
+          sudo ansible-playbook BambooAgetns_patching/start.yml -i  BambooAgetns_patching/startinv --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" -vvv
+        continue-on-error: false
+
         
    #   - name: Stop the System Service
   #      run: |
@@ -91,15 +100,7 @@ jobs:
   ##        sudo ansible-playbook Jenkins_Patching/stop.yaml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
   #      continue-on-error: false
 
-  #    - name: Take System Snapshot
- #       run: |
-  #        pwd
-  #        ls -la
-  #        sudo ansible-playbook Jenkins_Patching/snapshot.yml -i $INVENTORY_PATH1 \
-  ##        --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" \
-   #       --extra-vars "vcusername=${{ vars.VC_USERNAME }}" \
-   #       --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv
-   #     continue-on-error: false
+
         
    #   - name: Apply System Patches and Reboot
    #     run: |
@@ -111,12 +112,7 @@ jobs:
     #  - name: Wait for 180 seconds
        # run: sleep 180
 
-     # - name: Start the system service
-     #   run: |
-      #    pwd
-       #   ls -la
-       #   sudo ansible-playbook Jenkins_Patching/startandmail.yaml -i $INVENTORY_PATH --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}"
-     #   continue-on-error: false
+   
         
 #  notify-on-failure:  # ✅ Now inside "jobs"
 #    name: Send Failure Notification
