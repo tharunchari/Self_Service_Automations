@@ -20,7 +20,7 @@
           Hostname: {{ hostname.stdout }}
           IP Address: {{ ansible_default_ipv4.address }}
           Kernel Version: {{ kversion.stdout }}
-
+          
     - name: Send email with kernel version details using SNS
       run_once: true
       delegate_to: localhost
