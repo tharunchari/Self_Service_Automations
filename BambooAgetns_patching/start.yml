@@ -3,13 +3,13 @@
 - hosts: all
   tasks:
   
-#    - name: Start VM-BAMBOOPREPRD-TEST-AGENT.vitech.com
-#      shell: |
-#       source /home/bamboo/.bash_profile
-#       /u01/BambooCLOUDAGNT/bin/bamboo-agent.sh start
-#      become: true 
-#      become_user: bamboo  
-#      when: ansible_host == '172.26.46.219'  # only run on specified host
+    - name: Start VM-BAMBOOPREPRD-TEST-AGENT.vitech.com
+      shell: |
+       source /home/bamboo/.bash_profile
+       /u01/BambooCLOUDAGNT/bin/bamboo-agent.sh start
+      become: true 
+      become_user: bamboo  
+      when: ansible_host == '172.26.46.219'  # only run on specified host
       
     - name: start BAMBOO-OEL9-CLOUDAGNT-01-H.vitech.com 
       shell: |
@@ -266,7 +266,6 @@
     - name: Get hostname
       shell: hostname
       register: hostname
-
     - name: Debug kernel version, hostname, and IP address
       debug:
         msg: |
@@ -274,38 +273,29 @@
           IP Address: {{ ansible_default_ipv4.address }}
           Kernel Version: {{ kversion.stdout }}
 
-    - name: Send email with kernel version details in HTML table
+arn:aws:sns:us-east-1:389180911583:Testing
+ - name: Generate ASCII Table for Kernel Version Details
+      set_fact:
+        table_output: |
+          Kernel Version Details after Patching
+          
+          +----+-------------------+-------------------------+-------------------------------------+
+          | #  | IP Address        | Hostname                | Kernel Version                     |
+          +----+-------------------+-------------------------+-------------------------------------+
+          {% set serial_no = 1 %}
+          {% for host in play_hosts %}
+          | {{ serial_no }}  | {{ hostvars[host].ansible_default_ipv4.address }}     | {{ hostvars[host].hostname.stdout }}    | {{ hostvars[host].kversion.stdout }} |
+          +----+-------------------+-------------------------+-------------------------------------+
+          {% set serial_no = serial_no + 1 %}
+          {% endfor %}
+
+    - name: Send Kernel Version Report via SNS (with ASCII table format)
       run_once: true
       delegate_to: localhost
-      local_action:
-        module: community.general.mail
-        host: smtp-relay.vitech.com
-        port: 25
-        to: v3atlassianops@vitechinc.com
-        subject: "After Patching Kernel Version Report"
-        body: |
-          <!DOCTYPE html>
-          <html>
-          <body>
-            <h2>Kernel Version Details After Patching and bamboo agents </h2>
-            <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%; text-align: left;">
-              <thead>
-                <tr style="background-color: #f2f2f2;">
-                  <th>IP Address</th>
-                  <th>Hostname</th>
-                  <th>Kernel Version</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for host in play_hosts %}
-                <tr>
-                  <td>{{ hostvars[host].ansible_default_ipv4.address }}</td>
-                  <td>{{ hostvars[host].hostname.stdout }}</td>
-                  <td>{{ hostvars[host].kversion.stdout }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </body>
-          </html>
-        subtype: html
+      community.aws.sns:
+        region: "us-east-1"  # Replace with your AWS region
+        topic: "arn:aws:sns:us-east-1:389180911583:Testing"
+        msg: "{{ table_output }}"
+        subject: "Kernel Version Report"
+      ignore_errors: yes
+
