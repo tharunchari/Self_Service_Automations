@@ -1,11 +1,12 @@
 ---
-- name: Update and reboot 
+- name: Generate ASCII Table with Kernel Version Details and Send via SNS
   hosts: all
   become: true
   become_user: root
   vars:
     ansible_python_interpreter: /usr/bin/python3.9
     sns_topic_arn: "arn:aws:sns:us-east-1:389180911583:Testing"  # Replace with your SNS Topic ARN
+
   tasks:
     - name: Check the kernel version before webserver patching
       shell: uname -r
@@ -15,80 +16,29 @@
       shell: hostname
       register: hostname
 
-    - name: Debug kernel version, hostname, and IP address
-      debug:
-        msg: |
-          Hostname: {{ hostname.stdout }}
-          IP Address: {{ ansible_default_ipv4.address }}
-          Kernel Version: {{ kversion.stdout }}
+    - name: Generate ASCII Table for Kernel Version Details
+      set_fact:
+        table_output: |
+          Kernel Version Details Before Patching
+          
+          +----+-------------------+-------------------------+-------------------------------------+
+          | #  | IP Address        | Hostname                | Kernel Version                     |
+          +----+-------------------+-------------------------+-------------------------------------+
+          {% set serial_no = 1 %}
+          {% for host in play_hosts %}
+          | {{ serial_no }}  | {{ hostvars[host].ansible_default_ipv4.address }}     | {{ hostvars[host].hostname.stdout }}    | {{ hostvars[host].kversion.stdout }} |
+          +----+-------------------+-------------------------+-------------------------------------+
+          {% set serial_no = serial_no + 1 %}
+          {% endfor %}
 
-    - name: Send email with kernel version details using SNS (Excel-like HTML Table)
+    - name: Send Kernel Version Report via SNS (with ASCII table format)
       run_once: true
       delegate_to: localhost
       community.aws.sns:
         region: "us-east-1"  # Replace with your AWS region
         topic: "{{ sns_topic_arn }}"
-        msg: |
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <style>
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                font-family: Arial, sans-serif;
-              }
-              th, td {
-                border: 1px solid #dddddd;
-                text-align: center;
-                padding: 8px;
-              }
-              th {
-                background-color: #4CAF50;
-                color: white;
-              }
-              tr:nth-child(even) {
-                background-color: #f2f2f2;
-              }
-              tr:hover {
-                background-color: #ddd;
-              }
-              td {
-                font-size: 12px;
-              }
-              thead {
-                font-size: 14px;
-                font-weight: bold;
-              }
-            </style>
-          </head>
-          <body>
-            <h2>Kernel Version Details Before Patching</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Sno</th>
-                  <th>IP Address</th>
-                  <th>Hostname</th>
-                  <th>Kernel Version</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% set serial_no = 1 %}
-                {% for host in play_hosts %}
-                <tr>
-                  <td>{{ serial_no }}</td>
-                  <td>{{ hostvars[host].ansible_default_ipv4.address }}</td>
-                  <td>{{ hostvars[host].hostname.stdout }}</td>
-                  <td>{{ hostvars[host].kversion.stdout }}</td>
-                </tr>
-                {% set serial_no = serial_no + 1 %}
-                {% endfor %}
-              </tbody>
-            </table>
-          </body>
-          </html>
-        subject: "Before Patching Kernel Version Report"
+        msg: "{{ table_output }}"
+        subject: "Kernel Version Report"
       ignore_errors: yes
 
     - name: Pause for 180 seconds after upgrading packages
