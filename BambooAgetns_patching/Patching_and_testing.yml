@@ -27,8 +27,8 @@
       delegate_to: localhost
       community.aws.sns:
         region: "us-east-1"  # Replace with your AWS region
-        topic_arn: "{{ sns_topic_arn }}"
-        message: |
+        topic: "{{ sns_topic_arn }}"  # Correct argument for SNS topic ARN
+        msg: |
           <!DOCTYPE html>
           <html>
           <body>
