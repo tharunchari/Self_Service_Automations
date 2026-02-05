@@ -108,7 +108,7 @@ jobs:
         run: |
           pwd
           ls -la
-          suansible-playbook BambooAgetns_patching/agentsstatus.yml   --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv --check
+          ansible-playbook BambooAgetns_patching/agentsstatus.yml   --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv --check
         continue-on-error: false
      
 #  notify-on-failure:  # ✅ Now inside "jobs"
