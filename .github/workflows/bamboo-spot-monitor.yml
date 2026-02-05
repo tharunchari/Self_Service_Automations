@@ -49,7 +49,7 @@ jobs:
           MAX_RESULTS: ${{ github.event.inputs.max_results }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
-          python bamboo_spot_monitor.py
+          bamboo-builds-monitoring/python bamboo_spot_monitor.py
       
       - name: Upload current run state
         uses: actions/upload-artifact@v4
