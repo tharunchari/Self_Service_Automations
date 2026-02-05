@@ -43,9 +43,9 @@ jobs:
       
       - name: Run Bamboo Spot Monitor
         env:
-          BAMBOO_URL: https://bamboodr.vitechinc.com/bamboodr
+          BAMBOO_URL: https://bamboo.vitechinc.com/bamboo
           BAMBOO_USERNAME: ${{ secrets.BAMBOO_USERNAME }}
-          BAMBOO_API_TOKEN: ${{ secrets.BAMBOODR_ACCESS_TOKEN }}
+          BAMBOO_API_TOKEN: ${{ secrets.BAMBOOPROD_ACCESS_TOKEN }}
           MAX_RESULTS: ${{ github.event.inputs.max_results }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
         working-directory: bamboo-builds-monitoring
