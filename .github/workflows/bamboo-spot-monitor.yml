@@ -6,7 +6,11 @@ on:
       max_results:
         description: 'Maximum number of failed builds to check'
         required: false
-        default: '100'
+        default: '500'
+      recent_hours:
+        description: 'Only check builds from last X hours'
+        required: false
+        default: '24'
       dry_run:
         description: 'Dry run mode (true = list only, false = actually retry)'
         required: true
@@ -44,8 +48,11 @@ jobs:
       - name: Run Bamboo Spot Monitor
         env:
           BAMBOO_URL: https://bamboo.vitechinc.com/bamboo
+          BAMBOO_USERNAME: ${{ secrets.BAMBOO_USERNAME }}
           BAMBOO_API_TOKEN: ${{ secrets.BAMBOOPROD_ACCESS_TOKEN }}
+          USE_BEARER_AUTH: 'true'
           MAX_RESULTS: ${{ github.event.inputs.max_results }}
+          RECENT_HOURS: ${{ github.event.inputs.recent_hours }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
         working-directory: bamboo-builds-monitoring
         run: python bamboo_spot_monitor.py
@@ -64,4 +71,4 @@ jobs:
         with:
           name: bamboo-spot-report-${{ github.run_number }}
           path: bamboo-builds-monitoring/bamboo-spot-report-*.json
-          retention-days: 2
+          retention-days: 30
