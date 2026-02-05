@@ -8,7 +8,7 @@
     sns_topic_arn: "arn:aws:sns:us-east-1:389180911583:Testing"  # Replace with your SNS Topic ARN
 
   tasks:
-    - name: Check the kernel version before webserver patching
+    - name: Check the kernel version After webserver patching
       shell: uname -r
       register: kversion
 
@@ -19,7 +19,7 @@
     - name: Generate ASCII Table for Kernel Version Details
       set_fact:
         table_output: |
-          Kernel Version Details Before Patching
+          Kernel Version Details After Patching
           
           +----+-------------------+-------------------------+-------------------------------------+
           | #  | IP Address        | Hostname                | Kernel Version                     |
