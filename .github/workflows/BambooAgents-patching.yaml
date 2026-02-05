@@ -60,18 +60,18 @@ jobs:
         run: |
           pwd
           ls -la
-          suansible-playbook BambooAgetns_patching/Agentstatusmail.yml --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv
+          suansible-playbook BambooAgetns_patching/Agentstatusmail.yml --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv --check
         continue-on-error: false
 
       - name: Run Ansible system stop Playbook
         run: |
-          ansible-playbook BambooAgetns_patching/stoptest.yml -i BambooAgetns_patching/Inventory_test --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no"
+          ansible-playbook BambooAgetns_patching/stoptest.yml -i BambooAgetns_patching/Inventory_test --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no" --check
 
       - name: Take System Snapshot
         run: |
          pwd
          ls -la
-         ansible-playbook  BambooAgetns_patching/snapshot1.yml -i BambooAgetns_patching/localhostenv --extra-vars "vcusername=${{ vars.VC_USERNAME }}" --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv
+         ansible-playbook  BambooAgetns_patching/snapshot1.yml -i BambooAgetns_patching/localhostenv --extra-vars "vcusername=${{ vars.VC_USERNAME }}" --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv --check
         continue-on-error: false
         
       - name: Apply System Patches and Reboot
@@ -80,7 +80,7 @@ jobs:
 
           ls -la
 
-          sudo ansible-playbook BambooAgetns_patching/Patching_and_testing.yml -i  BambooAgetns_patching/patching_inv --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" -vvv
+          sudo ansible-playbook BambooAgetns_patching/Patching_and_testing.yml -i  BambooAgetns_patching/patching_inv --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" -vvv --check
         continue-on-error: false
 
       - name: Apply System start 
@@ -89,7 +89,7 @@ jobs:
 
           ls -la
 
-          sudo ansible-playbook BambooAgetns_patching/start.yml -i  BambooAgetns_patching/startinv --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no"
+          sudo ansible-playbook BambooAgetns_patching/start.yml -i  BambooAgetns_patching/startinv --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no" --check
         continue-on-error: false
 
 
@@ -99,7 +99,7 @@ jobs:
 
           ls -la
 
-          sudo ansible-playbook BambooAgetns_patching/After_Patching_mail.yml -i  BambooAgetns_patching/patching_inv --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no"
+          sudo ansible-playbook BambooAgetns_patching/After_Patching_mail.yml -i  BambooAgetns_patching/patching_inv --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no" --check
         continue-on-error: false
 
       - name: Send the Mail Notification 
@@ -108,7 +108,7 @@ jobs:
         run: |
           pwd
           ls -la
-          suansible-playbook BambooAgetns_patching/agentsstatus.yml   --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv
+          suansible-playbook BambooAgetns_patching/agentsstatus.yml   --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv --check
         continue-on-error: false
      
 #  notify-on-failure:  # ✅ Now inside "jobs"
