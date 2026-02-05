@@ -28,7 +28,7 @@
         register: out
         delegate_to: localhost
         with_items: "{{ vm_names }}"
-        ignore_errors: true
+      #  ignore_errors: true
 
 #      - name: Debug XAND VM names from vars file
 #        debug:
