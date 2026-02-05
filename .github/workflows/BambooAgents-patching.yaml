@@ -83,7 +83,7 @@ jobs:
           sudo ansible-playbook BambooAgetns_patching/Patching_and_testing.yml -i  BambooAgetns_patching/patching_inv --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" -vvv
         continue-on-error: false
 
-      - name: Apply System start and mail 
+      - name: Apply System start 
         run: >
           pwd
 
@@ -91,6 +91,17 @@ jobs:
 
           sudo ansible-playbook BambooAgetns_patching/start.yml -i  BambooAgetns_patching/startinv --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no"
         continue-on-error: false
+
+
+      - name: Apply System start 
+        run: >
+          pwd
+
+          ls -la
+
+          sudo ansible-playbook BambooAgetns_patching/After_Patching_mail.yml -i  BambooAgetns_patching/patching_inv --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no"
+        continue-on-error: false
+
 
         
    #   - name: Stop the System Service
