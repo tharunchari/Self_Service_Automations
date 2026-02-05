@@ -45,7 +45,7 @@ jobs:
         env:
           BAMBOO_URL: https://bamboo.vitechinc.com/bamboo
           BAMBOO_USERNAME: ${{ secrets.BAMBOO_USERNAME }}
-          BAMBOO_API_TOKEN: ${{ secrets.bamboo_ACCESS_TOKEN }}
+          BAMBOO_API_TOKEN: ${{ secrets.BAMBOO5RESTUSER_PASSWORD }}
           MAX_RESULTS: ${{ github.event.inputs.max_results }}
           DRY_RUN: ${{ github.event.inputs.dry_run }}
         working-directory: bamboo-builds-monitoring
