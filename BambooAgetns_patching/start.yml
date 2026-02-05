@@ -242,19 +242,13 @@
       pause:
         seconds: 360
         
-    - name: Check the kernel version before webserver patching
+    - name: Check the kernel version After webserver patching
       shell: uname -r
       register: kversion
 
     - name: Get hostname
       shell: hostname
       register: hostname
-    - name: Debug kernel version, hostname, and IP address
-      debug:
-        msg: |
-          Hostname: {{ hostname.stdout }}
-          IP Address: {{ ansible_default_ipv4.address }}
-          Kernel Version: {{ kversion.stdout }}
 
 #arn:aws:sns:us-east-1:389180911583:Testing
     - name: Generate ASCII Table for Kernel Version Details
