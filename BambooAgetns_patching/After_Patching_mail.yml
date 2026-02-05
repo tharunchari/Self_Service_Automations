@@ -1,0 +1,42 @@
+---
+- name: Generate ASCII Table with Kernel Version Details and Send via SNS
+  hosts: all
+  become: true
+  become_user: root
+  vars:
+    ansible_python_interpreter: /usr/bin/python3.9
+    sns_topic_arn: "arn:aws:sns:us-east-1:389180911583:Testing"  # Replace with your SNS Topic ARN
+
+  tasks:
+    - name: Check the kernel version before webserver patching
+      shell: uname -r
+      register: kversion
+
+    - name: Get hostname
+      shell: hostname
+      register: hostname
+
+    - name: Generate ASCII Table for Kernel Version Details
+      set_fact:
+        table_output: |
+          Kernel Version Details Before Patching
+          
+          +----+-------------------+-------------------------+-------------------------------------+
+          | #  | IP Address        | Hostname                | Kernel Version                     |
+          +----+-------------------+-------------------------+-------------------------------------+
+          {% set serial_no = 1 %}
+          {% for host in play_hosts %}
+          | {{ serial_no }}  | {{ hostvars[host].ansible_default_ipv4.address }}     | {{ hostvars[host].hostname.stdout }}    | {{ hostvars[host].kversion.stdout }} |
+          +----+-------------------+-------------------------+-------------------------------------+
+          {% set serial_no = serial_no + 1 %}
+          {% endfor %}
+
+    - name: Send Kernel Version Report via SNS (with ASCII table format)
+      run_once: true
+      delegate_to: localhost
+      community.aws.sns:
+        region: "us-east-1"  # Replace with your AWS region
+        topic: "{{ sns_topic_arn }}"
+        msg: "{{ table_output }}"
+        subject: "Kernel Version Report"
+      ignore_errors: yes
