@@ -257,10 +257,10 @@
           Kernel Version: {{ kversion.stdout }}
 
 #arn:aws:sns:us-east-1:389180911583:Testing
- - name: Generate ASCII Table for Kernel Version Details
+     - name: Generate ASCII Table for Kernel Version Details
       set_fact:
         table_output: |
-          Kernel Version Details after Patching
+          Kernel Version Details After Patching
           
           +----+-------------------+-------------------------+-------------------------------------+
           | #  | IP Address        | Hostname                | Kernel Version                     |
@@ -282,3 +282,6 @@
         subject: "Kernel Version Report"
       ignore_errors: yes
 
+ #   - name: Upgrade ALL OS packages
+ #     shell: yum update -y
+ #     register: yum_update_result
