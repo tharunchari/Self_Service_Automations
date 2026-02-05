@@ -89,7 +89,7 @@ jobs:
 
           ls -la
 
-          sudo ansible-playbook BambooAgetns_patching/start.yml -i  BambooAgetns_patching/startinv --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" -vvv
+          sudo ansible-playbook BambooAgetns_patching/start.yml -i  BambooAgetns_patching/startinv --extra-vars "ansible_password=${ANSIBLE_PASSWORD}" --ssh-extra-args="-o StrictHostKeyChecking=no"
         continue-on-error: false
 
         
