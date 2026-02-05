@@ -18,9 +18,9 @@ from typing import List, Dict, Set, Optional
 BAMBOO_URL = os.environ.get('BAMBOO_URL', '').rstrip('/')
 USERNAME = os.environ.get('BAMBOO_USERNAME', '')
 API_TOKEN = os.environ.get('BAMBOO_API_TOKEN', '')
-USE_BEARER = os.environ.get('USE_BEARER_AUTH', 'false').lower() == 'true'  # Default to Basic auth
+USE_BEARER = os.environ.get('USE_BEARER_AUTH', 'true').lower() == 'true'
 MAX_RESULTS = int(os.environ.get('MAX_RESULTS', '100'))
-RECENT_HOURS = int(os.environ.get('RECENT_HOURS', '24'))  # Only check builds from last 24 hours
+RECENT_HOURS = int(os.environ.get('RECENT_HOURS', '24'))
 DRY_RUN = os.environ.get('DRY_RUN', 'true').lower() == 'true'
 
 STATE_FILE = 'retry-state.json'
@@ -43,7 +43,7 @@ SPOT_INTERRUPTION_KEYWORDS = [
     "spot instance",
     "instance termination",
     "AWS EC2 spot",
-    "exit 1"  # Your test build keyword
+    "exit 1"  # For testing
 ]
 
 
@@ -154,7 +154,6 @@ class BambooSpotMonitor:
             print("🔑 Using Basic authentication")
             if not USERNAME:
                 print("⚠️  WARNING: BAMBOO_USERNAME not set, using token as password")
-                # Some Bamboo setups allow empty username with token
                 self.session.auth = ('', API_TOKEN)
             else:
                 self.session.auth = (USERNAME, API_TOKEN)
@@ -176,8 +175,8 @@ class BambooSpotMonitor:
         }
     
     def get_current_failed_builds(self) -> List[Dict]:
-        """Get currently failed builds from recent time period"""
-        print(f"🔍 Fetching failed builds from last {RECENT_HOURS} hours from {BAMBOO_URL}...")
+        """Get currently failed builds"""
+        print(f"🔍 Fetching failed builds from {BAMBOO_URL}...")
         print(f"   Max results: {MAX_RESULTS}")
         
         try:
@@ -196,36 +195,9 @@ class BambooSpotMonitor:
             
             print(f"✓ Found {len(all_results)} total failed builds")
             
-            # Filter by recent time
-            cutoff_time = datetime.now() - timedelta(hours=RECENT_HOURS)
-            recent_results = []
-            
-            for result in all_results:
-                build_time_str = result.get('buildCompletedTime', '')
-                if build_time_str:
-                    try:
-                        # Parse ISO datetime (handle timezone)
-                        build_time_str = build_time_str.split('.')[0]  # Remove milliseconds
-                        # Remove timezone info for parsing
-                        if '+' in build_time_str or '-' in build_time_str[-6:]:
-                            build_time_str = build_time_str.rsplit('+', 1)[0].rsplit('-', 1)[0]
-                        
-                        build_time = datetime.fromisoformat(build_time_str)
-                        
-                        if build_time > cutoff_time:
-                            recent_results.append(result)
-                    except Exception as e:
-                        print(f"⚠️  Could not parse date for {result.get('key')}: {e}")
-                        # Include it anyway if we can't parse
-                        recent_results.append(result)
-            
-            print(f"✓ Found {len(recent_results)} failed builds in last {RECENT_HOURS} hours")
-            
-            if len(recent_results) == 0 and len(all_results) > 0:
-                print(f"⚠️  No recent failures found. All {len(all_results)} failed builds are older than {RECENT_HOURS} hours.")
-                print(f"💡 TIP: Increase RECENT_HOURS or MAX_RESULTS to include older builds")
-            
-            return recent_results
+            # TEMPORARILY DISABLED: Return all builds for testing
+            print(f"⚠️  TIME FILTERING DISABLED - Processing all failed builds")
+            return all_results
             
         except requests.exceptions.RequestException as e:
             print(f"❌ ERROR: Failed to fetch builds: {e}")
@@ -296,7 +268,7 @@ class BambooSpotMonitor:
         total = len(failed_builds)
         
         if total == 0:
-            print("\n✓ No recent failed builds found!")
+            print("\n✓ No failed builds found!")
             return
         
         print(f"\n📊 Analyzing {total} failed builds...")
@@ -474,7 +446,6 @@ class BambooSpotMonitor:
         print(f"Mode: {'🔍 DRY RUN (List Only)' if DRY_RUN else '🔄 ACTIVE MODE (Will Retry Builds)'}")
         print(f"Bamboo URL: {BAMBOO_URL}")
         print(f"Max Results: {MAX_RESULTS}")
-        print(f"Recent Period: Last {RECENT_HOURS} hours")
         print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 100)
         
