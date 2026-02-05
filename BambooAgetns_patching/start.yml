@@ -256,7 +256,7 @@
           IP Address: {{ ansible_default_ipv4.address }}
           Kernel Version: {{ kversion.stdout }}
 
-arn:aws:sns:us-east-1:389180911583:Testing
+#arn:aws:sns:us-east-1:389180911583:Testing
  - name: Generate ASCII Table for Kernel Version Details
       set_fact:
         table_output: |
