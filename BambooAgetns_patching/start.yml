@@ -28,7 +28,6 @@
       become_user: bamboo
       when: ansible_host == '172.26.57.14'  # only run on specified host
 
-
     - name: start BAMBOO-OEL9-CLOUDAGNT-03.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -71,7 +70,6 @@
       become_user: bamboo
       when: ansible_host == '172.26.52.163'  # only run on specified host
 
-
     - name: start BAMBOO-OEL9-CLOUDAGNT-08.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -80,7 +78,6 @@
       become_user: bamboo
       when: ansible_host == '172.26.52.169'  # only run on specified host
 
-
     - name: start BAMBOO-OEL9-CLOUDAGNT-09.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -88,7 +85,6 @@
       become: true
       become_user: bamboo
       when: ansible_host == '172.26.52.170'  # only run on specified host
-
 
     - name: start BAMBOO-OEL9-CLOUDAGNT-10.vitech.com 
       shell: |
@@ -108,7 +104,6 @@
       when: ansible_host == '172.26.45.88'  # only run on specified host
       ignore_errors: true
 
-
     - name: start BAMBOO-OEL9-CLOUDAGNT-12-H.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -116,7 +111,6 @@
       become: true
       become_user: bamboo
       when: ansible_host == '172.26.48.231'  # only run on specified host
-
 
     - name: start BAMBOO-OEL9-CLOUDAGNT-13-H.vitech.com 
       shell: |
@@ -126,7 +120,6 @@
       become_user: bamboo
       when: ansible_host == '172.26.47.142'  # only run on specified host
 
-
     - name: start BAMBOO-OEL9-CLOUDAGNT-14.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -134,8 +127,7 @@
       become: true
       become_user: bamboo
       when: ansible_host == '172.26.56.19'  # only run on specified host
-
-
+      
     - name: start BAMBOO-OEL9-CLOUDAGNT-15.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -153,7 +145,6 @@
       become_user: bamboo
       when: ansible_host == '172.26.52.168'  # only run on specified host
 
-
     - name: Start BAMBOO-OEL9-CLOUDAGNT-17.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -170,7 +161,6 @@
       become: true
       become_user: bamboo
       when: ansible_host == '172.26.56.17'  # only run on specified host
-
 
     - name: Start BAMBOO-OEL9-CLOUDAGNT-19.vitech.com 
       shell: |
@@ -199,7 +189,6 @@
       become_user: bamboo
       when: ansible_host == '172.26.56.47'  # only run on specified host
 
-
     - name: Start BAMBOO-OEL9-CLOUDAGNT-22.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -224,8 +213,7 @@
       become: true
       become_user: bamboo
       when: ansible_host == '172.26.45.112'  # only run on specified host
-
-
+      
     - name: Start BAMBOO-OEL9-CLOUDAGNT-25.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -233,8 +221,7 @@
       become: true
       become_user: bamboo
       when: ansible_host == '172.26.45.113'  # only run on specified host
-
-
+      
     - name: Start BAMBOO-OEL9-CLOUDAGNT-26.vitech.com 
       shell: |
         source /home/bamboo/.bash_profile
@@ -242,9 +229,6 @@
       become: true
       become_user: bamboo
       when: ansible_host == '172.26.45.114'  # only run on specified host
-
-
-
 
     - name: Start VITECH-BAMBOO-SANAR-AGENT01.vitech.com
       shell: |
@@ -254,7 +238,6 @@
       become_user: bamboo 
       when: ansible_host == '10.172.2.180'  # only run on specified host
       
-
     - name: Pause for 180 seconds after upgrading packages
       pause:
         seconds: 360
