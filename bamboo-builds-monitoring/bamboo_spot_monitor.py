@@ -133,14 +133,17 @@ class RetryState:
 
 class BambooSpotMonitor:
     def __init__(self):
-        if not all([BAMBOO_URL, USERNAME, API_TOKEN]):
+        if not all([BAMBOO_URL, API_TOKEN]):
             print("❌ ERROR: Missing required environment variables")
-            print("   Required: BAMBOO_URL, BAMBOO_USERNAME, BAMBOO_API_TOKEN")
+            print("   Required: BAMBOO_URL, BAMBOO_API_TOKEN")
             sys.exit(1)
         
         self.session = requests.Session()
-        self.session.auth = (USERNAME, API_TOKEN)
-        self.session.headers.update({'Accept': 'application/json'})
+        # Use Bearer token authentication instead of Basic auth
+        self.session.headers.update({
+            'Authorization': f'Bearer {API_TOKEN}',
+            'Accept': 'application/json'
+        })
         
         self.retry_state = RetryState()
         
