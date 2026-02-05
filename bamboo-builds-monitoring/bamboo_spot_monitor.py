@@ -85,7 +85,6 @@ class RetryState:
         
         retry_info = self.state['retried_builds'][build_key]
         
-        # If the build time matches what we retried before, it was already processed
         if retry_info.get('original_build_time') == build_time:
             return True
         
@@ -143,7 +142,6 @@ class BambooSpotMonitor:
         
         self.session = requests.Session()
         
-        # Choose authentication method
         if USE_BEARER:
             print("🔑 Using Bearer token authentication")
             self.session.headers.update({
@@ -175,16 +173,17 @@ class BambooSpotMonitor:
         }
     
     def get_current_failed_builds(self) -> List[Dict]:
-        """Get currently failed builds"""
-        print(f"🔍 Fetching failed builds from {BAMBOO_URL}...")
-        print(f"   Max results: {MAX_RESULTS}")
+        """Get failed builds from last X hours - OPTIMIZED"""
+        print(f"🔍 Fetching failed builds from last {RECENT_HOURS} hours...")
+        print(f"   Checking up to {MAX_RESULTS} recent builds...")
         
         try:
+            # Fetch ALL recent builds (not filtered by state) - they come sorted by date
             url = f"{BAMBOO_URL}/rest/api/latest/result"
             params = {
-                'buildstate': 'Failed',
                 'max-results': MAX_RESULTS,
-                'expand': 'results.result'
+                'expand': 'results.result',
+                'start-index': 0
             }
             
             response = self.session.get(url, params=params, timeout=30)
@@ -193,32 +192,87 @@ class BambooSpotMonitor:
             data = response.json()
             all_results = data.get('results', {}).get('result', [])
             
-            print(f"✓ Found {len(all_results)} total failed builds")
+            print(f"✓ Fetched {len(all_results)} recent builds from Bamboo")
             
-            # TEMPORARILY DISABLED: Return all builds for testing
-            print(f"⚠️  TIME FILTERING DISABLED - Processing all failed builds")
-            return all_results
+            # Calculate cutoff time
+            cutoff_time = datetime.now() - timedelta(hours=RECENT_HOURS)
+            
+            # Filter for failed builds within time window
+            recent_failed = []
+            skipped_old = 0
+            
+            for result in all_results:
+                # Skip if not failed
+                build_state = result.get('buildState', '')
+                if build_state != 'Failed':
+                    continue
+                
+                # Parse build completion time
+                build_time_str = result.get('buildCompletedTime', '')
+                if not build_time_str:
+                    continue
+                
+                try:
+                    # Parse: "2026-02-05T08:08:41.050-05:00"
+                    # Extract just the datetime part: "2026-02-05T08:08:41"
+                    datetime_part = build_time_str.split('.')[0]  # Remove milliseconds
+                    
+                    # Handle timezone offset (e.g., "-05:00")
+                    if '+' in datetime_part:
+                        datetime_part = datetime_part.split('+')[0]
+                    # Count hyphens to detect timezone: YYYY-MM-DDTHH:MM:SS-05:00 has 4 hyphens
+                    elif datetime_part.count('-') > 2:
+                        # Split from the right, take only date/time part
+                        datetime_part = datetime_part.rsplit('-', 1)[0]
+                    
+                    # Parse to datetime
+                    build_time = datetime.fromisoformat(datetime_part)
+                    
+                    # Compare (both are naive datetime, no timezone)
+                    if build_time > cutoff_time:
+                        recent_failed.append(result)
+                    else:
+                        skipped_old += 1
+                        # Don't break - API might not be perfectly sorted
+                        
+                except Exception as e:
+                    print(f"⚠️  Could not parse time for {result.get('key')}: {build_time_str} - Error: {e}")
+                    # Include it if we can't parse (safer)
+                    recent_failed.append(result)
+            
+            print(f"✓ Found {len(recent_failed)} FAILED builds from last {RECENT_HOURS} hours")
+            if skipped_old > 0:
+                print(f"   (Skipped {skipped_old} older failed builds)")
+            
+            if len(recent_failed) == 0:
+                print(f"💡 No recent failures found.")
+                print(f"   - Try increasing RECENT_HOURS (current: {RECENT_HOURS})")
+                print(f"   - Or increase MAX_RESULTS (current: {MAX_RESULTS})")
+                print(f"   - Or wait for next spot interruption to occur")
+            
+            return recent_failed
             
         except requests.exceptions.RequestException as e:
             print(f"❌ ERROR: Failed to fetch builds: {e}")
             sys.exit(1)
     
     def get_build_logs(self, build_key: str) -> tuple:
-        """Get build logs, returns (logs, success)"""
+        """Get build logs, returns (logs, success) - FAST TIMEOUT"""
         try:
             url = f"{BAMBOO_URL}/rest/api/latest/result/{build_key}.json"
             params = {'expand': 'logEntries'}
             
-            response = self.session.get(url, params=params, timeout=30)
+            # FAST TIMEOUT: 3 seconds instead of 30
+            response = self.session.get(url, params=params, timeout=3)
             response.raise_for_status()
             
             data = response.json()
             log_entries = data.get('logEntries', {}).get('logEntry', [])
             
             if not log_entries:
-                # Try alternative: get full build log
+                # Try alternative endpoint - also fast timeout
                 log_url = f"{BAMBOO_URL}/rest/api/latest/result/{build_key}/log"
-                log_response = self.session.get(log_url, timeout=30)
+                log_response = self.session.get(log_url, timeout=3)
                 
                 if log_response.status_code == 200:
                     return log_response.text, True
@@ -228,8 +282,8 @@ class BambooSpotMonitor:
             full_log = '\n'.join([entry.get('log', '') for entry in log_entries])
             return full_log, True
             
-        except Exception as e:
-            print(f"⚠️  Could not fetch logs for {build_key}: {e}")
+        except Exception:
+            # Fail fast and silently
             return "", False
     
     def is_spot_interruption(self, logs: str) -> tuple:
@@ -254,7 +308,7 @@ class BambooSpotMonitor:
         try:
             url = f"{BAMBOO_URL}/rest/api/latest/queue/{plan_key}"
             
-            response = self.session.post(url, timeout=30)
+            response = self.session.post(url, timeout=10)
             response.raise_for_status()
             
             return True
@@ -268,7 +322,7 @@ class BambooSpotMonitor:
         total = len(failed_builds)
         
         if total == 0:
-            print("\n✓ No failed builds found!")
+            print("\n✓ No recent failed builds found!")
             return
         
         print(f"\n📊 Analyzing {total} failed builds...")
@@ -446,6 +500,7 @@ class BambooSpotMonitor:
         print(f"Mode: {'🔍 DRY RUN (List Only)' if DRY_RUN else '🔄 ACTIVE MODE (Will Retry Builds)'}")
         print(f"Bamboo URL: {BAMBOO_URL}")
         print(f"Max Results: {MAX_RESULTS}")
+        print(f"Recent Period: Last {RECENT_HOURS} hours")
         print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 100)
         
