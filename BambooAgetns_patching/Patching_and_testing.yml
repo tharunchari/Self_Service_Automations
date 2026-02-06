@@ -44,7 +44,7 @@
     - name: Upgrade ALL OS packages
       shell: yum update -y
       register: yum_update_result
-      ignore_errors: yes
+      #ignore_errors: yes
 
 
         
@@ -54,7 +54,7 @@
         reboot
       async: 1
       poll: 0
-      ignore_errors: yes
+    #  ignore_errors: yes
 
     - name: Pause for 180 seconds after upgrading packages
       pause:
