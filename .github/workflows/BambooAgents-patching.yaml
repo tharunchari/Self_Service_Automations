@@ -60,7 +60,7 @@ jobs:
         run: |
           pwd
           ls -la
-          ansible-playbook BambooAgetns_patching/Agentstatusmail.yml --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv --check
+          ansible-playbook BambooAgetns_patching/Agentstatusmail.yml --extra-vars "bamboo_password=${BAMBOO_PASSWORD}"  --check
         continue-on-error: false
 
       - name: Run Ansible system stop Playbook
@@ -71,7 +71,7 @@ jobs:
         run: |
          pwd
          ls -la
-         ansible-playbook  BambooAgetns_patching/snapshot1.yml -i BambooAgetns_patching/localhostenv --extra-vars "vcusername=${{ vars.VC_USERNAME }}" --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" -vvv --check
+         ansible-playbook  BambooAgetns_patching/snapshot1.yml -i BambooAgetns_patching/localhostenv --extra-vars "vcusername=${{ vars.VC_USERNAME }}" --extra-vars "vcpassword=${{ secrets.VC_PASSWORD }}" --check
         continue-on-error: false
         
       - name: Apply System Patches and Reboot
@@ -80,7 +80,7 @@ jobs:
 
           ls -la
 
-          sudo ansible-playbook BambooAgetns_patching/Patching_and_testing.yml -i  BambooAgetns_patching/patching_inv --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" -vvv --check
+          sudo ansible-playbook BambooAgetns_patching/Patching_and_testing.yml -i  BambooAgetns_patching/patching_inv --extra-vars "url=${{ github.event.inputs.APP_COMPONENT }}" --check
         continue-on-error: false
 
       - name: Apply System start 
@@ -108,7 +108,7 @@ jobs:
         run: |
           pwd
           ls -la
-          ansible-playbook BambooAgetns_patching/agentsstatus.yml   --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" -vvv --check
+          ansible-playbook BambooAgetns_patching/agentsstatus.yml   --extra-vars "bamboo_password=${BAMBOO_PASSWORD}" --check
         continue-on-error: false
      
 #  notify-on-failure:  # ✅ Now inside "jobs"
