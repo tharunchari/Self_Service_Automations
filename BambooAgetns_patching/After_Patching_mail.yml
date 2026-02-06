@@ -5,7 +5,7 @@
   become_user: root
   vars:
     ansible_python_interpreter: /usr/bin/python3.9
-    sns_topic_arn: "arn:aws:sns:us-east-1:389180911583:Testing"  # Replace with your SNS Topic ARN
+    sns_topic_arn: "arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching"  # Replace with your SNS Topic ARN
 
   tasks:
     - name: Check the kernel version After webserver patching
