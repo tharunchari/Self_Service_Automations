@@ -1,8 +1,8 @@
 name: "Terminate Github Self Hosted Offline Runners"
 
 on:
-  schedule:
-    - cron: "5 */1 * * *"
+  #schedule:
+  #  - cron: "5 */1 * * *"
   workflow_dispatch:
 
 jobs:
@@ -33,4 +33,4 @@ jobs:
           aws-region: ${{ matrix.region }}
 
       - name: Run GitHub runner monitor script
-        run: python3 PYTHON_Script/terminate_github_offline_runners_advanced.py --dry-run=False --region=${{ matrix.region }}
+        run: python3 PYTHON_Script/terminate_github_offline_runners_advanced.py --region=${{ matrix.region }}
