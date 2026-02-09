@@ -23,9 +23,11 @@ parser.add_argument(
 args = parser.parse_args()
 AWS_REGION = args.region
 
-SNS_TOPIC_ARN = f"arn:aws:sns:{AWS_REGION}:389180911583:VitechToolsNVAProd"
+if AWS_REGION == "us-west-2":
+    SNS_TOPIC_ARN = "arn:aws:sns:us-west-2:389180911583:VitechToolsOregon"
+else:
+    SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
 
-SNS_TOPIC_ARN = f"arn:aws:sns:{AWS_REGION}:389180911583:VitechToolsNVAProd"
 
 def send_sns_notification(subject, message):
     sns_client = boto3.client("sns", region_name=AWS_REGION)
