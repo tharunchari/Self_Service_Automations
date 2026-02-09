@@ -25,6 +25,8 @@ AWS_REGION = args.region
 
 SNS_TOPIC_ARN = f"arn:aws:sns:{AWS_REGION}:389180911583:VitechToolsNVAProd"
 
+SNS_TOPIC_ARN = f"arn:aws:sns:{AWS_REGION}:389180911583:VitechToolsNVAProd"
+
 def send_sns_notification(subject, message):
     sns_client = boto3.client("sns", region_name=AWS_REGION)
     try:
