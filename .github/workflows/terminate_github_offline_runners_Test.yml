@@ -1,4 +1,4 @@
-name: "Terminate Github Self Hosted Offline Runners"
+name: "Terminate Github Self Hosted Offline Runners Test"
 
 on:
   #schedule:
