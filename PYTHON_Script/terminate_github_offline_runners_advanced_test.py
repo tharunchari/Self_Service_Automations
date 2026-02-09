@@ -4,25 +4,16 @@ import os
 import argparse
 from datetime import datetime, timezone
 
-# ==============================
 # Configurable variables
-# ==============================
 GITHUB_ORG = "vitechsystems"
-GITHUB_TOKEN = os.environ.get("PROD_FINE_GRAINED_PAT")  # Classic PAT from workflow env
+GITHUB_TOKEN = os.environ.get("PROD_FINE_GRAINED_PAT")
 THRESHOLD_MINUTES = 60
 TAG_KEY = "Name"
 TAG_VALUE = "Github_Self_Hosted_Runner"
-REPO_TAG_KEY = "RepoName"  # 👈 New configurable tag key to extract
-# ==============================
+REPO_TAG_KEY = "RepoName"
 
 # CLI argument parsing
 parser = argparse.ArgumentParser(description="Terminate idle/offline GitHub self-hosted runners")
-parser.add_argument(
-    "--dry-run",
-    type=str,
-    default="True",
-    help="Set to True for dry run (no termination, only notifications). Set to False to actually terminate."
-)
 parser.add_argument(
     "--region",
     type=str,
@@ -30,7 +21,6 @@ parser.add_argument(
     help="AWS region to run in"
 )
 args = parser.parse_args()
-DRY_RUN = args.dry_run.lower() == "true"
 AWS_REGION = args.region
 
 SNS_TOPIC_ARN = f"arn:aws:sns:{AWS_REGION}:389180911583:VitechToolsNVAProd"
@@ -75,7 +65,7 @@ def get_aws_instances(threshold_minutes=THRESHOLD_MINUTES, tag_key=TAG_KEY, tag_
                     "InstanceId": instance_id,
                     "LaunchTime": launch_time,
                     "RunningTime": running_time,
-                    "RepoName": repo_name  # 👈 Store RepoName tag value
+                    "RepoName": repo_name
                 })
 
     return instances
@@ -100,14 +90,11 @@ def get_github_org_runners(org, token):
         page += 1
     return runners
 
-def terminate_instances(instance_ids, dry_run=DRY_RUN):
+def terminate_instances(instance_ids):
     ec2_client = boto3.client("ec2", region_name=AWS_REGION)
     try:
-        if dry_run:
-            print(f"[DRY RUN] Would terminate instances: {instance_ids}")
-        else:
-            ec2_client.terminate_instances(InstanceIds=instance_ids)
-            print(f"Terminated instances: {instance_ids}")
+        ec2_client.terminate_instances(InstanceIds=instance_ids)
+        print(f"Terminated instances: {instance_ids}")
     except Exception as e:
         print(f"Failed to terminate instances {instance_ids}: {str(e)}")
 
@@ -115,9 +102,6 @@ def main():
     if not GITHUB_TOKEN:
         print("Error: PROD_FINE_GRAINED_PAT environment variable not set!")
         return
-
-    if DRY_RUN:
-        print("⚠️ Running in DRY RUN mode. No instances will actually be terminated.")
 
     aws_instances = get_aws_instances()
     aws_instance_map = {inst["InstanceId"]: inst for inst in aws_instances}
@@ -161,15 +145,8 @@ def main():
     if instances_to_terminate:
         terminate_instances(instances_to_terminate)
 
-        subject = ""
-        message = ""
-
-        if DRY_RUN:
-            subject = "⚠️ Dry Run: Offline/Orphaned Github Runners"
-            message = "The following instances would be terminated in 5 minutes (dry run mode).\n\n"
-        else:
-            subject = "✅ Terminated Offline/Orphaned Github Runners"
-            message = "The following self-hosted GitHub runners running for more than 60 minutes have been terminated.\n\n"
+        subject = "✅ Terminated Offline/Orphaned Github Runners"
+        message = "The following self-hosted GitHub runners running for more than 60 minutes have been terminated.\n\n"
 
         if idle_offline_instances:
             message += "Idle or Offline runners:\n\n"
@@ -198,7 +175,6 @@ def main():
                         message += f"{REPO_TAG_KEY}: N/A\n\n"
 
         message += "Thanks,\nv3atlassianops"
-
         send_sns_notification(subject, message)
     else:
         print("No idle, offline, or orphaned instances found for termination.")
