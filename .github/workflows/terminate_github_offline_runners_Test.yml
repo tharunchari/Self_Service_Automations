@@ -33,4 +33,4 @@ jobs:
           aws-region: ${{ matrix.region }}
 
       - name: Run GitHub runner monitor script
-        run: python3 PYTHON_Script/terminate_github_offline_runners_advanced.py --region=${{ matrix.region }}
+        run: python3 PYTHON_Script/terminate_github_offline_runners_advanced_test.py --region=${{ matrix.region }}
