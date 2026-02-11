@@ -7,14 +7,18 @@ from datetime import datetime, timezone
 # ==============================
 # Configurable variables
 # ==============================
-AWS_REGION = "us-east-1"
-SNS_TOPIC_ARN = "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
 GITHUB_ORG = "vitechsystems"
-GITHUB_TOKEN = os.environ.get("PROD_FINE_GRAINED_PAT")  # Classic PAT from workflow env
+GITHUB_TOKEN = os.environ.get("PROD_FINE_GRAINED_PAT")
 THRESHOLD_MINUTES = 60
 TAG_KEY = "Name"
 TAG_VALUE = "Github_Self_Hosted_Runner"
-REPO_TAG_KEY = "RepoName"  # 👈 New configurable tag key to extract
+REPO_TAG_KEY = "RepoName"
+
+# Region → SNS mapping
+REGION_SNS_MAP = {
+    "us-east-1": "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd",
+    "us-west-2": "arn:aws:sns:us-west-2:389180911583:VitechToolsOregon"
+}
 # ==============================
 
 # CLI argument parsing
@@ -23,10 +27,24 @@ parser.add_argument(
     "--dry-run",
     type=str,
     default="True",
-    help="Set to True for dry run (no termination, only notifications). Set to False to actually terminate."
+    help="Set to True for dry run (no termination). False to terminate."
 )
+parser.add_argument(
+    "--region",
+    type=str,
+    required=True,
+    help="AWS Region (us-east-1 or us-west-2)"
+)
+
 args = parser.parse_args()
+
 DRY_RUN = args.dry_run.lower() == "true"
+AWS_REGION = args.region
+
+if AWS_REGION not in REGION_SNS_MAP:
+    raise ValueError(f"Unsupported region: {AWS_REGION}")
+
+SNS_TOPIC_ARN = REGION_SNS_MAP[AWS_REGION]
 
 
 def send_sns_notification(subject, message):
@@ -37,7 +55,7 @@ def send_sns_notification(subject, message):
             Message=message,
             Subject=subject
         )
-        print("SNS notification sent successfully")
+        print(f"SNS notification sent successfully in {AWS_REGION}")
     except Exception as e:
         print("Failed to send SNS notification:", str(e))
 
@@ -58,7 +76,6 @@ def get_aws_instances(threshold_minutes=THRESHOLD_MINUTES, tag_key=TAG_KEY, tag_
             launch_time = instance["LaunchTime"]
             running_time = current_time - launch_time
 
-            # Extract RepoName tag (if present)
             repo_name = None
             for tag in instance.get("Tags", []):
                 if tag["Key"] == REPO_TAG_KEY:
@@ -70,7 +87,7 @@ def get_aws_instances(threshold_minutes=THRESHOLD_MINUTES, tag_key=TAG_KEY, tag_
                     "InstanceId": instance_id,
                     "LaunchTime": launch_time,
                     "RunningTime": running_time,
-                    "RepoName": repo_name  # 👈 Store RepoName tag value
+                    "RepoName": repo_name
                 })
 
     return instances
@@ -82,6 +99,7 @@ def get_github_org_runners(org, token):
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github+json"
     }
+
     runners = []
     page = 1
     while True:
@@ -89,11 +107,14 @@ def get_github_org_runners(org, token):
         if response.status_code != 200:
             print(f"GitHub API error: {response.status_code}: {response.text}")
             break
+
         data = response.json()
         runners.extend(data.get("runners", []))
+
         if len(data.get("runners", [])) < 100:
             break
         page += 1
+
     return runners
 
 
@@ -110,6 +131,8 @@ def terminate_instances(instance_ids, dry_run=DRY_RUN):
 
 
 def main():
+    print(f"Running termination script for region: {AWS_REGION}")
+
     if not GITHUB_TOKEN:
         print("Error: PROD_FINE_GRAINED_PAT environment variable not set!")
         return
@@ -120,6 +143,7 @@ def main():
     aws_instances = get_aws_instances()
     aws_instance_map = {inst["InstanceId"]: inst for inst in aws_instances}
     aws_instance_ids = list(aws_instance_map.keys())
+
     print(f"AWS instances running >{THRESHOLD_MINUTES} mins: {aws_instance_ids}")
 
     github_runners = get_github_org_runners(GITHUB_ORG, GITHUB_TOKEN)
@@ -127,6 +151,7 @@ def main():
 
     matched_runners = []
     matched_instance_ids = set()
+
     for runner in github_runners:
         runner_name = runner.get("name", "")
         for inst_id in aws_instance_ids:
