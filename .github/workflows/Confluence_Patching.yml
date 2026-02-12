@@ -330,11 +330,11 @@ jobs:
             done
             
             # Check node status using API
-            echo "Checking node status using the API..."
-            NODE_STATUS=$(curl -s -X GET \
+            echo "Check node status using the API"
+            NODE_STATUS=$(curl -X GET \
               -H "Authorization: Bearer ${{ env.TOKEN }}" \
               -H "Content-Type: application/json" \
-              "${{ env.URL }}/rest/zdu/cluster")
+              "${{ env.URL }}/rest/zdu/cluster" | jq .)
             
             echo "Raw API Response:"
             echo "$NODE_STATUS" | jq .
