@@ -10,7 +10,7 @@ jobs:
     steps:
       - name: Set env as secret
         env:
-          MY_VAL: ${{ secrets.CLASSIC_PAT }}
+          MY_VAL: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           import os
           data = open("file", "w")
