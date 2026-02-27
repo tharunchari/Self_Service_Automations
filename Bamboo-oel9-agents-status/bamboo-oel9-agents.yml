@@ -1,5 +1,5 @@
 ---
-- name: List, sort Bamboo offline agents, and send notification
+- name: List Bamboo offline agents, and send notification if any are offline
   hosts: localhost
   gather_facts: false
   vars:
@@ -13,7 +13,7 @@
           - botocore
       tags: install_python_libraries
 
-    - name: Get Bamboo offline agents list and sort
+    - name: Get Bamboo offline agents list
       shell: |
         curl -H "Authorization: Bearer {{ bamboo_password }}" https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=true | \
         jq -r '.[] | select(.state == "Offline" and (.name | startswith("BAMBOO-OEL9") or startswith("VITECH"))) | {name: .name, state: .state}'
@@ -26,6 +26,11 @@
         msg: "Offline Bamboo agents list: {{ bamboo_agents.stdout }}"
       tags: display_agents
 
+    - name: Check if there are offline agents
+      set_fact:
+        are_offline_agents_present: "{{ bamboo_agents.stdout_lines | length > 0 }}"
+      tags: check_agents
+
     - name: Format Bamboo offline agents into table format
       set_fact:
         bamboo_table: |
@@ -34,11 +39,13 @@
           {% for agent in bamboo_agents.stdout_lines %}
           {{ loop.index }}    {{ agent | from_json | json_query('name') }}      {{ agent | from_json | json_query('state') }}
           {% endfor %}
+      when: are_offline_agents_present
       tags: format_table
 
     - name: Display formatted Bamboo offline agents table
       debug:
         msg: "Formatted Bamboo offline agents table:\n{{ bamboo_table }}"
+      when: are_offline_agents_present
       tags: display_table
 
     - name: Send Email Notification via SNS for Offline Agents
@@ -48,6 +55,7 @@
         msg: |
           The following Bamboo agents are currently offline:
           {{ bamboo_table }}
+      when: are_offline_agents_present
       no_log: false  # Set no_log: false to allow logging of this task output
       tags: send_notification
 
@@ -55,4 +63,5 @@
     - name: Confirm Email Notification Sent
       debug:
         msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Testing"
+      when: are_offline_agents_present
       tags: confirm_notification
