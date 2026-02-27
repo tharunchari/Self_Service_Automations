@@ -1,5 +1,5 @@
 ---
-- name: List, sort Bamboo agents, and send notification
+- name: List, sort Bamboo offline agents, and send notification
   hosts: localhost
   gather_facts: false
   vars:
@@ -13,38 +13,40 @@
           - botocore
       tags: install_python_libraries
 
-    - name: Get Bamboo agents list and sort
+    - name: Get Bamboo offline agents list and sort
       shell: |
-        curl -H "Authorization: Bearer {{ bamboo_password }}" https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false | \
-        jq -r '.[] | select(.active == true and (.name | startswith("BAMBOO-OEL9") or startswith("VITECH"))) 
+        curl -H "Authorization: Bearer {{ bamboo_password }}" https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=true | \
+        jq -r '.[] | select(.state == "Offline" and (.name | startswith("BAMBOO-OEL9") or startswith("VITECH"))) | {name: .name, state: .state}'
       register: bamboo_agents
       no_log: false
       tags: get_agents
 
-    - name: Display Bamboo agents output
+    - name: Display Bamboo offline agents output
       debug:
-        msg: "Bamboo agents list: {{ bamboo_agents.stdout }}"
+        msg: "Offline Bamboo agents list: {{ bamboo_agents.stdout }}"
       tags: display_agents
 
-    - name: Format Bamboo agents into table format
+    - name: Format Bamboo offline agents into table format
       set_fact:
         bamboo_table: |
-          Index   Agent Name
-          ------  ------------------------------------------------------------
-          {{ bamboo_agents.stdout }}
+          Index   Agent Name                Status
+          ------  ------------------------- -------------------------
+          {% for agent in bamboo_agents.stdout_lines %}
+          {{ loop.index }}    {{ agent | from_json | json_query('name') }}      {{ agent | from_json | json_query('state') }}
+          {% endfor %}
       tags: format_table
 
-    - name: Display formatted Bamboo agents table
+    - name: Display formatted Bamboo offline agents table
       debug:
-        msg: "Formatted Bamboo agents table:\n{{ bamboo_table }}"
+        msg: "Formatted Bamboo offline agents table:\n{{ bamboo_table }}"
       tags: display_table
 
-    - name: Send Email Notification via SNS
+    - name: Send Email Notification via SNS for Offline Agents
       community.aws.sns:
         topic: "arn:aws:sns:us-east-1:389180911583:Testing"  # Replace with your SNS topic ARN
-        subject: "Bamboo Agents Status"
+        subject: "Bamboo Offline Agents Notification"
         msg: |
-          Below Bamboo agents are going to be patched:
+          The following Bamboo agents are currently offline:
           {{ bamboo_table }}
       no_log: false  # Set no_log: false to allow logging of this task output
       tags: send_notification
