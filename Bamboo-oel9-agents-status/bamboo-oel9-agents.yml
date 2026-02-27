@@ -35,7 +35,9 @@
 
     - name: Send Email Notification via SNS
       community.aws.sns:
-        topic: "arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching"
+      #  topic: "arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching"
+        topic:  "arn:aws:sns:us-east-1:389180911583:Testing"
+        
         subject: "Bamboo Agents Patching"
         msg: |
           Below Bamboo agents are going to be patched:
@@ -45,5 +47,6 @@
 
     - name: Confirm Email Notification Sent
       debug:
-        msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching"
+       # msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching"
+       msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Testing"
       tags: confirm_notification
