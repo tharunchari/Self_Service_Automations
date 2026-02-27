@@ -45,8 +45,8 @@
       no_log: false  # Set no_log: false to allow logging of this task output
       tags: send_notification
 
-    - name: Confirm Email Notification Sent
-      debug:
-       # msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching"
-       msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Testing"
-      tags: confirm_notification
+  #  - name: Confirm Email Notification Sent
+  #    debug:
+  #     # msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching"
+  #     msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Testing"
+  #    tags: confirm_notification
