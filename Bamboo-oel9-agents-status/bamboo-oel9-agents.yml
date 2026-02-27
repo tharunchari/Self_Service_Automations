@@ -1,12 +1,19 @@
-
 ---
 - name: List, sort Bamboo agents, and send notification
   hosts: localhost
   gather_facts: false
   vars:
-    ansible_python_interpreter: /opt/pipx/venvs/ansible-core/bin/python
+    ansible_python_interpreter: /opt/pipx/venvs/ansible-core/bin/python  # Path to your Ansible virtualenv interpreter
 
   tasks:
+    - name: Ensure boto3 and botocore are installed
+      pip:
+        name:
+          - boto3
+          - botocore
+        executable: /opt/pipx/venvs/ansible-core/bin/pip  # Use the correct pip from the virtual environment
+      tags: install_python_libraries
+
     - name: Get Bamboo agents list and sort
       shell: |
         curl -H "Authorization: Bearer {{ bamboo_password }}" https://bamboo.vitechinc.com/bamboo/rest/api/latest/agent?offline=false | \
@@ -37,9 +44,7 @@
 
     - name: Send Email Notification via SNS
       community.aws.sns:
-      #  topic: "arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching"
-        topic:  "arn:aws:sns:us-east-1:389180911583:Testing"
-        
+        topic: "arn:aws:sns:us-east-1:389180911583:Testing"  # Replace with your SNS topic ARN
         subject: "Bamboo Agents Patching"
         msg: |
           Below Bamboo agents are going to be patched:
@@ -47,8 +52,8 @@
       no_log: false  # Set no_log: false to allow logging of this task output
       tags: send_notification
 
-  #  - name: Confirm Email Notification Sent
-  #    debug:
-  #     # msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Internal-Tools_Patching"
-  #     msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Testing"
-  #    tags: confirm_notification
+    # Optional: Confirm notification sent (for debugging purposes)
+    - name: Confirm Email Notification Sent
+      debug:
+        msg: "Notification sent to SNS with topic: arn:aws:sns:us-east-1:389180911583:Testing"
+      tags: confirm_notification
