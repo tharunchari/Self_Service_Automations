@@ -42,7 +42,7 @@
     - name: Send Email Notification via SNS
       community.aws.sns:
         topic: "arn:aws:sns:us-east-1:389180911583:Testing"  # Replace with your SNS topic ARN
-        subject: "Bamboo Agents Patching"
+        subject: "Bamboo Agents Status"
         msg: |
           Below Bamboo agents are going to be patched:
           {{ bamboo_table }}
