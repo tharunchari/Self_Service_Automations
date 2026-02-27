@@ -3,7 +3,7 @@
 - name: List, sort Bamboo agents, and send notification
   hosts: localhost
   gather_facts: false
-    vars:
+  vars:
     ansible_python_interpreter: /opt/pipx/venvs/ansible-core/bin/python
 
   tasks:
