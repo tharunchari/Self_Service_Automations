@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: false
   vars:
-    ansible_python_interpreter: /opt/pipx/venvs/ansible-core/bin/python  # Path to your Ansible virtualenv interpreter
+    ansible_python_interpreter: /usr/bin/python3  # Use system Python or other interpreter
 
   tasks:
     - name: Ensure boto3 and botocore are installed
@@ -11,7 +11,6 @@
         name:
           - boto3
           - botocore
-        executable: /opt/pipx/venvs/ansible-core/bin/pip  # Use the correct pip from the virtual environment
       tags: install_python_libraries
 
     - name: Get Bamboo agents list and sort
@@ -21,7 +20,7 @@
         sort -t '-' -k4,4n | \
         nl -w 1
       register: bamboo_agents
-      no_log: false  # Setting no_log: false to print output in logs
+      no_log: false
       tags: get_agents
 
     - name: Display Bamboo agents output
