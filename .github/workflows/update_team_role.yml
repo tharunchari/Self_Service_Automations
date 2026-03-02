@@ -43,7 +43,7 @@ on:
         required: true
         description: Authentication Key for OPS Internal Tools
 jobs:
-  Terminate_Runners:
+  Updating_Team_Roles:
     runs-on: ubuntu-24.04
     env:
       TARGET: "${{ inputs.TARGET }}"
