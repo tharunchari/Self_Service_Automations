@@ -88,4 +88,4 @@ jobs:
         run: pip install boto3 requests python-dateutil
 
       - name: Run GitHub runner monitor script
-        run: python3 PYTHON_Script/update_team_role.py --dry-run=False
+        run: python3 PYTHON_Script/update_team_role.py --dry-run=True
