@@ -85,7 +85,13 @@ jobs:
             echo "Updating pom files and committing code..."
             
             # Update pom files
-            find . -name pom.xml | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
+            if [ "${REPO_NAME}" == "Nextgen" ]; then
+                # Find all *pom.xml files (e.g., applauncher-pom.xml, assembler-pom.xml, pom.xml, etc.)
+                find . -name "*pom.xml" | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
+            else
+                # Default: only update pom.xml
+                find . -name "pom.xml" | xargs sed -i "s/${SOURCE_VERSION}/${TARGET_VERSION}/g"
+            fi
             git status
             
             if git diff --quiet; then
