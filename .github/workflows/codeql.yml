@@ -1,103 +1,591 @@
 name: "CodeQL"
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  security-events: write
 
 on:
   workflow_dispatch:
 
+
 jobs:
-  LaunchingSelfHostedRunner:
-    if: github.event.repository.fork == false
+  LaunchingSelfHostedRunner_1:
     runs-on: ubuntu-latest
+    if: github.event.repository.fork == false
     outputs:
-      genrun: ${{ steps.gen_step.outputs.INSTANCE_ID }}      # <== Note the output variable
+      genrun_1: ${{ steps.gen_step.outputs.INSTANCE_VALUE }}      # <== Note the output variable
     steps:      
       - name: Set up AWS CLI
         uses: vitechsystems/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Start EC2 instance using an ami
-        id: start-ec2
+      - name: Try launching Spot Instance
+        if: ${{ github.run_attempt == 1 }}
+        id: start-spot-ec2
+        continue-on-error: true
         run: |
           aws ec2 run-instances \
             --image-id ${{ vars.SELF_HOSTED_RUNNER_AMI }} \
-            --instance-type c5.9xlarge \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE_C5_4XLARGE }} \
             --key-name InternalTools \
-            --security-group-ids sg-05c61d58016fc3e3b \
-            --subnet-id subnet-074f1c628d472d492 \
-            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github},{Key=provision-method,Value=cli}]' \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id ${{ vars.SUBNET_ID }} \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github},{Key=provision-method,Value=cli},{Key=RepoName,Value=${{ github.event.repository.name }}}]' \
+            --iam-instance-profile Name=VitechTools \
+            --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType="one-time"}' > /tmp/ec2_output.json || echo "SPOT_FAILED=true" >> $GITHUB_ENV
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+
+      - name: Fallback to On-Demand Instance if Spot fails
+        if: ${{ env.SPOT_FAILED == 'true' || github.run_attempt > 1 }}
+        id: start-ondemand-ec2
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ vars.SELF_HOSTED_RUNNER_AMI }} \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE_C5_4XLARGE }} \
+            --key-name InternalTools \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id ${{ vars.SUBNET_ID }} \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github},{Key=provision-method,Value=cli},{Key=RepoName,Value=${{ github.event.repository.name }}}]' \
             --iam-instance-profile Name=VitechTools > /tmp/ec2_output.json
           echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
           echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
-        shell: bash
-        
+
+      - name: Print EC2 API JSON output
+        if: success() || failure() # always try to print if file exists
+        run: |
+          if [ -f /tmp/ec2_output.json ]; then
+            echo "===== Full EC2 JSON Response ====="
+            cat /tmp/ec2_output.json | jq .
+          else
+            echo "No JSON output file found."
+          fi
+
+      - name: Set INSTANCE_ID based on event type
+        id: set-instance-id
+        run: |
+          repo_name=$(echo "${{ github.event.repository.name }}" | sed 's/Marketplace/MP/g' | sed 's/MARKETPLACE/MP/g' | sed 's/EDGE/E/g' | sed 's/Edge/E/g')  # Replace 'Marketplace' with 'MP' and 'Edge' with 'E'
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "INSTANCE_VALUE=${INSTANCE_ID}-${repo_name}-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          else
+            echo "INSTANCE_VALUE=${INSTANCE_ID}-${repo_name}-s-or-d" >> $GITHUB_ENV
+          fi
+
       - name: Set environment variable for second job
         id: gen_step                                # <====== Note the step id here
         shell: bash
         run: |
-          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "INSTANCE_VALUE=$INSTANCE_VALUE" >> $GITHUB_OUTPUT
 
       - name: Run Command on EC2 Instance to register the runner with instance ID
         run: |
           aws ssm create-association \
             --name "AWS-RunShellScript" \
             --targets Key=instanceids,Values=$INSTANCE_ID \
-            --parameters "commands=['runuser -l ec2-user -c \"/actions-runner/config.sh --url https://github.com/vitechsystems --pat ${{ secrets.PROD_FINE_GRAINED_PAT }} --name $INSTANCE_ID --runnergroup ops --labels $INSTANCE_ID --work _work && /actions-runner/run.sh\"']" \
-            --region us-east-1
+            --parameters "commands=['runuser -l ec2-user -c \"/actions-runner/config.sh --url https://github.com/vitechsystems --pat ${{ secrets.PROD_FINE_GRAINED_PAT }} --name $INSTANCE_VALUE --runnergroup ops --labels $INSTANCE_VALUE --work _work && /actions-runner/run.sh\"']" \
+            --region ${{ vars.AWS_REGION }}
         shell: bash
 
-      - name: Run Command on EC2 Instance to set JAVA_HOME to ${{ vars.JAVA_HOME_11 }}
+      - name: Run Command on EC2 Instance to set JAVA_HOME to ${{ vars.JAVA_HOME_17 }}
         run: |
           aws ssm create-association \
             --name "AWS-RunShellScript" \
             --targets Key=instanceids,Values=$INSTANCE_ID \
-            --parameters commands="sudo update-alternatives --install /usr/bin/java java ${{ vars.JAVA_HOME_11 }}/bin/java 1 && sudo update-alternatives --set java ${{ vars.JAVA_HOME_11 }}/bin/java" \
-            --region us-east-1
+            --parameters commands="sudo update-alternatives --install /usr/bin/java java ${{ vars.JAVA_HOME_17 }}/bin/java 1 && sudo update-alternatives --set java ${{ vars.JAVA_HOME_17 }}/bin/java" \
+            --region ${{ vars.AWS_REGION }}
         shell: bash
 
-  CodeQLScan:
-    needs: LaunchingSelfHostedRunner
-    runs-on: "${{ needs.LaunchingSelfHostedRunner.outputs.genrun }}"
+  LaunchingSelfHostedRunner_2:
+    runs-on: ubuntu-latest
+    if: github.event.repository.fork == false
     outputs:
-      genrun-2: ${{ steps.gen_step.outputs.INSTANCE_ID }}      # <== Note the output variable
+      genrun_2: ${{ steps.gen_step.outputs.INSTANCE_VALUE }}      # <== Note the output variable
+    steps:      
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Try launching Spot Instance
+        if: ${{ github.run_attempt == 1 }}
+        id: start-spot-ec2
+        continue-on-error: true
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ vars.SELF_HOSTED_RUNNER_AMI }} \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE_C5_4XLARGE }} \
+            --key-name InternalTools \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id ${{ vars.SUBNET_ID }} \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github},{Key=provision-method,Value=cli},{Key=RepoName,Value=${{ github.event.repository.name }}}]' \
+            --iam-instance-profile Name=VitechTools \
+            --instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType="one-time"}' > /tmp/ec2_output.json || echo "SPOT_FAILED=true" >> $GITHUB_ENV
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+
+      - name: Fallback to On-Demand Instance if Spot fails
+        if: ${{ env.SPOT_FAILED == 'true' || github.run_attempt > 1 }}
+        id: start-ondemand-ec2
+        run: |
+          aws ec2 run-instances \
+            --image-id ${{ vars.SELF_HOSTED_RUNNER_AMI }} \
+            --instance-type ${{ vars.AWS_INSTANCE_TYPE_C5_4XLARGE }} \
+            --key-name InternalTools \
+            --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
+            --subnet-id ${{ vars.SUBNET_ID }} \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Github_Self_Hosted_Runner},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=githubrunner},{Key=category,Value=app},{Key=fincode,Value=vit-corp-github},{Key=provision-method,Value=cli},{Key=RepoName,Value=${{ github.event.repository.name }}}]' \
+            --iam-instance-profile Name=VitechTools > /tmp/ec2_output.json
+          echo "INSTANCE_ID=$(jq -r '.Instances[0].InstanceId' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+          echo "INSTANCE_IP=$(jq -r '.Instances[0].PrivateIpAddress' < /tmp/ec2_output.json)" >> $GITHUB_ENV
+
+      - name: Print EC2 API JSON output
+        if: success() || failure() # always try to print if file exists
+        run: |
+          if [ -f /tmp/ec2_output.json ]; then
+            echo "===== Full EC2 JSON Response ====="
+            cat /tmp/ec2_output.json | jq .
+          else
+            echo "No JSON output file found."
+          fi
+
+      - name: Set INSTANCE_ID based on event type
+        id: set-instance-id
+        run: |
+          repo_name=$(echo "${{ github.event.repository.name }}" | sed 's/Marketplace/MP/g' | sed 's/MARKETPLACE/MP/g' | sed 's/EDGE/E/g' | sed 's/Edge/E/g')  # Replace 'Marketplace' with 'MP' and 'Edge' with 'E'
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "INSTANCE_VALUE=${INSTANCE_ID}-${repo_name}-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+          else
+            echo "INSTANCE_VALUE=${INSTANCE_ID}-${repo_name}-s-or-d" >> $GITHUB_ENV
+          fi
+
+      - name: Set environment variable for second job
+        id: gen_step                                # <====== Note the step id here
+        shell: bash
+        run: |
+          echo "INSTANCE_VALUE=$INSTANCE_VALUE" >> $GITHUB_OUTPUT
+
+      - name: Run Command on EC2 Instance to register the runner with instance ID
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets Key=instanceids,Values=$INSTANCE_ID \
+            --parameters "commands=['runuser -l ec2-user -c \"/actions-runner/config.sh --url https://github.com/vitechsystems --pat ${{ secrets.PROD_FINE_GRAINED_PAT }} --name $INSTANCE_VALUE --runnergroup ops --labels $INSTANCE_VALUE --work _work && /actions-runner/run.sh\"']" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+      - name: Run Command on EC2 Instance to set JAVA_HOME to ${{ vars.JAVA_HOME_17 }}
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets Key=instanceids,Values=$INSTANCE_ID \
+            --parameters commands="sudo update-alternatives --install /usr/bin/java java ${{ vars.JAVA_HOME_17 }}/bin/java 1 && sudo update-alternatives --set java ${{ vars.JAVA_HOME_17 }}/bin/java" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+  CodeQLScanJava:
+    needs: LaunchingSelfHostedRunner_1
+    runs-on: "${{ needs.LaunchingSelfHostedRunner_1.outputs.genrun_1 }}"
+    outputs:
+      genrun_3: ${{ steps.gen_step.outputs.INSTANCE_VALUE }}      # <== Note the output variable
     continue-on-error: true
 
-    name: CodeQL scan
-    timeout-minutes: ${{ (matrix.language == 'swift' && 120) || 360 }}
+    name: CodeQL scan for Java
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'python' ]
-    permissions:
-      actions: read
-      contents: read
-      security-events: write
+        java: [java, java-21]
 
-    steps:  
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+
       - name: Set environment variable for third job
         id: gen_step                                # <====== Note the step id here
         shell: bash
         run: |
-          echo "INSTANCE_ID=${{ needs.LaunchingSelfHostedRunner.outputs.genrun }}" >> $GITHUB_OUTPUT
+          echo "INSTANCE_VALUE=${{ needs.LaunchingSelfHostedRunner_1.outputs.genrun_1 }}" >> $GITHUB_OUTPUT
+
+      - name: Set JAVA_HOME manually
+        run: |
+          export JAVA_HOME=${{ vars.JAVA_HOME_17 }}
+          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+          echo "$JAVA_HOME/bin" >> $GITHUB_PATH
+          
+      - name: Set JAVA_HOME 21 manually
+        run: |
+          export JAVA_HOME_JAVA21=${{ vars.JAVA_HOME_21 }}
+          echo "JAVA_HOME_JAVA21=$JAVA_HOME_JAVA21" >> $GITHUB_ENV
+          echo "$JAVA_HOME_JAVA21/bin" >> $GITHUB_PATH
+
+      - name: Set up Maven
+        run: |
+          export MAVEN_HOME=${{ vars.MAVEN_3_3_9 }}
+          export PATH=$MAVEN_HOME/bin:$PATH
+          echo "MAVEN_HOME=$MAVEN_HOME" >> $GITHUB_ENV
+          echo "PATH=$PATH" >> $GITHUB_ENV
+          
+      - name: Set up Maven 3.8.9
+        run: |
+          export M2_HOME_JAVA21=${{ vars.MAVEN_3_8_9 }}
+          export PATH=$M2_HOME_JAVA21/bin:$JAVA_HOME_JAVA21/bin:$PATH
+          echo "M2_HOME_JAVA21=$M2_HOME_JAVA21" >> $GITHUB_ENV
+          echo "PATH=$PATH" >> $GITHUB_ENV
+
+      - name: Debug JAVA_HOME
+        run: |
+          java -version
+          mvn -version
+
+      - name: Get changed files in the PULL REQUEST
+        if: ${{ github.event_name == 'pull_request' }}
+        id: changed_files_specific
+        run: |
+          response=$(curl -s -H "Authorization: token ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            "https://api.github.com/repos/${{ github.repository_owner }}/${{ github.event.repository.name }}/pulls/${{ github.event.pull_request.number }}/files")
+          filenames=$(echo "$response" | jq -r '.[].filename')
+          echo "Changed files: $filenames"
+          echo "all_changed_files=$(echo $filenames | paste -sd' ' -)" >> $GITHUB_OUTPUT
+
+      - name: Check for Java files
+        if: ${{ github.event_name == 'pull_request' }}
+        id: check_for_java
+        run: |
+          echo "List all the files that have changed: ${{ steps.changed_files_specific.outputs.all_changed_files }}"
+          changed_files=$(echo "${{ steps.changed_files_specific.outputs.all_changed_files }}")
+          has_java=false
+          for file in $changed_files; do
+            if [[ "$file" =~ \.java$ ]]; then
+              has_java=true
+              break
+            fi
+          done
+          echo "has_java=$has_java" >> $GITHUB_ENV
+
+      - name: Set default has_java value
+        if: ${{ github.event_name != 'pull_request' }}
+        run: echo "has_java=true" >> $GITHUB_ENV
+
+      # Generate dummy SARIF for JAVA 17 file
+      - name: Create empty SARIF file for JAVA 17 if CodeQL steps are skipped
+        if: ${{ env.has_java == 'false' && matrix.java == 'java' }}
+        run: |
+          echo '{
+            "version": "2.1.0",
+            "runs": [
+              {
+                "automationDetails": {
+                  "id": "/language:java/"
+                },
+                "tool": {
+                  "driver": {
+                    "name": "CodeQL",
+                    "rules": []
+                  }
+                },
+                "results": []
+              }
+            ]
+          }' > empty_java_sarif.json
+
+      - name: Upload dummy SARIF file for Java 17
+        if: ${{ env.has_java == 'false' && matrix.java == 'java' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: empty_java_sarif.json
+
+      # Generate dummy SARIF for JAVA 21 file
+      - name: Create empty SARIF file for JAVA 21 if CodeQL steps are skipped
+        if: ${{ env.has_java == 'false' && matrix.java == 'java-21' }}
+        run: |
+          echo '{
+            "version": "2.1.0",
+            "runs": [
+              {
+                "automationDetails": {
+                  "id": "/language:java-21/"
+                },
+                "tool": {
+                  "driver": {
+                    "name": "CodeQL",
+                    "rules": []
+                  }
+                },
+                "results": []
+              }
+            ]
+          }' > empty_java_21_sarif.json
+
+      - name: Upload dummy SARIF file for Java 21
+        if: ${{ env.has_java == 'false' && matrix.java == 'java-21' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: empty_java_21_sarif.json
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        if: ${{ env.has_java == 'true' }}
+        uses: github/codeql-action/init@v4
         with:
-          languages: ${{ matrix.language }}
+          languages: java
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Run Maven build (Java 17)
+        if: ${{ env.has_java == 'true' && matrix.java == 'java' }}
+        run: |
+          env
+          echo "printing env variables"
+          env
+          export MAVEN_HOME=${{ vars.MAVEN_3_3_9 }}
+          export JAVA_HOME=${{ vars.JAVA_HOME_17 }}
+          ${{ vars.MAVEN_3_3_9 }}/bin/mvn clean compile -f codeql-scan-pom.xml
+        continue-on-error: false
+          
+      - name: Run Maven build (Java 21)
+        if: ${{ env.has_java == 'true' && matrix.java == 'java-21' }}
+        run: |
+          env
+          echo "printing env variables"
+          env
+          export MAVEN_HOME=${{ vars.MAVEN_3_8_9 }}
+          export JAVA_HOME=${{ vars.JAVA_HOME_21 }}
+          ${{ vars.MAVEN_3_8_9 }}/bin/mvn clean compile -f codeql-scan-ngcore3-pom.xml
+        continue-on-error: false
+
+      - name: Perform CodeQL Analysis Java 17 & 21
+        if: ${{ env.has_java == 'true' }}
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.java }}"
+
+  CodeQLScanJavaScript:
+    needs: LaunchingSelfHostedRunner_2
+    runs-on: "${{ needs.LaunchingSelfHostedRunner_2.outputs.genrun_2 }}"
+    outputs:
+      genrun_4: ${{ steps.gen_step.outputs.INSTANCE_VALUE }}      # <== Note the output variable
+    continue-on-error: true
+
+    name: CodeQL scan for JavaScript
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+
+    steps:  
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set environment variable for third job
+        id: gen_step                                # <====== Note the step id here
+        shell: bash
+        run: |
+          echo "INSTANCE_VALUE=${{ needs.LaunchingSelfHostedRunner_2.outputs.genrun_2 }}" >> $GITHUB_OUTPUT
+
+      - name: Set JAVA_HOME manually
+        run: |
+          export JAVA_HOME=${{ vars.JAVA_HOME_17 }}
+          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+          echo "$JAVA_HOME/bin" >> $GITHUB_PATH
+
+      - name: Set up Maven
+        run: |
+          export MAVEN_HOME=${{ vars.MAVEN_3_3_9 }}
+          export PATH=$MAVEN_HOME/bin:$PATH
+          echo "MAVEN_HOME=$MAVEN_HOME" >> $GITHUB_ENV
+          echo "PATH=$PATH" >> $GITHUB_ENV
+
+      - name: Debug JAVA_HOME
+        run: |
+          java -version
+          mvn -version
+
+      - name: Get changed files in the PULL REQUEST
+        if: ${{ github.event_name == 'pull_request' }}
+        id: changed_files_specific
+        run: |
+          response=$(curl -s -H "Authorization: token ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            "https://api.github.com/repos/${{ github.repository_owner }}/${{ github.event.repository.name }}/pulls/${{ github.event.pull_request.number }}/files")
+          filenames=$(echo "$response" | jq -r '.[].filename')
+          echo "Changed files: $filenames"
+          echo "all_changed_files=$(echo $filenames | paste -sd' ' -)" >> $GITHUB_OUTPUT
+
+      - name: Check for JavaScript and TypeScript files
+        if: ${{ github.event_name == 'pull_request' }}
+        id: check_for_java
+        run: |
+          echo "List all the files that have changed: ${{ steps.changed_files_specific.outputs.all_changed_files }}"
+          changed_files=$(echo "${{ steps.changed_files_specific.outputs.all_changed_files }}")
+          has_java=false
+          for file in $changed_files; do
+            if [[ "$file" =~ \.(js|jsx|ts|tsx)$ ]]; then
+              has_java=true
+              break
+            fi
+          done
+          echo "has_java=$has_java" >> $GITHUB_ENV
+
+      - name: Set default has_java value
+        if: ${{ github.event_name != 'pull_request' }}
+        run: echo "has_java=true" >> $GITHUB_ENV
+
+      - name: Create empty SARIF file for JavaScript if CodeQL steps are skipped
+        if: ${{ env.has_java == 'false' }}
+        run: |
+          echo '{
+            "version": "2.1.0",
+            "runs": [
+              {
+                "automationDetails": {
+                  "id": "/language:javascript/"
+                },
+                "tool": {
+                  "driver": {
+                    "name": "CodeQL",
+                    "rules": []
+                  }
+                },
+                "results": []
+              }
+            ]
+          }' > empty_js_sarif.json
+
+      - name: Upload dummy SARIF file for JavaScript
+        if: ${{ env.has_java == 'false' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: empty_js_sarif.json
+
+      - name: Initialize CodeQL
+        if: ${{ env.has_java == 'true' }}
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript
+          config-file: ./.github/codeql/codeql-config.yml
           build-mode: none
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+        if: ${{ env.has_java == 'true' }}
+        uses: github/codeql-action/analyze@v4
         with:
-          category: "/language:${{matrix.language}}"
+          category: "/language:javascript"
 
-  TerminatingSelfHostedRunner:
+  CodeQLScanRust:
+    needs: CodeQLScanJavaScript
+    runs-on: "${{ needs.CodeQLScanJavaScript.outputs.genrun_4 }}"
+    outputs:
+      genrun_5: ${{ steps.gen_step.outputs.INSTANCE_VALUE }}      # <== Note the output variable
+    continue-on-error: true
+
+    name: CodeQL scan for Rust
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+
+    steps:  
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set environment variable for third job
+        id: gen_step                                # <====== Note the step id here
+        shell: bash
+        run: |
+          echo "INSTANCE_VALUE=${{ needs.CodeQLScanJavaScript.outputs.genrun_4 }}" >> $GITHUB_OUTPUT
+
+      - name: Set JAVA_HOME manually
+        run: |
+          export JAVA_HOME=${{ vars.JAVA_HOME_17 }}
+          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+          echo "$JAVA_HOME/bin" >> $GITHUB_PATH
+
+      - name: Set up Maven
+        run: |
+          export MAVEN_HOME=${{ vars.MAVEN_3_3_9 }}
+          export PATH=$MAVEN_HOME/bin:$PATH
+          echo "MAVEN_HOME=$MAVEN_HOME" >> $GITHUB_ENV
+          echo "PATH=$PATH" >> $GITHUB_ENV
+
+      - name: Debug JAVA_HOME
+        run: |
+          java -version
+          mvn -version
+
+      - name: Get changed files in the PULL REQUEST
+        if: ${{ github.event_name == 'pull_request' }}
+        id: changed_files_specific
+        run: |
+          response=$(curl -s -H "Authorization: token ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            "https://api.github.com/repos/${{ github.repository_owner }}/${{ github.event.repository.name }}/pulls/${{ github.event.pull_request.number }}/files")
+          filenames=$(echo "$response" | jq -r '.[].filename')
+          echo "Changed files: $filenames"
+          echo "all_changed_files=$(echo $filenames | paste -sd' ' -)" >> $GITHUB_OUTPUT
+
+      - name: Check for Rust files
+        if: ${{ github.event_name == 'pull_request' }}
+        id: check_for_rust
+        run: |
+          echo "List all the files that have changed: ${{ steps.changed_files_specific.outputs.all_changed_files }}"
+          changed_files=$(echo "${{ steps.changed_files_specific.outputs.all_changed_files }}")
+          has_rust=false
+          for file in $changed_files; do
+            if [[ "$file" =~ \.rs$ ]]; then
+              has_rust=true
+              break
+            fi
+          done
+          echo "has_rust=$has_rust" >> $GITHUB_ENV
+
+      - name: Set default has_rust value
+        if: ${{ github.event_name != 'pull_request' }}
+        run: echo "has_rust=true" >> $GITHUB_ENV
+
+      - name: Create empty SARIF file for Rust if CodeQL steps are skipped
+        if: ${{ env.has_rust == 'false' }}
+        run: |
+          echo '{
+            "version": "2.1.0",
+            "runs": [
+              {
+                "automationDetails": {
+                  "id": "/language:rust/"
+                },
+                "tool": {
+                  "driver": {
+                    "name": "CodeQL",
+                    "rules": []
+                  }
+                },
+                "results": []
+              }
+            ]
+          }' > empty_rs_sarif.json
+
+      - name: Upload dummy SARIF file for Rust
+        if: ${{ env.has_rust == 'false' }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: empty_rs_sarif.json
+
+      - name: Initialize CodeQL
+        if: ${{ env.has_rust == 'true' }}
+        uses: github/codeql-action/init@v4
+        with:
+          languages: rust
+          config-file: ./.github/codeql/codeql-config.yml
+          build-mode: none
+
+      - name: Perform CodeQL Analysis
+        if: ${{ env.has_rust == 'true' }}
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:rust"
+
+  TerminatingSelfHostedRunner_1:
     runs-on: ubuntu-latest
-    needs: CodeQLScan
+    needs: CodeQLScanJava
     continue-on-error: true
 
     steps:       
@@ -106,41 +594,97 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-          
-      - name: Debug Instance IP
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Debug Instance ID
+        id: extract_instance_id
         run: |
-          echo Instance ID: "${{ needs.CodeQLScan.outputs.genrun-2 }}"
-          
+          INSTANCE_ID=$(echo "${{ needs.CodeQLScanJava.outputs.genrun_3 }}" | grep -o 'i-[a-zA-Z0-9]\+')
+          echo "Extracted INSTANCE_ID: $INSTANCE_ID"
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+
       - name: Run Command on EC2 Instance to remove runner from GitHub
         run: |
           aws ssm create-association \
             --name "AWS-RunShellScript" \
-            --targets Key=instanceids,Values=${{ needs.CodeQLScan.outputs.genrun-2 }} \
+            --targets "Key=instanceids,Values=${{ env.INSTANCE_ID }}" \
             --parameters commands="sudo -u ec2-user /actions-runner/config.sh remove --pat ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
-            --region us-east-1
+            --region ${{ vars.AWS_REGION }}
         shell: bash
 
       - name: Get the associations IDS
         id: get_associations
         run: |
-          ASSOC_IDS=$(aws ssm describe-effective-instance-associations --instance-id "${{ needs.CodeQLScan.outputs.genrun-2 }}" | jq -r '.Associations[].AssociationId')
-          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-          echo "ASSOC_IDS<<$EOF" >> $GITHUB_ENV
-          echo "$ASSOC_IDS" >> $GITHUB_ENV
-          echo "$EOF" >> $GITHUB_ENV
- 
+          ASSOC_IDS_1=$(aws ssm describe-effective-instance-associations --instance-id "${{ env.INSTANCE_ID }}" | jq -r '.Associations[].AssociationId')
+          EOF_1=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "ASSOC_IDS_1<<$EOF_1" >> $GITHUB_ENV
+          echo "$ASSOC_IDS_1" >> $GITHUB_ENV
+          echo "$EOF_1" >> $GITHUB_ENV
+
       - name: Delete associations
         run: |
-          for ASSOC_ID in $ASSOC_IDS
+          for ASSOC_ID_1 in $ASSOC_IDS_1
           do
-            aws ssm delete-association --association-id $ASSOC_ID
+            aws ssm delete-association --association-id $ASSOC_ID_1
           done
 
       - name: Workflow will be in sleep mode until GITHUB runner gets removed from GitHub
         run: |
           sleep 10
-          
+
       - name: Terminate Self Hosted Runner instance
         run: |
-          aws ec2 terminate-instances --instance-ids "${{ needs.CodeQLScan.outputs.genrun-2 }}" --region us-east-1
+          aws ec2 terminate-instances --instance-ids "${{ env.INSTANCE_ID }}" --region ${{ vars.AWS_REGION }}
+
+  TerminatingSelfHostedRunner_2:
+    runs-on: ubuntu-latest
+    needs: CodeQLScanRust
+    continue-on-error: true
+
+    steps:       
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Debug Instance ID
+        id: extract_instance_id
+        run: |
+          INSTANCE_ID=$(echo "${{ needs.CodeQLScanRust.outputs.genrun_5 }}" | grep -o 'i-[a-zA-Z0-9]\+')
+          echo "Extracted INSTANCE_ID: $INSTANCE_ID"
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+
+      - name: Run Command on EC2 Instance to remove runner from GitHub
+        run: |
+          aws ssm create-association \
+            --name "AWS-RunShellScript" \
+            --targets "Key=instanceids,Values=${{ env.INSTANCE_ID }}" \
+            --parameters commands="sudo -u ec2-user /actions-runner/config.sh remove --pat ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
+            --region ${{ vars.AWS_REGION }}
+        shell: bash
+
+      - name: Get the associations IDS
+        id: get_associations
+        run: |
+          ASSOC_IDS_2=$(aws ssm describe-effective-instance-associations --instance-id "${{ env.INSTANCE_ID }}" | jq -r '.Associations[].AssociationId')
+          EOF_2=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "ASSOC_IDS_2<<$EOF_2" >> $GITHUB_ENV
+          echo "$ASSOC_IDS_2" >> $GITHUB_ENV
+          echo "$EOF_2" >> $GITHUB_ENV
+
+      - name: Delete associations
+        run: |
+          for ASSOC_ID_2 in $ASSOC_IDS_2
+          do
+            aws ssm delete-association --association-id $ASSOC_ID_2
+          done
+
+      - name: Workflow will be in sleep mode until GITHUB runner gets removed from GitHub
+        run: |
+          sleep 10
+
+      - name: Terminate Self Hosted Runner instance
+        run: |
+          aws ec2 terminate-instances --instance-ids "${{ env.INSTANCE_ID }}" --region ${{ vars.AWS_REGION }}
