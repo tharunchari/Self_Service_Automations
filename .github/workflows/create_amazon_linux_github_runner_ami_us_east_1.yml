@@ -1,4 +1,4 @@
-name: "Amazon Linux AMI For GitHub Runner"
+name: "Create Amazon Linux AMI For GitHub Runner US-EAST-1"
 on:
   workflow_dispatch:
   schedule:
