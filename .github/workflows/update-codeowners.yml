@@ -59,19 +59,18 @@ jobs:
           NEW_OWNERS="$(normalize_owners "$PEOPLE")"
           echo "New owners to add: $NEW_OWNERS"
 
-          # ---- Locate CODEOWNERS per GitHub spec (.github/, root, docs/) ----
+          # ---- Locate existing CODEOWNERS (root preferred, then .github/, then docs/) ----
           CODEOWNERS_FILE=""
-          for candidate in ".github/CODEOWNERS" "CODEOWNERS" "docs/CODEOWNERS"; do
+          for candidate in "CODEOWNERS" ".github/CODEOWNERS" "docs/CODEOWNERS"; do
             if [ -f "$candidate" ]; then
               CODEOWNERS_FILE="$candidate"
               break
             fi
           done
 
-          # ---- Scenario 1: file doesn't exist -> create it ----
+          # ---- Scenario 1: file doesn't exist -> create it at REPO ROOT ----
           if [ -z "$CODEOWNERS_FILE" ]; then
-            CODEOWNERS_FILE=".github/CODEOWNERS"
-            mkdir -p "$(dirname "$CODEOWNERS_FILE")"
+            CODEOWNERS_FILE="CODEOWNERS"
             {
               echo "# CODEOWNERS file"
               echo "# https://docs.github.com/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners"
