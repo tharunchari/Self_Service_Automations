@@ -1,0 +1,144 @@
+name: Update CODEOWNERS
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo_name:
+        description: "Target repository name only (e.g. CoreAdmin)"
+        required: true
+        type: string
+      folder_path:
+        description: "Folder/path pattern for CODEOWNERS (e.g. /jvmproperties/v3locitydev)"
+        required: true
+        type: string
+      people:
+        description: "Space or comma separated list of users/teams (e.g. user1 @user2 @vitechsystems/team1)"
+        required: true
+        type: string
+
+jobs:
+  update-codeowners:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repository (main branch)
+        uses: actions/checkout@v4
+        with:
+          repository: vitechsystems/${{ inputs.repo_name }}
+          ref: main
+          token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          path: target-repo
+          fetch-depth: 0
+
+      - name: Configure git
+        working-directory: target-repo
+        run: |
+          git config user.name  "V3OPS_USER"
+          git config user.email "v3ops@vitechinc.com"
+
+      - name: Update or create CODEOWNERS
+        id: update
+        working-directory: target-repo
+        env:
+          FOLDER_PATH: ${{ inputs.folder_path }}
+          PEOPLE: ${{ inputs.people }}
+        run: |
+          set -euo pipefail
+
+          # ---- Normalize owners (ensure each starts with @, dedupe, keep order) ----
+          normalize_owners() {
+            echo "$1" \
+              | tr ',' ' ' \
+              | tr -s ' ' '\n' \
+              | sed '/^$/d' \
+              | awk '{ if (substr($0,1,1) != "@") print "@"$0; else print $0 }' \
+              | awk '!seen[$0]++' \
+              | tr '\n' ' ' \
+              | sed 's/ *$//'
+          }
+
+          NEW_OWNERS="$(normalize_owners "$PEOPLE")"
+          echo "New owners to add: $NEW_OWNERS"
+
+          # ---- Locate CODEOWNERS per GitHub spec (.github/, root, docs/) ----
+          CODEOWNERS_FILE=""
+          for candidate in ".github/CODEOWNERS" "CODEOWNERS" "docs/CODEOWNERS"; do
+            if [ -f "$candidate" ]; then
+              CODEOWNERS_FILE="$candidate"
+              break
+            fi
+          done
+
+          # ---- Scenario 1: file doesn't exist -> create it ----
+          if [ -z "$CODEOWNERS_FILE" ]; then
+            CODEOWNERS_FILE=".github/CODEOWNERS"
+            mkdir -p "$(dirname "$CODEOWNERS_FILE")"
+            {
+              echo "# CODEOWNERS file"
+              echo "# https://docs.github.com/repositories/managing-your-repositories-settings-and-features/customizing-your-repository/about-code-owners"
+              echo ""
+              echo "${FOLDER_PATH} ${NEW_OWNERS}"
+            } > "$CODEOWNERS_FILE"
+            echo "Created new CODEOWNERS at $CODEOWNERS_FILE"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "codeowners_file=$CODEOWNERS_FILE" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Found existing CODEOWNERS at: $CODEOWNERS_FILE"
+
+          # ---- Scenarios 2 & 3: rule exists -> merge owners; otherwise append ----
+          TMP_FILE="$(mktemp)"
+          MATCHED=0
+
+          while IFS= read -r line || [ -n "$line" ]; do
+            trimmed="$(echo "$line" | sed 's/^[[:space:]]*//')"
+            if [ -z "$trimmed" ] || [ "${trimmed:0:1}" = "#" ]; then
+              echo "$line" >> "$TMP_FILE"
+              continue
+            fi
+
+            line_path="$(echo "$trimmed" | awk '{print $1}')"
+            line_owners="$(echo "$trimmed" | cut -d' ' -f2- || true)"
+
+            if [ "$line_path" = "$FOLDER_PATH" ]; then
+              MATCHED=1
+              MERGED="$(normalize_owners "$line_owners $NEW_OWNERS")"
+              echo "${FOLDER_PATH} ${MERGED}" >> "$TMP_FILE"
+              echo "Merged owners for path '$FOLDER_PATH' -> $MERGED"
+            else
+              echo "$line" >> "$TMP_FILE"
+            fi
+          done < "$CODEOWNERS_FILE"
+
+          if [ "$MATCHED" -eq 0 ]; then
+            [ -s "$TMP_FILE" ] && [ "$(tail -c1 "$TMP_FILE" | wc -l)" -eq 0 ] && echo "" >> "$TMP_FILE"
+            echo "${FOLDER_PATH} ${NEW_OWNERS}" >> "$TMP_FILE"
+            echo "Appended new rule for '$FOLDER_PATH'"
+          fi
+
+          mv "$TMP_FILE" "$CODEOWNERS_FILE"
+
+          if git diff --quiet -- "$CODEOWNERS_FILE"; then
+            echo "No changes detected (owners already present)."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "codeowners_file=$CODEOWNERS_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push to main
+        if: steps.update.outputs.changed == 'true'
+        working-directory: target-repo
+        run: |
+          git add "${{ steps.update.outputs.codeowners_file }}"
+          git commit -m "chore(codeowners): add ${{ inputs.people }} for ${{ inputs.folder_path }}"
+          git push origin main
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### CODEOWNERS Update" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Repo:** vitechsystems/${{ inputs.repo_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Path:** ${{ inputs.folder_path }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **People:** ${{ inputs.people }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Changed:** ${{ steps.update.outputs.changed }}" >> "$GITHUB_STEP_SUMMARY"
