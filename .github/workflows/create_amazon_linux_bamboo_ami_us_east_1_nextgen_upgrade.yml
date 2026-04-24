@@ -33,7 +33,7 @@ jobs:
             --key-name InternalTools \
             --security-group-ids ${{ vars.SECURITY_GROUP_IDS }} \
             --subnet-id subnet-074f1c628d472d492 \
-            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Amazon-Linux-AMI-BAMBOO},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=bambooagent},{Key=category,Value=app},{Key=fincode,Value=vit-corp-bamboo},{Key=provision-method,Value=cli}]' \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=Amazon-Linux-AMI-BAMBOO},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=bambooagent},{Key=category,Value=app},{Key=fincode,Value=vit-corp-bamboo-agent},{Key=provision-method,Value=cli}]' \
             --iam-instance-profile Name=VitechTools \
             --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":200}},{"DeviceName":"/dev/xvdb","Ebs":{"VolumeSize":50}}]' \
             --user-data '#!/bin/bash
@@ -83,7 +83,7 @@ jobs:
         id: create_ami
         run: |
           AMI_ID=$(aws ec2 create-image --instance-id ${{ env.INSTANCE_ID }} --name "Bamboo_Elastic_Agent_AMI-$(date +%Y-%m-%d_%H-%M)" --no-reboot \
-            --tag-specifications 'ResourceType=image,Tags=[{Key=Name,Value=Bamboo_Elastic_Agent_AMI},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=bambooagent},{Key=category,Value=app},{Key=fincode,Value=vit-corp-bamboo},{Key=provision-method,Value=cli}]' \
+            --tag-specifications 'ResourceType=image,Tags=[{Key=Name,Value=Bamboo_Elastic_Agent_AMI},{Key=env,Value=prod},{Key=client,Value=vitech},{Key=env-purpose,Value=prod},{Key=v3ops-custom-tag,Value=bambooagent},{Key=category,Value=app},{Key=fincode,Value=vit-corp-bamboo-agent},{Key=provision-method,Value=cli}]' \
             --query 'ImageId' --output text)
           echo "AMI_ID=$AMI_ID" >> $GITHUB_ENV
 
