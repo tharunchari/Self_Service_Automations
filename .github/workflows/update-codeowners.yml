@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       folder_path:
-        description: "Folder/path pattern for CODEOWNERS (e.g. /jvmproperties/v3locitydev)"
+        description: "Folder/path pattern for CODEOWNERS (e.g. /jvmpropertyfiles/v3locitydev)"
         required: true
         type: string
       people:
