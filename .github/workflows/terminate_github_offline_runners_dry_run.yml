@@ -8,7 +8,8 @@ on:
 
 jobs:
   Terminate_Runners:
-    runs-on: ubuntu-latest
+    #runs-on: ubuntu-latest
+     runs-on: arc-codeql-runners
     env:
       PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
     strategy:
