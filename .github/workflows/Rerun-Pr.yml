@@ -7,7 +7,7 @@ on:
 
 jobs:
   rerun-connection-error-jobs:
-    runs-on: ubuntu-latest
+    runs-on: arc-codeql-runners
     steps:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq curl
