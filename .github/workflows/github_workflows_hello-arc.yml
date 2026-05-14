@@ -16,6 +16,7 @@ jobs:
           echo "✅ Running on ARC self-hosted runner!"
           echo "Runner: $RUNNER_NAME"
           echo "OS: $(uname -a)"
+          sleep 60
 
       - name: Docker check
         run: docker info
