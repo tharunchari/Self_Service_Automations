@@ -1,12 +1,11 @@
 name: Hello ARC
 
 on:
-  push:
   workflow_dispatch:
 
 jobs:
   hello:
-    runs-on: arc-codeql-runners   # ← your ARC scale set name
+    runs-on: arc-codeql-runners 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
