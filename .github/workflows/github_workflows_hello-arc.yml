@@ -1,0 +1,24 @@
+name: Hello ARC
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  hello:
+    runs-on: arc-codeql-runners   # ← your ARC scale set name
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Say Hello
+        run: |
+          echo "✅ Running on ARC self-hosted runner!"
+          echo "Runner: $RUNNER_NAME"
+          echo "OS: $(uname -a)"
+
+      - name: Docker check
+        run: docker info
+
+      - name: Run a build command
+        run: echo "Build step goes here..."
