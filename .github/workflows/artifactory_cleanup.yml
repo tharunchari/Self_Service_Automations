@@ -10,7 +10,7 @@ jobs:
   # 1. Simple initial check — allows conditional workflows
   # ------------------------------------------------------
   check-schedule:
-    runs-on: ubuntu-latest
+    runs-on: arc-codeql-runners
     outputs:
       should_proceed: ${{ steps.check.outputs.should_proceed }}
     steps:
