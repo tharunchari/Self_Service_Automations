@@ -14,7 +14,8 @@ on:
 jobs:
   check-bamboo-agents:
     name: Monitering Bamboo Crop & AWSDEV Agents
-    runs-on: ubuntu-24.04
+    #runs-on: ubuntu-24.04
+    runs-on: arc-codeql-runners
     steps:       
       - name: Set up AWS CLI
         uses: vitechsystems/configure-aws-credentials@v1.0
