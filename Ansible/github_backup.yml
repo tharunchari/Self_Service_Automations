@@ -51,7 +51,7 @@
 
     - name: filtering Nextgen and CoreAdmin from list
       set_fact: 
-        filtered_vitechsystems_repos: "{{ repo_data.vitechsystems_repos | difference(['CoreAdmin', 'Nextgen', 'CPF_PRODUCT_L5']) }}"
+        filtered_vitechsystems_repos: "{{ repo_data.vitechsystems_repos | difference(['CoreAdmin', 'Nextgen',]) }}"
 
     - debug:
         msg: "{{ filtered_vitechsystems_repos }}"
