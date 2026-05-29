@@ -41,7 +41,7 @@ jobs:
           done
  
           # Filter offline runners except Internal_Tools
-          RUNNERS=$(echo "$ALL_RUNNERS" | jq '[.[] | select(.status == "offline" and .name != "Internal_Tools_Automation_Server" and .name != "Internal_Tools_Automation_Server_2")]')
+          RUNNERS=$(echo "$ALL_RUNNERS" | jq '[.[] | select(.status == "offline" and .name != "Internal_Tools_Automation_Server" and .name != "Internal_Tools_Automation_Server_2" and .name != "Majesco_Github_Backup_Runner")]')
  
           if [[ $(echo "$RUNNERS" | jq length) -eq 0 ]]; then
             echo "No offline runners found."
