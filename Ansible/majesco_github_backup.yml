@@ -67,7 +67,7 @@
         GITHUB_TOKEN: "{{ github_password }}"
       register: discovery_output
       changed_when: false
-      no_log: true
+#      no_log: true - intentionally omitted here so failures surface in the runner log.
       become: false
 
     - name: Parse discovery JSON
