@@ -1,0 +1,313 @@
+---
+# Run with:
+# sudo ansible-playbook Ansible/github_backup.yml -i Ansible/inventory \
+#   -e "github_username=github-bamboo_vitech github_password=${{ secrets.CLASSIC_PAT }} \
+#       codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} \
+#       codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }} \
+#       dry_run=false"
+#
+# Dry-run mode (discovery + report only, no clone/create/push):
+#   -e "... dry_run=true"
+#
+# Prereqs on target host: bash, git, curl, jq, awscli, python
+# PAT scopes required: repo, read:org
+
+- name: Backup all GitHub orgs (from PAT) to AWS CodeCommit
+  hosts: Internal_Server
+  gather_facts: yes
+  vars:
+    region: "us-west-2"
+    base_dir: "/u02/github_to_codecommit"
+    log_dir: "/u02/github_to_codecommit/logs"
+    discovery_script: "/u02/github_org_repos.sh"
+    discovery_script_src: "../shell_scripts/github_org_repos.sh"
+    incremental_script_src: "../PYTHON_Script/incremental-repo-migration.py"
+    sns_topic_arn: "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
+    sns_region: "us-east-1"
+    cred_mask: '//[^/@]+@'
+    dry_run: false   # Override via -e dry_run=true for a report-only run
+
+  tasks:
+    # ------------------------------------------------------------------
+    # START
+    # ------------------------------------------------------------------
+    - name: Print starting date and time
+      shell: date
+      register: date_start
+      changed_when: false
+
+    - debug:
+        msg: "Backup started at {{ date_start.stdout }} | dry_run={{ dry_run }}"
+
+    - name: Dry-run banner
+      debug:
+        msg: >-
+          DRY-RUN MODE — discovery only. No repos will be cloned, created,
+          or pushed. Re-run with dry_run=false to execute the full backup.
+      when: dry_run | bool
+
+    # ------------------------------------------------------------------
+    # DISCOVERY (always runs regardless of dry_run)
+    # ------------------------------------------------------------------
+    - name: Ensure base directory exists
+      file:
+        path: "{{ base_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Deploy GitHub org/repo discovery script
+      copy:
+        src: "{{ discovery_script_src }}"
+        dest: "{{ discovery_script }}"
+        mode: '0755'
+
+    - name: Run discovery (all orgs + repos reachable by PAT)
+      shell: "{{ discovery_script }}"
+      environment:
+        GITHUB_TOKEN: "{{ github_password }}"
+      register: discovery_output
+      changed_when: false
+      no_log: true
+      become: false
+
+    - name: Parse discovery JSON
+      set_fact:
+        repo_data: "{{ discovery_output.stdout | from_json }}"
+
+    - name: Show discovered organizations
+      debug:
+        msg: "Organizations ({{ repo_data.orgs | length }}): {{ repo_data.orgs }}"
+
+    - name: Show per-org repository counts
+      debug:
+        msg: >-
+          {{ item }} :
+          {{ repo_data.repos | selectattr('org', 'equalto', item) | list | length }} repos
+      loop: "{{ repo_data.orgs }}"
+
+    - name: Show total repository count
+      debug:
+        msg: "Total repositories discovered across all orgs: {{ repo_data.repos | length }}"
+
+    - name: Dry-run complete — stopping here
+      meta: end_play
+      when: dry_run | bool
+
+    # ------------------------------------------------------------------
+    # CLONE / UPDATE  (dry_run=false only beyond this point)
+    # ------------------------------------------------------------------
+    - name: Create a directory per organization
+      file:
+        path: "{{ base_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop: "{{ repo_data.orgs }}"
+
+    - name: Clone / update all repositories (bare mirror)
+      shell: |
+        set -e
+        cd "{{ base_dir }}/{{ item.org }}"
+        if [ -d "{{ item.repo }}.git" ]; then
+          git -C "{{ item.repo }}.git" remote update --prune
+        else
+          git clone --mirror "https://{{ github_username }}:{{ github_password }}@github.com/{{ item.org }}/{{ item.repo }}"
+        fi
+      loop: "{{ repo_data.repos }}"
+      loop_control:
+        label: "{{ item.org }}/{{ item.repo }}"
+      register: git_clone_results
+      no_log: true
+      ignore_errors: yes
+
+    # ------------------------------------------------------------------
+    # CODECOMMIT CREATE + CLASSIFY
+    # ------------------------------------------------------------------
+    - name: Create CodeCommit repositories (org_repo naming)
+      shell: >
+        aws codecommit create-repository
+        --repository-name "{{ item.org }}_{{ item.repo }}"
+        --region {{ region }}
+      loop: "{{ repo_data.repos }}"
+      loop_control:
+        label: "{{ item.org }}_{{ item.repo }}"
+      register: codecommit_create_results
+      ignore_errors: yes
+
+    - name: Identify NEW CodeCommit repositories
+      set_fact:
+        new_repos: "{{ new_repos | default([]) + [item.item] }}"
+        new_repo_names: "{{ new_repo_names | default([]) + [item.item.org ~ '_' ~ item.item.repo] }}"
+      loop: "{{ codecommit_create_results.results }}"
+      loop_control:
+        label: "{{ item.item.org }}_{{ item.item.repo }}"
+      when: item.rc == 0
+
+    - name: Identify EXISTING CodeCommit repositories
+      set_fact:
+        existing_repos: "{{ existing_repos | default([]) + [item.item] }}"
+      loop: "{{ codecommit_create_results.results }}"
+      loop_control:
+        label: "{{ item.item.org }}_{{ item.item.repo }}"
+      when:
+        - item.rc != 0
+        - "'RepositoryNameExistsException' in (item.stderr | default(''))"
+
+    - name: Identify FAILED CodeCommit creations (genuine errors)
+      set_fact:
+        failed_creates: "{{ failed_creates | default([]) + [{'repo': item.item.org ~ '_' ~ item.item.repo, 'stderr': item.stderr | default('')}] }}"
+      loop: "{{ codecommit_create_results.results }}"
+      loop_control:
+        label: "{{ item.item.org }}_{{ item.item.repo }}"
+      when:
+        - item.rc != 0
+        - "'RepositoryNameExistsException' not in (item.stderr | default(''))"
+
+    - name: Display NEW repositories
+      debug:
+        msg: "New repos ({{ (new_repo_names | default([])) | length }}): {{ new_repo_names | default([]) }}"
+
+    - name: Display EXISTING repositories count
+      debug:
+        msg: "Existing repos to mirror-push: {{ (existing_repos | default([])) | length }}"
+
+    - name: Warn about FAILED creations
+      debug:
+        msg: "Failed creations (genuine errors): {{ failed_creates | default([]) }}"
+      when: (failed_creates | default([])) | length > 0
+
+    # ------------------------------------------------------------------
+    # PUSH — NEW repos: incremental | EXISTING repos: mirror
+    # ------------------------------------------------------------------
+    - name: Push NEW repositories to CodeCommit (incremental migration)
+      shell: |
+        set -e
+        cp -f "{{ incremental_script_src }}" "{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git/incremental-repo-migration.py"
+        cd "{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git"
+        git remote add codecommit "https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item.org }}_{{ item.repo }}"
+        python incremental-repo-migration.py
+        git remote remove codecommit
+      loop: "{{ new_repos | default([]) }}"
+      loop_control:
+        label: "{{ item.org }}_{{ item.repo }}"
+      register: incremental_push_results
+      no_log: true
+      ignore_errors: yes
+
+    - name: Push EXISTING repositories to CodeCommit (mirror push)
+      shell: |
+        set -e
+        cd "{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git"
+        git fetch --prune
+        git push --mirror "https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item.org }}_{{ item.repo }}"
+      loop: "{{ existing_repos | default([]) }}"
+      loop_control:
+        label: "{{ item.org }}_{{ item.repo }}"
+      register: mirror_push_results
+      no_log: true
+      ignore_errors: yes
+
+    # ------------------------------------------------------------------
+    # SNS NOTIFICATION
+    # ------------------------------------------------------------------
+    - name: Send SNS notification for newly added repositories
+      vars:
+        sns_message: |-
+          New repositories have been added to AWS CodeCommit from GitHub:
+
+          {{ new_repo_names | join('
+          ') }}
+
+          Total new repositories: {{ new_repo_names | length }}
+
+          Please verify.
+
+          Thanks,
+          ITGS V3locity DevOps
+      shell: |
+        aws sns publish \
+          --topic-arn "{{ sns_topic_arn }}" \
+          --region "{{ sns_region }}" \
+          --subject "New Repositories Added To AWS CodeCommit" \
+          --message {{ sns_message | quote }}
+      when: (new_repo_names | default([])) | length > 0
+      ignore_errors: yes
+
+    # ------------------------------------------------------------------
+    # LOGGING — sanitized (credentials masked, no raw cmd dumps)
+    # ------------------------------------------------------------------
+    - name: Build sanitized clone log
+      set_fact:
+        clone_log: "{{ clone_log | default([]) + [{'org': item.item.org, 'repo': item.item.repo, 'rc': item.rc | default('skipped'), 'stdout': (item.stdout | default('')) | regex_replace(cred_mask, '//***@'), 'stderr': (item.stderr | default('')) | regex_replace(cred_mask, '//***@')}] }}"
+      loop: "{{ git_clone_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.org }}/{{ item.item.repo }}"
+      no_log: true
+
+    - name: Build CodeCommit create log
+      set_fact:
+        create_log: "{{ create_log | default([]) + [{'repo': item.item.org ~ '_' ~ item.item.repo, 'rc': item.rc | default('skipped'), 'stdout': item.stdout | default(''), 'stderr': item.stderr | default('')}] }}"
+      loop: "{{ codecommit_create_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.org }}_{{ item.item.repo }}"
+      no_log: true
+
+    - name: Build incremental push log
+      set_fact:
+        incremental_log: "{{ incremental_log | default([]) + [{'repo': item.item.org ~ '_' ~ item.item.repo, 'rc': item.rc | default('skipped'), 'stdout': (item.stdout | default('')) | regex_replace(cred_mask, '//***@'), 'stderr': (item.stderr | default('')) | regex_replace(cred_mask, '//***@')}] }}"
+      loop: "{{ incremental_push_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.org }}_{{ item.item.repo }}"
+      no_log: true
+
+    - name: Build mirror push log
+      set_fact:
+        mirror_log: "{{ mirror_log | default([]) + [{'repo': item.item.org ~ '_' ~ item.item.repo, 'rc': item.rc | default('skipped'), 'stdout': (item.stdout | default('')) | regex_replace(cred_mask, '//***@'), 'stderr': (item.stderr | default('')) | regex_replace(cred_mask, '//***@')}] }}"
+      loop: "{{ mirror_push_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.org }}_{{ item.item.repo }}"
+      no_log: true
+
+    - name: Reset logs directory
+      file:
+        path: "{{ log_dir }}"
+        state: "{{ item }}"
+        mode: '0755'
+      loop:
+        - absent
+        - directory
+
+    - name: Save clone results log
+      copy:
+        dest: "{{ log_dir }}/git_clone_results.json"
+        content: "{{ clone_log | default([]) | to_nice_json }}"
+
+    - name: Save CodeCommit create results log
+      copy:
+        dest: "{{ log_dir }}/codecommit_create_results.json"
+        content: "{{ create_log | default([]) | to_nice_json }}"
+
+    - name: Save incremental (new repo) push log
+      copy:
+        dest: "{{ log_dir }}/incremental_push_results.json"
+        content: "{{ incremental_log | default([]) | to_nice_json }}"
+
+    - name: Save mirror (existing repo) push log
+      copy:
+        dest: "{{ log_dir }}/mirror_push_results.json"
+        content: "{{ mirror_log | default([]) | to_nice_json }}"
+
+    - name: Save summary log
+      copy:
+        dest: "{{ log_dir }}/summary.json"
+        content: "{{ {'run_mode': 'full', 'organizations': repo_data.orgs, 'total_repos': repo_data.repos | length, 'new_repos': new_repo_names | default([]), 'existing_repos_count': (existing_repos | default([])) | length, 'failed_creates': failed_creates | default([])} | to_nice_json }}"
+
+    # ------------------------------------------------------------------
+    # END
+    # ------------------------------------------------------------------
+    - name: Print ending date and time
+      shell: date
+      register: date_end
+      changed_when: false
+
+    - debug:
+        msg: "Backup finished at {{ date_end.stdout }}"
