@@ -1,0 +1,96 @@
+---
+# Run with:
+# sudo ansible-playbook Ansible/github_backup.yml -i Ansible/inventory \
+#   -e "github_username=OAadmin_majesco \
+#       github_password=${{ secrets.MAJESCO_CLASSIC_PAT }} \
+#       codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} \
+#       codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }} \
+#       dry_run=false"
+#
+# Dry run (discovery + report, no clone/create/push):
+#   -e "dry_run=true"
+
+- name: GitHub → CodeCommit backup
+  hosts: Internal_Server
+  gather_facts: no
+  vars:
+    base_dir:           "/u02/github_to_codecommit"
+    log_dir:            "/u02/github_to_codecommit/logs"
+    script_src:         "../scripts/github_codecommit_backup.py"
+    script_dest:        "/u02/github_to_codecommit/github_codecommit_backup.py"
+    incremental_src:    "../PYTHON_Script/incremental-repo-migration.py"
+    incremental_dest:   "/u02/github_to_codecommit/incremental-repo-migration.py"
+    region:             "us-west-2"
+    sns_topic_arn:      "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
+    sns_region:         "us-east-1"
+    dry_run:            false
+
+  tasks:
+    - name: Print start time
+      shell: date
+      register: date_start
+      changed_when: false
+
+    - debug:
+        msg: "Started at {{ date_start.stdout }} | dry_run={{ dry_run }}"
+
+    - name: Ensure base and log directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ base_dir }}"
+        - "{{ log_dir }}"
+
+    - name: Deploy backup Python script
+      copy:
+        src:  "{{ script_src }}"
+        dest: "{{ script_dest }}"
+        mode: '0755'
+
+    - name: Deploy incremental migration script
+      copy:
+        src:  "{{ incremental_src }}"
+        dest: "{{ incremental_dest }}"
+        mode: '0755'
+
+    # No shell script to deploy — discovery is handled inside the Python script.
+
+    - name: Run backup script
+      shell: >
+        python3 {{ script_dest }}
+        {% if dry_run | bool %}--dry-run{% endif %}
+      environment:
+        GITHUB_TOKEN:        "{{ github_password }}"
+        GITHUB_USERNAME:     "{{ github_username }}"
+        CODECOMMIT_USERNAME: "{{ codecommit_username }}"
+        CODECOMMIT_PASSWORD: "{{ codecommit_password }}"
+        AWS_REGION:          "{{ region }}"
+        SNS_TOPIC_ARN:       "{{ sns_topic_arn }}"
+        SNS_REGION:          "{{ sns_region }}"
+        BASE_DIR:            "{{ base_dir }}"
+        LOG_DIR:             "{{ log_dir }}"
+        INCREMENTAL_SCRIPT:  "{{ incremental_dest }}"
+      register: backup_result
+      async:  43200   # 12-hour hard ceiling — kills if truly hung
+      poll:   30      # check every 30s and stream stdout live
+
+    - name: Show backup output
+      debug:
+        msg: "{{ backup_result.stdout_lines }}"
+
+    - name: Fail loudly if backup script exited non-zero
+      fail:
+        msg: >
+          Backup completed with errors.
+          Review {{ log_dir }}/summary.json and {{ log_dir }}/backup.log
+      when: backup_result.rc != 0
+
+    - name: Print end time
+      shell: date
+      register: date_end
+      changed_when: false
+
+    - debug:
+        msg: "Finished at {{ date_end.stdout }}"
