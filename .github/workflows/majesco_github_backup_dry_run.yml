@@ -23,7 +23,7 @@ jobs:
  
       - name: Run Ansible Playbook
         run: |
-          sudo ansible-playbook Ansible/majesco_github_backup.yml -i Ansible/inventory --forks 1 -e "github_username=OAadmin_majesco github_password=${{ secrets.MAJESCO_CLASSIC_PAT }} codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }} dry_run=false"
+          sudo ansible-playbook Ansible/majesco_github_backup.yml -i Ansible/inventory --forks 1 -e "github_username=OAadmin_majesco github_password=${{ secrets.MAJESCO_CLASSIC_PAT }} codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }} dry_run=true"
 
   stop-runner:
     needs: Majesco_GitHub_Backup
