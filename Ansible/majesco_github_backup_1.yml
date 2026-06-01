@@ -24,6 +24,7 @@
     sns_topic_arn:      "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
     sns_region:         "us-east-1"
     dry_run:            false
+    reset_state:        false
 
   tasks:
     - name: Print start time
@@ -60,7 +61,8 @@
     - name: Run backup script
       shell: >
         python3 {{ script_dest }}
-        {% if dry_run | bool %}--dry-run{% endif %}
+        {% if dry_run    | bool %}--dry-run{% endif %}
+        {% if reset_state| bool %}--reset-state{% endif %}
       environment:
         GITHUB_TOKEN:        "{{ github_password }}"
         GITHUB_USERNAME:     "{{ github_username }}"
