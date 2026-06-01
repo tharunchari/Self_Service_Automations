@@ -16,8 +16,8 @@
   vars:
     base_dir:           "/u02/github_to_codecommit"
     log_dir:            "/u02/github_to_codecommit/logs"
-    script_src:         "../scripts/github_codecommit_backup.py"
-    script_dest:        "/u02/github_to_codecommit/github_codecommit_backup.py"
+    script_src:         "../PYTHON_Script/majesco_github_backup.py"
+    script_dest:        "/u02/github_to_codecommit/majesco_github_backup.py"
     incremental_src:    "../PYTHON_Script/incremental-repo-migration.py"
     incremental_dest:   "/u02/github_to_codecommit/incremental-repo-migration.py"
     region:             "us-west-2"
