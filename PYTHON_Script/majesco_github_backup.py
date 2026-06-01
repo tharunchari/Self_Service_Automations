@@ -4,36 +4,33 @@ github_codecommit_backup.py
 
 Every 4-hour run logic:
   ┌─ For each repo discovered via GitHub PAT ──────────────────────────────┐
-  │                                                                         │
-  │  Does  base_dir/<org>/<repo>.git  exist on disk?                       │
-  │                                                                         │
-  │  NO  (first time ever seeing this repo)                                 │
-  │    → git clone --mirror  (creates <repo>.git automatically)            │
-  │    → aws codecommit create-repository   ← only called once, ever      │
-  │    → incremental push via incremental-repo-migration.py                │
-  │                                                                         │
-  │  YES (seen before — runs every 4 hours)                                 │
-  │    → git -C <repo>.git remote update --prune                           │
-  │    → git push --mirror  (only sends delta objects)                     │
-  │                                                                         │
-  │  rc==0 always means success. No RepositoryNameExistsException ever.    │
-  └─────────────────────────────────────────────────────────────────────────┘
+  │  Does  base_dir/<org>/<repo>.git  exist AND is a valid bare repo       │
+  │  AND CodeCommit repo already exists?                                   │
+  │                                                                        │
+  │  YES → git remote update --prune  →  git push --mirror                │
+  │  NO  → git clone --mirror         →  create CC repo  →  incremental   │
+  │                                                                        │
+  │  Broken partial clone → wiped and re-cloned cleanly                   │
+  │  Valid clone but CC missing → re-use local, create CC + push          │
+  └────────────────────────────────────────────────────────────────────────┘
 
-NOTE on bare mirror clone:
-  git clone --mirror creates:   base_dir/<org>/<repo>.git/
-  NOT:                          base_dir/<org>/<repo>/.git
-  So the existence check is (base_dir / org / f"{repo}.git").is_dir()
+Crash / resume:
+  Every completed repo is written to state.json immediately.
+  On the next run, already-completed repos are skipped entirely.
+  This means a crash mid-run loses at most one in-flight batch, not hours.
 
-Discovery is done entirely in Python (paginated GitHub API).
-No shell script needed — the shell script was only for Ansible's benefit.
+Memory safety:
+  - Results flushed to .jsonl per repo, never accumulated in RAM
+  - Repos processed in CHUNK_SIZE batches so futures[] never holds 3000 items
+  - CLONE_WORKERS auto-scales down for large orgs (> ORG_SIZE_THRESHOLD)
 
 Environment variables:
   GITHUB_TOKEN           Classic PAT (repo + read:org scopes)
-  GITHUB_USERNAME        GitHub username used in clone URLs
+  GITHUB_USERNAME        GitHub username for clone URLs
   CODECOMMIT_USERNAME    AWS CodeCommit HTTPS username
   CODECOMMIT_PASSWORD    AWS CodeCommit HTTPS password
   AWS_REGION             default: us-west-2
-  SNS_TOPIC_ARN          SNS topic ARN for new-repo notifications
+  SNS_TOPIC_ARN          SNS topic ARN (optional)
   SNS_REGION             default: us-east-1
   BASE_DIR               default: /u02/github_to_codecommit
   LOG_DIR                default: BASE_DIR/logs
@@ -46,7 +43,7 @@ from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.request, urllib.error
 
-# ── logging setup ─────────────────────────────────────────────────────────────
+# ── logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -56,18 +53,22 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── tunables ──────────────────────────────────────────────────────────────────
-GH_PER_PAGE   = 100
-MAX_RETRIES   = 3
-RETRY_BACKOFF = 2    # seconds, doubled each attempt
-CLONE_WORKERS = 4    # concurrent git clone / remote-update threads
-PUSH_WORKERS  = 3    # concurrent CodeCommit push threads
+GH_PER_PAGE        = 100
+MAX_RETRIES        = 3
+RETRY_BACKOFF      = 2      # seconds, doubled each attempt
+
+CLONE_WORKERS      = 3      # default concurrent git clone/update threads
+CLONE_WORKERS_LARGE = 1     # workers for orgs with > ORG_SIZE_THRESHOLD repos
+ORG_SIZE_THRESHOLD = 500    # repos — orgs above this get serialised cloning
+PUSH_WORKERS       = 2      # concurrent CodeCommit push threads
+CHUNK_SIZE         = 50     # process repos in batches of this size
+                            # keeps futures[] small → caps peak RAM usage
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Utilities
 # ─────────────────────────────────────────────────────────────────────────────
 
 def gh_get(path: str, token: str):
-    """Single authenticated GitHub API GET with retry. Returns parsed JSON."""
     url = f"https://api.github.com{path}"
     for attempt in range(1, MAX_RETRIES + 1):
         req = urllib.request.Request(url, headers={
@@ -82,7 +83,7 @@ def gh_get(path: str, token: str):
             body = e.read().decode(errors="replace")
             if e.code == 403 and "rate limit" in body.lower():
                 wait = 60 * attempt
-                log.warning("Rate limited — sleeping %ds (attempt %d/%d)", wait, attempt, MAX_RETRIES)
+                log.warning("Rate limited — sleeping %ds", wait)
                 time.sleep(wait)
             elif attempt == MAX_RETRIES:
                 log.error("GitHub API %s → HTTP %d: %s", url, e.code, body)
@@ -96,7 +97,6 @@ def gh_get(path: str, token: str):
 
 
 def gh_paginate(path_tpl: str, token: str) -> list:
-    """Collect all pages from a GitHub list endpoint."""
     results, page = [], 1
     while True:
         data = gh_get(f"{path_tpl}&page={page}", token)
@@ -110,7 +110,6 @@ def gh_paginate(path_tpl: str, token: str) -> list:
 
 
 def run_cmd(cmd: list, cwd=None, env=None, timeout=1800) -> tuple:
-    """Run a subprocess. Returns (rc, stdout, stderr)."""
     merged = {**os.environ, **(env or {})}
     try:
         p = subprocess.run(
@@ -125,7 +124,6 @@ def run_cmd(cmd: list, cwd=None, env=None, timeout=1800) -> tuple:
 
 
 def mask(text: str, *secrets: str) -> str:
-    """Strip credentials from text before writing to disk."""
     for s in secrets:
         if s:
             text = text.replace(s, "***")
@@ -134,69 +132,90 @@ def mask(text: str, *secrets: str) -> str:
 
 def write_json(path: Path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w") as f:
         json.dump(data, f, indent=2)
+    tmp.replace(path)           # atomic replace — no corrupt state file on crash
+
+
+def load_json(path: Path, default):
+    if path.exists():
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return default
 
 
 def append_jsonl(path: Path, record: dict, lock: threading.Lock):
-    """Thread-safe append of one JSON record to a .jsonl log file."""
     line = json.dumps(record) + "\n"
     with lock:
         with open(path, "a") as f:
             f.write(line)
 
 
+def chunks(lst: list, n: int):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 1 — Discovery  (pure Python, no shell script needed)
+# State file  —  tracks every completed repo so re-runs skip them
+# ─────────────────────────────────────────────────────────────────────────────
+
+class State:
+    """
+    Persists completed repo keys to disk after every success.
+    Key format:  "org/repo"
+    Atomic writes ensure a crash never corrupts the state file.
+    """
+    def __init__(self, path: Path):
+        self.path = path
+        self._lock = threading.Lock()
+        data = load_json(path, {"completed": []})
+        self._done: set = set(data.get("completed", []))
+        log.info("State: %d repos already completed from previous runs", len(self._done))
+
+    def is_done(self, org: str, repo: str) -> bool:
+        return f"{org}/{repo}" in self._done
+
+    def mark_done(self, org: str, repo: str):
+        key = f"{org}/{repo}"
+        with self._lock:
+            self._done.add(key)
+            write_json(self.path, {"completed": sorted(self._done)})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 1 — Discovery
 # ─────────────────────────────────────────────────────────────────────────────
 
 def discover(token: str) -> tuple:
-    """
-    Returns (orgs: list[str], repos: list[dict{org, repo}])
-    Entirely in Python — no shell script required.
-    """
     log.info("── Phase 1: Discovery ──")
-
     raw_orgs = gh_paginate(f"/user/orgs?per_page={GH_PER_PAGE}", token)
     orgs     = [o["login"] for o in raw_orgs]
     log.info("Found %d organizations: %s", len(orgs), orgs)
 
     repos = []
+    org_sizes = {}
     for org in orgs:
-        raw  = gh_paginate(
-            f"/orgs/{org}/repos?per_page={GH_PER_PAGE}&type=all", token
-        )
+        raw  = gh_paginate(f"/orgs/{org}/repos?per_page={GH_PER_PAGE}&type=all", token)
         mine = [{"org": org, "repo": r["name"]} for r in raw]
         repos.extend(mine)
+        org_sizes[org] = len(mine)
         log.info("  %-40s %d repos", org, len(mine))
 
     log.info("Total repositories discovered: %d", len(repos))
-    return orgs, repos
+    return orgs, repos, org_sizes
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 2 — Classify + Clone/Update
-#
-# KEY POINT — bare mirror clone directory structure:
-#   git clone --mirror https://.../org/repo
-#   creates → base_dir/org/repo.git/          ← bare repo, no .git subdir
-#
-# So the existence check is:
-#   (base_dir / org / f"{repo}.git").is_dir()
-#
-# NOT:
-#   (base_dir / org / repo / ".git").is_dir()   ← WRONG for mirror clones
+# Phase 2 — Clone / Update helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 def is_valid_bare_repo(repo_dir: Path) -> bool:
-    """
-    Returns True only if repo_dir is a structurally complete bare git repo.
-    Checks for the three things git itself requires:
-      - HEAD file exists and is non-empty
-      - objects/ directory exists
-      - refs/ directory exists
-    A half-finished clone will be missing at least one of these.
-    """
     return (
         (repo_dir / "HEAD").is_file()
         and (repo_dir / "HEAD").stat().st_size > 0
@@ -206,10 +225,6 @@ def is_valid_bare_repo(repo_dir: Path) -> bool:
 
 
 def cc_repo_exists(cc_name: str, region: str) -> bool:
-    """
-    Returns True if the CodeCommit repo already exists.
-    Uses describe-repository — a lightweight read-only call.
-    """
     rc, _, _ = run_cmd([
         "aws", "codecommit", "get-repository",
         "--repository-name", cc_name,
@@ -218,39 +233,22 @@ def cc_repo_exists(cc_name: str, region: str) -> bool:
     return rc == 0
 
 
-def clone_or_update_one(item: dict, base_dir: Path,
-                        gh_user: str, gh_token: str,
-                        region: str) -> dict:
-    org      = item["org"]
-    repo     = item["repo"]
-    org_dir  = base_dir / org
-    repo_dir = org_dir / f"{repo}.git"
-    cc_name  = f"{org}_{repo}"
-
+def clone_or_update_one(item: dict, base_dir: Path, gh_user: str,
+                        gh_token: str, region: str) -> dict:
+    org, repo = item["org"], item["repo"]
+    org_dir   = base_dir / org
+    repo_dir  = org_dir / f"{repo}.git"
+    cc_name   = f"{org}_{repo}"
     org_dir.mkdir(parents=True, exist_ok=True)
 
-    result = {
-        "org":         org,
-        "repo":        repo,
-        "is_new":      False,
-        "clone_rc":    None,
-        "clone_error": "",
-    }
+    result = {"org": org, "repo": repo, "is_new": False,
+              "clone_rc": None, "clone_error": ""}
 
-    # ── Classify: existing only if BOTH conditions are true ──────────────────
-    #
-    #   1. repo.git/ is a structurally valid bare repo  (not a partial clone)
-    #   2. The CodeCommit repo already exists           (not skipped last run)
-    #
-    # If either condition fails we treat it as NEW:
-    #   - Partial clone  → wipe repo.git/, re-clone cleanly
-    #   - Valid clone but no CC repo → re-use local clone, create CC + push
-    #
     local_valid = repo_dir.is_dir() and is_valid_bare_repo(repo_dir)
     cc_exists   = local_valid and cc_repo_exists(cc_name, region)
 
     if local_valid and cc_exists:
-        # ── EXISTING: both sides healthy — just sync ─────────────────────────
+        # ── Healthy on both sides: just sync ─────────────────────────────────
         result["is_new"] = False
         for attempt in range(1, MAX_RETRIES + 1):
             rc, _, err = run_cmd(
@@ -262,110 +260,110 @@ def clone_or_update_one(item: dict, base_dir: Path,
             if rc == 0:
                 break
             if attempt < MAX_RETRIES:
-                log.warning("  [%s/%s] update attempt %d failed — retrying in %ds",
-                            org, repo, attempt, RETRY_BACKOFF ** attempt)
                 time.sleep(RETRY_BACKOFF ** attempt)
+        return result
 
-    else:
-        # ── NEW (or broken): clone from scratch ──────────────────────────────
-        result["is_new"] = True
+    # ── Need to (re-)clone ────────────────────────────────────────────────────
+    result["is_new"] = True
 
-        if repo_dir.is_dir() and not local_valid:
-            # Partial/corrupt clone left over from a previous failed run —
-            # remove it so git clone starts with a clean slate.
-            log.warning("  [%s/%s] Incomplete clone detected — removing %s and re-cloning",
-                        org, repo, repo_dir)
-            shutil.rmtree(repo_dir)
-        elif repo_dir.is_dir() and local_valid and not cc_exists:
-            # Valid local clone but CodeCommit repo is missing.
-            # Re-use the local clone (no need to re-download) — just re-create
-            # the CC repo and push. Mark clone as already done.
-            log.info("  [%s/%s] Local clone OK but CodeCommit repo missing — will create + push",
-                     org, repo)
-            result["clone_rc"] = 0   # local clone is fine, nothing to re-clone
-            return result
+    if repo_dir.is_dir() and not local_valid:
+        log.warning("  [%s/%s] Partial/corrupt clone — removing and re-cloning", org, repo)
+        shutil.rmtree(repo_dir)
+    elif repo_dir.is_dir() and local_valid and not cc_exists:
+        # Local clone is good; CodeCommit repo is missing — skip re-clone
+        log.info("  [%s/%s] Local clone OK but CodeCommit repo missing — will create + push", org, repo)
+        result["clone_rc"] = 0
+        return result
 
-        clone_url = (
-            f"https://{gh_user}:{gh_token}"
-            f"@github.com/{org}/{repo}"
+    clone_url = f"https://{gh_user}:{gh_token}@github.com/{org}/{repo}"
+    for attempt in range(1, MAX_RETRIES + 1):
+        rc, _, err = run_cmd(
+            ["git", "clone", "--mirror", clone_url],
+            cwd=str(org_dir), timeout=1800,
         )
-        for attempt in range(1, MAX_RETRIES + 1):
-            rc, _, err = run_cmd(
-                ["git", "clone", "--mirror", clone_url],
-                cwd=str(org_dir),
-                timeout=1800,
-            )
-            result["clone_rc"]    = rc
-            result["clone_error"] = "" if rc == 0 else mask(err, gh_token, gh_user)
-            if rc == 0:
-                break
-            if attempt < MAX_RETRIES:
-                log.warning("  [%s/%s] clone attempt %d failed — retrying in %ds",
-                            org, repo, attempt, RETRY_BACKOFF ** attempt)
-                time.sleep(RETRY_BACKOFF ** attempt)
+        result["clone_rc"]    = rc
+        result["clone_error"] = "" if rc == 0 else mask(err, gh_token, gh_user)
+        if rc == 0:
+            break
+        if attempt < MAX_RETRIES:
+            log.warning("  [%s/%s] clone attempt %d failed — retrying in %ds",
+                        org, repo, attempt, RETRY_BACKOFF ** attempt)
+            time.sleep(RETRY_BACKOFF ** attempt)
 
     return result
 
 
-def phase_clone(repos: list, base_dir: Path,
-                gh_user: str, gh_token: str,
-                region: str, log_dir: Path) -> tuple:
-    """
-    Classifies every repo by checking BOTH local disk state AND CodeCommit
-    existence. Handles four cases:
-      1. repo.git valid  + CC exists  → existing  (update + mirror push)
-      2. repo.git valid  + CC missing → new        (re-use clone, create CC + push)
-      3. repo.git broken + CC missing → new        (wipe, re-clone, create CC + push)
-      4. repo.git absent              → new        (clone, create CC + push)
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 2 — Orchestrator  (chunked + state-aware)
+# ─────────────────────────────────────────────────────────────────────────────
 
-    Returns (new_repos, existing_repos).
+def phase_clone(repos: list, base_dir: Path, gh_user: str, gh_token: str,
+                region: str, org_sizes: dict, state: State,
+                log_dir: Path) -> tuple:
     """
-    log.info("── Phase 2: Clone / update %d repos (workers=%d) ──",
-             len(repos), CLONE_WORKERS)
+    Processes repos in CHUNK_SIZE batches to cap peak RAM.
+    Skips repos already marked complete in state.json.
+    Auto-scales workers down for large orgs to avoid OOM.
+    """
+    log.info("── Phase 2: Clone / update %d repos (chunk=%d) ──",
+             len(repos), CHUNK_SIZE)
+
+    # Filter out already-completed repos
+    pending = [r for r in repos if not state.is_done(r["org"], r["repo"])]
+    skipped = len(repos) - len(pending)
+    if skipped:
+        log.info("  Skipping %d repos already completed in a previous run", skipped)
 
     new_repos, existing_repos = [], []
-    clone_log  = log_dir / "clone_results.jsonl"
-    file_lock  = threading.Lock()
+    clone_log = log_dir / "clone_results.jsonl"
+    file_lock = threading.Lock()
+    total_done = 0
 
-    with ThreadPoolExecutor(max_workers=CLONE_WORKERS) as pool:
-        futures = {
-            pool.submit(
-                clone_or_update_one, item, base_dir, gh_user, gh_token, region
-            ): item
-            for item in repos
-        }
-        done = 0
-        for future in as_completed(futures):
-            res    = future.result()
-            done  += 1
-            tag    = "NEW     " if res["is_new"] else "existing"
-            status = "ok" if res["clone_rc"] == 0 else "FAILED"
+    for chunk in chunks(pending, CHUNK_SIZE):
+        # Pick worker count based on the largest org in this chunk
+        max_org_size = max(org_sizes.get(r["org"], 0) for r in chunk)
+        workers = CLONE_WORKERS_LARGE if max_org_size > ORG_SIZE_THRESHOLD else CLONE_WORKERS
+        log.info("  Processing chunk of %d (workers=%d, max_org_size=%d)",
+                 len(chunk), workers, max_org_size)
 
-            log.info("  [%d/%d] %-45s [%s] %s",
-                     done, len(repos),
-                     f"{res['org']}/{res['repo']}", tag, status)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(clone_or_update_one, item, base_dir,
+                            gh_user, gh_token, region): item
+                for item in chunk
+            }
+            for future in as_completed(futures):
+                res       = future.result()
+                total_done += 1
+                tag    = "NEW     " if res["is_new"] else "existing"
+                status = "ok" if res["clone_rc"] == 0 else "FAILED"
+                log.info("  [%d/%d] %-45s [%s] %s",
+                         total_done + skipped, len(repos),
+                         f"{res['org']}/{res['repo']}", tag, status)
 
-            append_jsonl(clone_log, res, file_lock)
+                append_jsonl(clone_log, res, file_lock)
 
-            if res["clone_rc"] == 0:
-                entry = {"org": res["org"], "repo": res["repo"]}
-                if res["is_new"]:
-                    new_repos.append(entry)
-                else:
-                    existing_repos.append(entry)
+                if res["clone_rc"] == 0:
+                    entry = {"org": res["org"], "repo": res["repo"]}
+                    if res["is_new"]:
+                        new_repos.append(entry)
+                    else:
+                        existing_repos.append(entry)
+                        # Mark existing repos done immediately —
+                        # new repos are marked done after push succeeds
+                        state.mark_done(res["org"], res["repo"])
 
-    failed = len(repos) - len(new_repos) - len(existing_repos)
-    log.info("Clone phase: new=%d  existing=%d  failed=%d",
-             len(new_repos), len(existing_repos), failed)
+    failed = len(pending) - len(new_repos) - len(existing_repos)
+    log.info("Clone phase: new=%d  existing=%d  failed=%d  skipped=%d",
+             len(new_repos), len(existing_repos), failed, skipped)
     return new_repos, existing_repos
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 3 — Create CodeCommit repos  (NEW repos only, called once ever)
+# Phase 3 — Create CodeCommit repos (new only)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def create_cc_repo(cc_name: str, region: str) -> tuple:
-    """Returns (success: bool, stderr: str)"""
     rc, _, err = run_cmd([
         "aws", "codecommit", "create-repository",
         "--repository-name", cc_name,
@@ -375,16 +373,7 @@ def create_cc_repo(cc_name: str, region: str) -> tuple:
 
 
 def phase_create(new_repos: list, region: str, log_dir: Path) -> tuple:
-    """
-    Creates a CodeCommit repo for each newly cloned repo.
-    rc==0 → success, proceed to incremental push.
-    rc!=0 → genuine AWS error, log and skip.
-    RepositoryNameExistsException never appears here because we only call
-    create for repos whose .git dir didn't exist locally before this run.
-    """
-    log.info("── Phase 3: Create CodeCommit repos for %d new repos ──",
-             len(new_repos))
-
+    log.info("── Phase 3: Create CodeCommit repos for %d new repos ──", len(new_repos))
     ready, failed = [], []
     create_log = log_dir / "codecommit_create_results.jsonl"
     file_lock  = threading.Lock()
@@ -392,11 +381,7 @@ def phase_create(new_repos: list, region: str, log_dir: Path) -> tuple:
     for item in new_repos:
         cc_name = f"{item['org']}_{item['repo']}"
         ok, err = create_cc_repo(cc_name, region)
-
-        append_jsonl(create_log, {
-            "cc_name": cc_name, "success": ok, "error": err
-        }, file_lock)
-
+        append_jsonl(create_log, {"cc_name": cc_name, "success": ok, "error": err}, file_lock)
         if ok:
             log.info("  Created: %s", cc_name)
             ready.append(item)
@@ -410,63 +395,44 @@ def phase_create(new_repos: list, region: str, log_dir: Path) -> tuple:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 4 — Push
-#   NEW repos      → incremental push (handles large first pushes safely)
-#   EXISTING repos → git push --mirror (only sends delta objects)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _cc_url(cc_user: str, cc_pass: str, region: str, cc_name: str) -> str:
-    return (
-        f"https://{cc_user}:{cc_pass}"
-        f"@git-codecommit.{region}.amazonaws.com/v1/repos/{cc_name}"
-    )
+def _cc_url(cc_user, cc_pass, region, cc_name):
+    return (f"https://{cc_user}:{cc_pass}"
+            f"@git-codecommit.{region}.amazonaws.com/v1/repos/{cc_name}")
 
 
-def push_incremental_one(item: dict, base_dir: Path,
-                         cc_user: str, cc_pass: str,
-                         region: str, inc_script: str) -> dict:
-    """Incremental push for a brand-new CodeCommit repo."""
+def push_incremental_one(item, base_dir, cc_user, cc_pass, region, inc_script):
     org, repo = item["org"], item["repo"]
     cc_name   = f"{org}_{repo}"
-    # bare mirror clone lives at <org>/<repo>.git  (no .git subdir inside)
     repo_dir  = base_dir / org / f"{repo}.git"
     result    = {"org": org, "repo": repo, "push_type": "incremental",
                  "push_rc": None, "push_error": ""}
 
-    dest_script = repo_dir / "incremental-repo-migration.py"
     try:
-        shutil.copy2(inc_script, dest_script)
+        shutil.copy2(inc_script, repo_dir / "incremental-repo-migration.py")
     except Exception as exc:
-        result["push_rc"]    = 1
+        result["push_rc"] = 1
         result["push_error"] = str(exc)
         return result
 
     url = _cc_url(cc_user, cc_pass, region, cc_name)
-
     for attempt in range(1, MAX_RETRIES + 1):
-        # Clean up any leftover remote from a previous failed attempt
         run_cmd(["git", "remote", "remove", "codecommit"], cwd=str(repo_dir))
         run_cmd(["git", "remote", "add",    "codecommit", url], cwd=str(repo_dir))
-
-        rc, _, err = run_cmd(
-            ["python3", "incremental-repo-migration.py"],
-            cwd=str(repo_dir),
-            timeout=3600,
-        )
+        rc, _, err = run_cmd(["python3", "incremental-repo-migration.py"],
+                             cwd=str(repo_dir), timeout=3600)
         run_cmd(["git", "remote", "remove", "codecommit"], cwd=str(repo_dir))
-
         result["push_rc"] = rc
         if rc == 0:
             break
         result["push_error"] = mask(err, cc_pass, cc_user)
         if attempt < MAX_RETRIES:
             time.sleep(RETRY_BACKOFF ** attempt)
-
     return result
 
 
-def push_mirror_one(item: dict, base_dir: Path,
-                    cc_user: str, cc_pass: str, region: str) -> dict:
-    """Mirror push for an existing CodeCommit repo (delta only)."""
+def push_mirror_one(item, base_dir, cc_user, cc_pass, region):
     org, repo = item["org"], item["repo"]
     cc_name   = f"{org}_{repo}"
     repo_dir  = base_dir / org / f"{repo}.git"
@@ -476,72 +442,60 @@ def push_mirror_one(item: dict, base_dir: Path,
 
     for attempt in range(1, MAX_RETRIES + 1):
         run_cmd(["git", "fetch", "--prune"], cwd=str(repo_dir))
-        rc, _, err = run_cmd(
-            ["git", "push", "--mirror", url],
-            cwd=str(repo_dir),
-            timeout=3600,
-        )
+        rc, _, err = run_cmd(["git", "push", "--mirror", url],
+                             cwd=str(repo_dir), timeout=3600)
         result["push_rc"] = rc
         if rc == 0:
             break
         result["push_error"] = mask(err, cc_pass, cc_user)
         if attempt < MAX_RETRIES:
             time.sleep(RETRY_BACKOFF ** attempt)
-
     return result
 
 
-def phase_push(new_repos: list, existing_repos: list,
-               base_dir: Path, cc_user: str, cc_pass: str,
-               region: str, inc_script: str, log_dir: Path) -> tuple:
-
+def phase_push(new_repos, existing_repos, base_dir, cc_user, cc_pass,
+               region, inc_script, state: State, log_dir):
     push_log  = log_dir / "push_results.jsonl"
     file_lock = threading.Lock()
     inc_results, mirror_results = [], []
 
-    # ── 4a: incremental push for NEW repos ──────────────────────────────────
-    log.info("── Phase 4a: Incremental push for %d new repos (workers=%d) ──",
-             len(new_repos), PUSH_WORKERS)
+    # ── 4a: incremental for NEW repos (chunked) ──────────────────────────────
+    log.info("── Phase 4a: Incremental push %d new repos (workers=%d, chunk=%d) ──",
+             len(new_repos), PUSH_WORKERS, CHUNK_SIZE)
 
-    with ThreadPoolExecutor(max_workers=PUSH_WORKERS) as pool:
-        futures = {
-            pool.submit(
-                push_incremental_one, item, base_dir,
-                cc_user, cc_pass, region, inc_script
-            ): item
-            for item in new_repos
-        }
-        done = 0
-        for future in as_completed(futures):
-            res    = future.result()
-            done  += 1
-            status = "ok" if res["push_rc"] == 0 else "FAILED"
-            log.info("  [%d/%d] %s/%s — incremental push %s",
-                     done, len(new_repos), res["org"], res["repo"], status)
-            append_jsonl(push_log, res, file_lock)
-            inc_results.append(res)
+    for chunk in chunks(new_repos, CHUNK_SIZE):
+        with ThreadPoolExecutor(max_workers=PUSH_WORKERS) as pool:
+            futures = {
+                pool.submit(push_incremental_one, item, base_dir,
+                            cc_user, cc_pass, region, inc_script): item
+                for item in chunk
+            }
+            for future in as_completed(futures):
+                res    = future.result()
+                status = "ok" if res["push_rc"] == 0 else "FAILED"
+                log.info("  %s/%s — incremental push %s", res["org"], res["repo"], status)
+                append_jsonl(push_log, res, file_lock)
+                inc_results.append(res)
+                if res["push_rc"] == 0:
+                    state.mark_done(res["org"], res["repo"])
 
-    # ── 4b: mirror push for EXISTING repos ──────────────────────────────────
-    log.info("── Phase 4b: Mirror push for %d existing repos (workers=%d) ──",
-             len(existing_repos), PUSH_WORKERS)
+    # ── 4b: mirror push for EXISTING repos (chunked) ─────────────────────────
+    log.info("── Phase 4b: Mirror push %d existing repos (workers=%d, chunk=%d) ──",
+             len(existing_repos), PUSH_WORKERS, CHUNK_SIZE)
 
-    with ThreadPoolExecutor(max_workers=PUSH_WORKERS) as pool:
-        futures = {
-            pool.submit(
-                push_mirror_one, item, base_dir,
-                cc_user, cc_pass, region
-            ): item
-            for item in existing_repos
-        }
-        done = 0
-        for future in as_completed(futures):
-            res    = future.result()
-            done  += 1
-            status = "ok" if res["push_rc"] == 0 else "FAILED"
-            log.info("  [%d/%d] %s/%s — mirror push %s",
-                     done, len(existing_repos), res["org"], res["repo"], status)
-            append_jsonl(push_log, res, file_lock)
-            mirror_results.append(res)
+    for chunk in chunks(existing_repos, CHUNK_SIZE):
+        with ThreadPoolExecutor(max_workers=PUSH_WORKERS) as pool:
+            futures = {
+                pool.submit(push_mirror_one, item, base_dir,
+                            cc_user, cc_pass, region): item
+                for item in chunk
+            }
+            for future in as_completed(futures):
+                res    = future.result()
+                status = "ok" if res["push_rc"] == 0 else "FAILED"
+                log.info("  %s/%s — mirror push %s", res["org"], res["repo"], status)
+                append_jsonl(push_log, res, file_lock)
+                mirror_results.append(res)
 
     return inc_results, mirror_results
 
@@ -550,13 +504,11 @@ def phase_push(new_repos: list, existing_repos: list,
 # SNS
 # ─────────────────────────────────────────────────────────────────────────────
 
-def sns_notify(topic_arn: str, region: str, subject: str, message: str):
+def sns_notify(topic_arn, region, subject, message):
     rc, _, err = run_cmd([
         "aws", "sns", "publish",
-        "--topic-arn", topic_arn,
-        "--region",    region,
-        "--subject",   subject,
-        "--message",   message,
+        "--topic-arn", topic_arn, "--region", region,
+        "--subject",   subject,   "--message", message,
     ])
     if rc != 0:
         log.warning("SNS publish failed: %s", err)
@@ -570,10 +522,10 @@ def sns_notify(topic_arn: str, region: str, subject: str, message: str):
 
 def main():
     parser = argparse.ArgumentParser(description="GitHub → CodeCommit backup")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Discovery + report only — no clone/create/push")
-    parser.add_argument("--workers", type=int, default=None,
-                        help="Override CLONE_WORKERS (PUSH_WORKERS = workers//2)")
+    parser.add_argument("--dry-run",    action="store_true")
+    parser.add_argument("--workers",    type=int, default=None)
+    parser.add_argument("--reset-state", action="store_true",
+                        help="Ignore previous state and process all repos from scratch")
     args = parser.parse_args()
 
     if args.workers:
@@ -581,10 +533,10 @@ def main():
         CLONE_WORKERS = args.workers
         PUSH_WORKERS  = max(1, args.workers // 2)
 
-    def env(name: str, default: str = "") -> str:
+    def env(name, default=""):
         val = os.environ.get(name, default)
         if not val and not args.dry_run and name not in ("SNS_TOPIC_ARN",):
-            log.error("Required environment variable not set: %s", name)
+            log.error("Required env var not set: %s", name)
             sys.exit(1)
         return val
 
@@ -603,7 +555,6 @@ def main():
     base_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    # Tee all log output to disk as well
     fh = logging.FileHandler(log_dir / "backup.log")
     fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     logging.getLogger().addHandler(fh)
@@ -611,36 +562,42 @@ def main():
     started = datetime.now(timezone.utc).isoformat()
     log.info("══ GitHub → CodeCommit backup  started=%s  mode=%s ══",
              started, "DRY-RUN" if args.dry_run else "FULL")
-    log.info("Base dir : %s", base_dir)
-    log.info("Log dir  : %s", log_dir)
-    log.info("Region   : %s", region)
+    log.info("  base_dir=%s  region=%s  chunk=%d  clone_workers=%d/%d  push_workers=%d",
+             base_dir, region, CHUNK_SIZE, CLONE_WORKERS, CLONE_WORKERS_LARGE, PUSH_WORKERS)
 
-    # ── Phase 1: discovery (pure Python, no shell script) ───────────────────
-    orgs, repos = discover(gh_token)
+    # ── Phase 1 ───────────────────────────────────────────────────────────────
+    orgs, repos, org_sizes = discover(gh_token)
 
     if args.dry_run:
         report = {
             "mode":    "dry_run",
             "orgs":    orgs,
-            "per_org": {o: sum(1 for r in repos if r["org"] == o) for o in orgs},
+            "per_org": org_sizes,
             "total":   len(repos),
         }
         write_json(log_dir / "dry_run_report.json", report)
-        log.info("DRY-RUN complete. Report written to %s/dry_run_report.json", log_dir)
+        log.info("DRY-RUN complete. Report: %s/dry_run_report.json", log_dir)
         sys.exit(0)
 
-    # ── Phase 2: classify by disk + clone/update ─────────────────────────────
+    # ── State (resume support) ────────────────────────────────────────────────
+    state_path = log_dir / "state.json"
+    if args.reset_state and state_path.exists():
+        state_path.unlink()
+        log.info("State file reset — processing all repos from scratch")
+    state = State(state_path)
+
+    # ── Phase 2 ───────────────────────────────────────────────────────────────
     new_repos, existing_repos = phase_clone(
-        repos, base_dir, gh_user, gh_token, region, log_dir
+        repos, base_dir, gh_user, gh_token, region, org_sizes, state, log_dir
     )
 
-    # ── Phase 3: create CodeCommit repos (new only) ──────────────────────────
+    # ── Phase 3 ───────────────────────────────────────────────────────────────
     push_ready_new, failed_creates = phase_create(new_repos, region, log_dir)
 
-    # ── Phase 4: push ─────────────────────────────────────────────────────────
+    # ── Phase 4 ───────────────────────────────────────────────────────────────
     inc_results, mirror_results = phase_push(
         push_ready_new, existing_repos,
-        base_dir, cc_user, cc_pass, region, inc_script, log_dir,
+        base_dir, cc_user, cc_pass, region, inc_script, state, log_dir,
     )
 
     # ── Summary ───────────────────────────────────────────────────────────────
@@ -648,44 +605,37 @@ def main():
     push_failures = [r for r in inc_results + mirror_results if r["push_rc"] != 0]
 
     summary = {
-        "started_at":       started,
-        "finished_at":      datetime.now(timezone.utc).isoformat(),
-        "orgs":             len(orgs),
-        "total_repos":      len(repos),
-        "new_repos":        new_names,
-        "new_repos_count":  len(new_names),
-        "existing_count":   len(existing_repos),
-        "failed_creates":   [
-            f"{i['item']['org']}_{i['item']['repo']}" for i in failed_creates
-        ],
-        "push_failures":    [
-            f"{r['org']}_{r['repo']}" for r in push_failures
-        ],
+        "started_at":      started,
+        "finished_at":     datetime.now(timezone.utc).isoformat(),
+        "orgs":            len(orgs),
+        "total_repos":     len(repos),
+        "new_repos":       new_names,
+        "new_repos_count": len(new_names),
+        "existing_count":  len(existing_repos),
+        "failed_creates":  [f"{i['item']['org']}_{i['item']['repo']}" for i in failed_creates],
+        "push_failures":   [f"{r['org']}_{r['repo']}" for r in push_failures],
     }
     write_json(log_dir / "summary.json", summary)
 
     log.info("══ Summary ══")
-    log.info("  orgs              : %d", summary["orgs"])
-    log.info("  total repos       : %d", summary["total_repos"])
-    log.info("  new repos         : %d", summary["new_repos_count"])
-    log.info("  existing repos    : %d", summary["existing_count"])
-    log.info("  failed creates    : %d", len(failed_creates))
-    log.info("  push failures     : %d", len(push_failures))
+    for k, v in summary.items():
+        if k not in ("new_repos", "failed_creates", "push_failures"):
+            log.info("  %-22s %s", k, v)
+    if summary["failed_creates"]:
+        log.warning("  failed_creates     : %s", summary["failed_creates"])
+    if summary["push_failures"]:
+        log.warning("  push_failures      : %s", summary["push_failures"])
 
-    # ── SNS: only when new repos were added this run ─────────────────────────
     if sns_arn and new_names:
         msg = (
             "New repositories added to AWS CodeCommit:\n\n"
             + "\n".join(new_names)
             + f"\n\nTotal new: {len(new_names)}\n\nThanks,\nv3atlassianops"
         )
-        sns_notify(sns_arn, sns_region,
-                   "New Repositories Added To AWS CodeCommit", msg)
+        sns_notify(sns_arn, sns_region, "New Repositories Added To AWS CodeCommit", msg)
 
-    log.info("══ Backup finished at %s ══",
-             datetime.now(timezone.utc).isoformat())
+    log.info("══ Backup finished at %s ══", datetime.now(timezone.utc).isoformat())
 
-    # Non-zero exit so CI/GitHub Actions marks the run as failed if errors exist
     if failed_creates or push_failures:
         log.warning("Completed with errors — review %s/summary.json", log_dir)
         sys.exit(1)
