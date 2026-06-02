@@ -15,7 +15,7 @@ jobs:
   Majesco_GitHub_Backup:
     needs: start-runner
     name: Run Ansible Playbook
-    runs-on: Majesco_Github_Backup_Runner
+    runs-on: Majesco_Github_Backup_Runner_2
  
     steps:
       - name: Checkout this repo
