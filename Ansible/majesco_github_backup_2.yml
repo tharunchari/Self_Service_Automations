@@ -165,7 +165,7 @@
         git remote add codecommit \
           "https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item.org }}_{{ item.repo }}"
 
-        python incremental-repo-migration.py
+        python incremental-repo-migration_new.py
 
         git remote remove codecommit
       loop: "{{ valid_repos }}"
