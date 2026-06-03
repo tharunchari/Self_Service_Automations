@@ -62,10 +62,16 @@ class RepositoryMigration:
         # push the tags
         self.push_migration_tags()
 
-        # push all branch references
+        # push all branch references explicitly
         for branch in self.local_repo.heads:
             print("Pushing branch %s" % branch.name)
-            self.do_push_with_retries(ref=branch.name)
+
+            branch_refspec = (
+                "refs/heads/{0}:refs/heads/{0}"
+                .format(branch.name)
+            )
+
+            self.do_push_with_retries(ref=branch_refspec)e)
 
         # push all tags
         print("Pushing tags")
