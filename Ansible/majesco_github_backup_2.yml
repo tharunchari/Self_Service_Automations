@@ -25,7 +25,7 @@
     discovery_script: "/u02/github_org_repos.sh"
     discovery_script_src: "../shell_scripts/github_org_repos.sh"
 
-    incremental_script_src: "../PYTHON_Script/incremental-repo-migration.py"
+    incremental_script_src: "../PYTHON_Script/incremental-repo-migration_new.py"
 
     log_dir: "/u02/github_to_codecommit/logs"
 
