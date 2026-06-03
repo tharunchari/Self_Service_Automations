@@ -28,7 +28,35 @@ jobs:
   stop-runner:
     needs: Majesco_GitHub_Backup
     if: always()  # Ensures this job runs even if execute-job fails
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
-    with:
-      runner_name: "Majesco_Github_Backup_Runner_2"
-    secrets: inherit
+    name: Stop the Self-Hosted Runner
+    runs-on: ubuntu-24.04
+    env:
+      RUNNER_NAME: Majesco_Github_Backup_Runner_2
+    steps:
+      - name: Configure AWS Credentials
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Get EC2 Instance ID
+        id: get-instance-id
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=$RUNNER_NAME" \
+                      "Name=instance-state-name,Values=running" \
+            --query "Reservations[0].Instances[0].InstanceId" \
+            --output text \
+            --region us-east-1)
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          echo "Found instance: $INSTANCE_ID"
+
+      - name: Stop EC2 Instance
+        run: |
+          if [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "None" ]; then
+            aws ec2 stop-instances --instance-ids "$INSTANCE_ID" --region us-east-1
+            echo "Stop command sent for instance $INSTANCE_ID."
+          else
+            echo "No running instance found for runner $RUNNER_NAME. It may already be stopped."
+          fi
