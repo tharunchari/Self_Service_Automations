@@ -71,7 +71,7 @@ class RepositoryMigration:
                 .format(branch.name)
             )
 
-            self.do_push_with_retries(ref=branch_refspec)e)
+            self.do_push_with_retries(ref=branch_refspec)
 
         # push all tags
         print("Pushing tags")
