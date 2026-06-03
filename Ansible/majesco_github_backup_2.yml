@@ -151,4 +151,3 @@
         label: "{{ item.org }}_{{ item.repo }}"
       register: push_results
       ignore_errors: yes
-      no_log: true
