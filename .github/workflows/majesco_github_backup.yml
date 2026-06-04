@@ -16,6 +16,7 @@ jobs:
     needs: start-runner
     name: Run Ansible Playbook
     runs-on: Majesco_Github_Backup_Runner_2
+    timeout-minutes: 1440  # 1 day (maximum 5 days for self-hosted runners)
  
     steps:
       - name: Checkout this repo
