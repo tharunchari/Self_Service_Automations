@@ -158,28 +158,26 @@
     ###################################################################
     # INCREMENTAL PUSH
     ###################################################################
-
-    - name: Push repositories incrementally
+    - name: Push repositories incrementally with mirror fallback
       shell: |
-        set -e
-
+        set -o pipefail
         REPO_PATH="{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git"
-
         cp -f "{{ incremental_script_src }}" \
               "$REPO_PATH/incremental-repo-migration_new.py"
-
         cd "$REPO_PATH"
-
         git remote remove codecommit 2>/dev/null || true
-
         git remote add codecommit \
           "https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item.org }}_{{ item.repo }}"
-
-        python incremental-repo-migration_new.py
-
-        git remote remove codecommit
+        echo "Starting incremental migration..."
+        if python incremental-repo-migration_new.py; then
+            echo "Incremental migration successful"
+        else
+            echo "Incremental migration failed. Falling back to mirror push..."
+            git push --mirror codecommit
+            echo "Mirror push completed"
+        fi
+        git remote remove codecommit 2>/dev/null || true
       loop: "{{ valid_repos }}"
       loop_control:
         label: "{{ item.org }}_{{ item.repo }}"
       register: push_results
-      ignore_errors: yes
