@@ -33,7 +33,7 @@
     excluded_orgs:
       - Majesco-UWB
       - Majesco-PNC
-      - Majesco-PNC
+      - Majesco-LNAH
 
   tasks:
 
