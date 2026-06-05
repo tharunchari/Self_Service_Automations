@@ -1,0 +1,91 @@
+---
+# Run with:
+#
+# sudo ansible-playbook github_backup.yml -i inventory \
+#   -e "github_username=github-bamboo_vitech \
+#       github_password=<PAT> \
+#       codecommit_username=<AWS_USER> \
+#       codecommit_password=<AWS_PASS> \
+#       dry_run=false"
+#
+# DRY RUN:
+#
+# sudo ansible-playbook github_backup.yml -i inventory \
+#   -e "dry_run=true"
+
+- name: Incremental GitHub -> CodeCommit Migration
+  hosts: Internal_Server
+  gather_facts: yes
+
+  vars:
+    region: "us-west-2"
+
+    base_dir: "/u02/github_to_codecommit"
+
+    discovery_script: "/u02/github_org_repos.sh"
+    discovery_script_src: "../shell_scripts/github_org_repos.sh"
+
+    incremental_script_src: "../PYTHON_Script/incremental-repo-migration_new.py"
+
+    log_dir: "/u02/github_to_codecommit/logs"
+
+    dry_run: false
+
+  tasks:
+
+    ###################################################################
+    # START
+    ###################################################################
+
+    - name: Print start time
+      shell: date
+      register: start_time
+      changed_when: false
+
+    - debug:
+        msg: "Migration started at {{ start_time.stdout }}"
+
+    ###################################################################
+    # DISCOVERY
+    ###################################################################
+
+    - name: Ensure base directory exists
+      file:
+        path: "{{ base_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Deploy discovery script
+      copy:
+        src: "{{ discovery_script_src }}"
+        dest: "{{ discovery_script }}"
+        mode: "0755"
+
+    - name: Run GitHub discovery
+      shell: "{{ discovery_script }}"
+      environment:
+        GITHUB_TOKEN: "{{ github_password }}"
+      register: discovery_output
+      changed_when: false
+
+    - name: Parse discovery output
+      set_fact:
+        repo_data: "{{ discovery_output.stdout | from_json }}"
+
+    ###################################################################
+    # REMOVE MAJESCO-UWB
+    ###################################################################
+
+    - name: Remove Majesco-UWB organization
+      set_fact:
+        repo_data:
+          orgs: "{{ repo_data.orgs | reject('equalto', 'Majesco-UWB') | list }}"
+          repos: "{{ repo_data.repos | rejectattr('org', 'equalto', 'Majesco-UWB') | list }}"
+
+    - name: Display organizations
+      debug:
+        msg: "{{ repo_data.orgs }}"
+
+    - name: Display repository count
+      debug:
+        msg: "Repositories to process: {{ repo_data.repos }}"
