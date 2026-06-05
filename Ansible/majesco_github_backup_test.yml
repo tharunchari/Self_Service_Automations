@@ -32,8 +32,14 @@
     dry_run: false
     excluded_orgs:
       - Majesco-UWB
-      - Majesco-PNC
+      - Majesco-Exaxe
+      - Majesco-Products
       - Majesco-LNAH
+      - Majesco-PNC
+      - Majesco-tools-uwb
+      - Majesco-TechService
+      - Majesco-Air
+      - Majesco-NYL
 
   tasks:
 
@@ -92,4 +98,88 @@
 
     - name: Display repository count
       debug:
-        msg: "Repositories to process: {{ repo_data.repos }}"
+        msg: "Repositories to process: {{ repo_data.repos | length }}"
+
+    ###################################################################
+    # DRY RUN
+    ###################################################################
+
+    - name: Dry run stop
+      meta: end_play
+      when: dry_run | bool
+
+    ###################################################################
+    # UPDATE LOCAL MIRRORS
+    ###################################################################
+
+    - name: Update existing local mirrors
+      shell: |
+        set -e
+
+        REPO_PATH="{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git"
+
+        if [ ! -d "$REPO_PATH" ]; then
+          echo "Repository missing: $REPO_PATH"
+          exit 1
+        fi
+
+        git -C "$REPO_PATH" remote update --prune
+      loop: "{{ repo_data.repos }}"
+      loop_control:
+        label: "{{ item.org }}/{{ item.repo }}"
+      register: update_results
+      ignore_errors: yes
+
+    ###################################################################
+    # VERIFY CODECOMMIT EXISTS
+    ###################################################################
+
+    - name: Verify CodeCommit repository exists
+      shell: >
+        aws codecommit get-repository
+        --repository-name "{{ item.org }}_{{ item.repo }}"
+        --region {{ region }}
+      loop: "{{ repo_data.repos }}"
+      loop_control:
+        label: "{{ item.org }}_{{ item.repo }}"
+      register: codecommit_check
+      ignore_errors: yes
+
+    - name: Build valid repository list
+      set_fact:
+        valid_repos: "{{ valid_repos | default([]) + [item.item] }}"
+      loop: "{{ codecommit_check.results }}"
+      when: item.rc == 0
+
+    - name: Display valid repository count
+      debug:
+        msg: "Valid CodeCommit repositories: {{ valid_repos | length }}"
+
+    ###################################################################
+    # INCREMENTAL PUSH
+    ###################################################################
+
+    - name: Push repositories incrementally
+      shell: |
+        set -e
+
+        REPO_PATH="{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git"
+
+        cp -f "{{ incremental_script_src }}" \
+              "$REPO_PATH/incremental-repo-migration_new.py"
+
+        cd "$REPO_PATH"
+
+        git remote remove codecommit 2>/dev/null || true
+
+        git remote add codecommit \
+          "https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item.org }}_{{ item.repo }}"
+
+        python incremental-repo-migration_new.py
+
+        git remote remove codecommit
+      loop: "{{ valid_repos }}"
+      loop_control:
+        label: "{{ item.org }}_{{ item.repo }}"
+      register: push_results
+      ignore_errors: yes
