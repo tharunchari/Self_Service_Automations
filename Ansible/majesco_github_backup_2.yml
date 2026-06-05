@@ -30,6 +30,19 @@
     log_dir: "/u02/github_to_codecommit/logs"
 
     dry_run: false
+    excluded_orgs:
+      - Majesco-UWB
+      - Majesco-Exaxe
+      - Majesco-Products
+      - Majesco-CoreConnect
+      - Majesco-GCO
+      - Majesco-tools-uwb
+      - Majesco-TechService
+      - Majesco-ClaimVantage
+      - Majesco-LossControl
+      - Majesco-EnterpriseRating
+      - Majesco-Air
+      - Majesco-NYL
 
   tasks:
 
@@ -76,11 +89,11 @@
     # REMOVE MAJESCO-UWB
     ###################################################################
 
-    - name: Remove Majesco-UWB organization
+    - name: Remove excluded organizations
       set_fact:
         repo_data:
-          orgs: "{{ repo_data.orgs | reject('equalto', 'Majesco-UWB') | list }}"
-          repos: "{{ repo_data.repos | rejectattr('org', 'equalto', 'Majesco-UWB') | list }}"
+          orgs: "{{ repo_data.orgs | difference(excluded_orgs) }}"
+          repos: "{{ repo_data.repos | rejectattr('org', 'in', excluded_orgs) | list }}"
 
     - name: Display organizations
       debug:
