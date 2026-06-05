@@ -1,0 +1,35 @@
+name: Mirror Majesco GitHub Repositories to AWS CodeCommit Test
+ 
+on:
+  workflow_dispatch:
+#  schedule:
+#    - cron: '0 0/3 * * 1-5'
+ 
+jobs:
+  start-runner:
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    with:
+      runner_name: "Majesco_Github_Backup_Runner"
+    secrets: inherit
+
+  Majesco_GitHub_Backup:
+    needs: start-runner
+    name: Run Ansible Playbook
+    runs-on: Majesco_Github_Backup_Runner_2
+    timeout-minutes: 7200  # 5 days (maximum 5 days for self-hosted runners)
+ 
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+ 
+      - name: Run Ansible Playbook
+        run: |
+          sudo ansible-playbook Ansible/majesco_github_backup_test.yml -i Ansible/inventory --forks 1 -e "github_username=OAadmin_majesco github_password=${{ secrets.MAJESCO_CLASSIC_PAT }} codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }} dry_run=false"
+
+  stop-runner:
+    needs: Majesco_GitHub_Backup
+    if: always()  # Ensures this job runs even if execute-job fails
+    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    with:
+      runner_name: "Majesco_Github_Backup_Runner"
+    secrets: inherit
