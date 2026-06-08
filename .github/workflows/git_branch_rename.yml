@@ -14,7 +14,7 @@ on:
         
 jobs:
   Check-Repository-type_And_Branch-Name:
-    runs-on: ubuntu-latest
+    runs-on: arc-codeql-runners
     steps:
       - name: Check if its a default branch
         run: |
@@ -24,7 +24,7 @@ jobs:
           fi
           
   Check-Branch-Existence:
-    runs-on: ubuntu-latest
+    runs-on: arc-codeql-runners
     permissions:
       id-token: write
       contents: read
@@ -42,7 +42,7 @@ jobs:
         fi
         
   Renaming-Git-Branch:
-    runs-on: ubuntu-latest
+    runs-on: arc-codeql-runners
     permissions:
       id-token: write
       contents: write
