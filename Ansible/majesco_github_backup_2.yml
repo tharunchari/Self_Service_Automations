@@ -112,6 +112,28 @@
       when: dry_run | bool
 
     ###################################################################
+    # UPDATE LOCAL MIRRORS
+    ###################################################################
+
+    - name: Update existing local mirrors
+      shell: |
+        set -e
+
+        REPO_PATH="{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git"
+
+        if [ ! -d "$REPO_PATH" ]; then
+          echo "Repository missing: $REPO_PATH"
+          exit 1
+        fi
+
+        git -C "$REPO_PATH" remote update --prune
+      loop: "{{ repo_data.repos }}"
+      loop_control:
+        label: "{{ item.org }}/{{ item.repo }}"
+      register: update_results
+      ignore_errors: yes
+
+    ###################################################################
     # VERIFY CODECOMMIT EXISTS
     ###################################################################
 
