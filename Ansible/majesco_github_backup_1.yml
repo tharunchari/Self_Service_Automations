@@ -30,7 +30,7 @@
     sns_region:         "us-east-1"
     dry_run:            false
     reset_state:        false
-    excluded_orgs:      "Majesco-Products,Majesco-LNAH,Majesco-PNC,Majesco-CoreConnect,Majesco-GCO,Majesco-tools-uwb,Majesco-TechService,Majesco-ClaimVantage,Majesco-LossControl,Majesco-EnterpriseRating,Majesco-Air,Majesco-NYL"  # Override with -e "excluded_orgs='Majesco-UWB,Majesco-Exaxe'"
+    excluded_orgs:      "Majesco-Products,Majesco-LNAH,Majesco-PNC,Majesco-CoreConnect,Majesco-GCO,Majesco-tools-uwb,Majesco-TechService,Majesco-ClaimVantage,Majesco-LossControl,Majesco-EnterpriseRating,Majesco-Air,Majesco-NYL,Majesco-Exaxe"  # Override with -e "excluded_orgs='Majesco-UWB,Majesco-Exaxe'"
 
   tasks:
     - name: Print start time
