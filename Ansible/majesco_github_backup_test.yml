@@ -33,13 +33,6 @@
     excluded_orgs:
       - Majesco-UWB
       - Majesco-Exaxe
-      - Majesco-Products
-      - Majesco-LNAH
-      - Majesco-PNC
-      - Majesco-tools-uwb
-      - Majesco-TechService
-      - Majesco-Air
-      - Majesco-NYL
 
   tasks:
 
