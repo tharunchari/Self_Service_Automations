@@ -1,14 +1,19 @@
 ---
 # Run with:
-# sudo ansible-playbook Ansible/github_backup.yml -i Ansible/inventory \
+# sudo ansible-playbook Ansible/majesco_github_backup_1.yml -i Ansible/inventory \
 #   -e "github_username=OAadmin_majesco \
 #       github_password=${{ secrets.MAJESCO_CLASSIC_PAT }} \
 #       codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} \
 #       codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }} \
+#       excluded_orgs='Majesco-UWB,Majesco-Exaxe' \
 #       dry_run=false"
 #
 # Dry run (discovery + report, no clone/create/push):
 #   -e "dry_run=true"
+#
+# EXCLUDED_ORGS: Comma-separated list of org names to exclude (e.g., "Majesco-UWB,Majesco-Exaxe")
+#   - Case-insensitive matching
+#   - Optional parameter; leave empty or unset to process all orgs
 
 - name: GitHub → CodeCommit backup
   hosts: Internal_Server
@@ -25,6 +30,7 @@
     sns_region:         "us-east-1"
     dry_run:            false
     reset_state:        false
+    excluded_orgs:      "Majesco-Products,Majesco-LNAH,Majesco-PNC,Majesco-CoreConnect,Majesco-GCO,Majesco-tools-uwb,Majesco-TechService,Majesco-ClaimVantage,Majesco-LossControl,Majesco-EnterpriseRating,Majesco-Air,Majesco-NYL"  # Override with -e "excluded_orgs='Majesco-UWB,Majesco-Exaxe'"
 
   tasks:
     - name: Print start time
@@ -33,7 +39,7 @@
       changed_when: false
 
     - debug:
-        msg: "Started at {{ date_start.stdout }} | dry_run={{ dry_run }}"
+        msg: "Started at {{ date_start.stdout }} | dry_run={{ dry_run }} | excluded_orgs={{ excluded_orgs }}"
 
     - name: Ensure base and log directories exist
       file:
@@ -74,6 +80,7 @@
         BASE_DIR:            "{{ base_dir }}"
         LOG_DIR:             "{{ log_dir }}"
         INCREMENTAL_SCRIPT:  "{{ incremental_dest }}"
+        EXCLUDED_ORGS:       "{{ excluded_orgs }}"
       register: backup_result
       async:  43200   # 12-hour hard ceiling — kills if truly hung
       poll:   30      # check every 30s and stream stdout live
