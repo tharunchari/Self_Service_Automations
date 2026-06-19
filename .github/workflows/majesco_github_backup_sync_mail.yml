@@ -61,5 +61,5 @@ jobs:
           aws-region: us-east-1
 
       - name: Run GitHub <-> CodeCommit sync check
-        run: python3 PYTHON_Script/github_codecommit_sync_check.py
+        run: python3 PYTHON_Script/majesco_github_backup_sync_mail.py
         
