@@ -1,33 +1,86 @@
 ---
-# Run with:
-# sudo ansible-playbook Ansible/github_backup.yml -i Ansible/inventory \
-#   -e "github_username=github-bamboo_vitech github_password=${{ secrets.CLASSIC_PAT }} \
-#       codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} \
-#       codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }} \
-#       dry_run=false"
+# ============================================================================
+#  GitHub (ALL orgs discovered via PAT)  ->  AWS CodeCommit  backup / mirror
+# ============================================================================
 #
-# Dry-run mode (discovery + report only, no clone/create/push):
+# Run with:
+#   sudo ansible-playbook Ansible/github_backup_v3.yml -i Ansible/inventory \
+#     -e "github_username=github-bamboo_vitech github_password=${{ secrets.CLASSIC_PAT }} \
+#         codecommit_username=${{ secrets.AWS_CODECOMMIT_USERNAME }} \
+#         codecommit_password=${{ secrets.AWS_CODECOMMIT_PASSWORD }} \
+#         dry_run=false"
+#
+# Dry-run (discovery + report only, no clone/create/push):
 #   -e "... dry_run=true"
 #
-# Prereqs on target host: bash, git, curl, jq, awscli, python
-# PAT scopes required: repo, read:org
+# Prereqs on target host : bash, git, curl, jq, awscli, python
+# PAT scopes required     : repo, read:org
+#
+# ----------------------------------------------------------------------------
+#  Per-repo decision logic (the important part):
+#
+#    Discover -> exclude orgs -> clone/update mirror (org-wise) ->
+#    create CodeCommit repo (ignore "already exists") -> classify:
+#
+#      NEW            create-repository rc == 0                  -> EMPTY  -> incremental
+#      EXISTING+EMPTY exists, but `list-branches` is empty       -> EMPTY  -> incremental
+#      EXISTING+FULL  exists and already has branches            -> mirror only
+#      FAILED         create failed for a real reason            -> skipped + reported
+#
+#    incremental push (python script) runs for EMPTY repos first,
+#    then `git push --mirror` runs for EVERY repo that exists in CodeCommit
+#    to finalise the sync (all branches + tags).
+#
+#  Why emptiness, not create-rc: a repo created on a previous run whose
+#  incremental push failed will report "already exists" forever, so rc-based
+#  classification would skip it permanently. Checking branches fixes that.
+# ----------------------------------------------------------------------------
 
-- name: Backup all GitHub orgs (from PAT) to AWS CodeCommit
+- name: Backup all GitHub orgs (discovered from PAT) to AWS CodeCommit
   hosts: Internal_Server
   gather_facts: yes
+
   vars:
     region: "us-west-2"
-    base_dir: "/u02/github_to_codecommit"
-    log_dir: "/u02/github_to_codecommit/logs"
-    discovery_script: "/u02/github_org_repos.sh"
+
+    base_dir:  "/u02/github_to_codecommit"
+    clone_dir: "/u02/github_to_codecommit/github_clone"   # repos: clone_dir/<org>/<repo>.git
+    log_dir:   "/u02/github_to_codecommit/logs"
+
+    # Discovery script: lists every org + repo reachable by the PAT.
+    # Must print JSON: {"orgs": ["o1", ...], "repos": [{"org":"o1","repo":"r1"}, ...]}
+    discovery_script:     "/u02/github_org_repos.sh"
     discovery_script_src: "../shell_scripts/github_org_repos.sh"
+
+    # Incremental migration python script (AWS-style chunked pusher).
+    # Deployed to an absolute path so the remote shell can always find it.
+    incremental_script:     "/u02/github_to_codecommit/incremental-repo-migration.py"
     incremental_script_src: "../PYTHON_Script/incremental-repo-migration.py"
+
     sns_topic_arn: "arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd"
-    sns_region: "us-east-1"
+    sns_region:    "us-east-1"
+
+    # Masks //user:pass@ before anything is written to the log files.
     cred_mask: '//[^/@]+@'
-    dry_run: false   # Override via -e dry_run=true for a report-only run
+
+    dry_run: false   # override with -e dry_run=true for a report-only run
+
+    excluded_orgs:
+      - Majesco-UWB
+      - Majesco-Exaxe
+
+    # OPTIONAL — preserve the legacy Nextgen / CoreAdmin feature-branch pruning.
+    # Keyed by "<org>_<repo>"; patterns are passed to `git branch | grep`.
+    # Leave empty ({}) to disable pruning entirely.
+    prune_branches: {}
+    #   Vitechsystems_Nextgen:
+    #     - 'source_audit_'
+    #     - 'nextgen_l5_f'
+    #   Vitechsystems_CoreAdmin:
+    #     - 'v310uc_L5_f'
 
   tasks:
+
     # ------------------------------------------------------------------
     # START
     # ------------------------------------------------------------------
@@ -42,12 +95,12 @@
     - name: Dry-run banner
       debug:
         msg: >-
-          DRY-RUN MODE — discovery only. No repos will be cloned, created,
+          DRY-RUN MODE — discovery only. No repos will be cloned, created
           or pushed. Re-run with dry_run=false to execute the full backup.
       when: dry_run | bool
 
     # ------------------------------------------------------------------
-    # DISCOVERY (always runs regardless of dry_run)
+    # DISCOVERY  (always runs, even in dry-run)
     # ------------------------------------------------------------------
     - name: Ensure base directory exists
       file:
@@ -61,14 +114,20 @@
         dest: "{{ discovery_script }}"
         mode: '0755'
 
-    - name: Run discovery (all orgs + repos reachable by PAT)
+    - name: Deploy incremental migration python script
+      copy:
+        src: "{{ incremental_script_src }}"
+        dest: "{{ incremental_script }}"
+        mode: '0755'
+
+    - name: Run discovery (all orgs + repos reachable by the PAT)
       shell: "{{ discovery_script }}"
       environment:
         GITHUB_TOKEN: "{{ github_password }}"
       register: discovery_output
       changed_when: false
-#      no_log: true - intentionally omitted here so failures surface in the runner log.
       become: false
+      # no_log intentionally omitted so discovery failures surface in the runner log.
 
     - name: Parse discovery JSON
       set_fact:
@@ -87,18 +146,44 @@
 
     - name: Show total repository count
       debug:
-        msg: "Total repositories discovered across all orgs: {{ repo_data.repos | length }}"
+        msg: "Total repositories discovered: {{ repo_data.repos | length }}"
 
+    # ------------------------------------------------------------------
+    # EXCLUDE ORGS
+    # ------------------------------------------------------------------
+    - name: Remove excluded organizations
+      set_fact:
+        repo_data:
+          orgs:  "{{ repo_data.orgs  | difference(excluded_orgs) }}"
+          repos: "{{ repo_data.repos | rejectattr('org', 'in', excluded_orgs) | list }}"
+
+    - name: Organizations after exclusion
+      debug:
+        msg: "{{ repo_data.orgs }}"
+
+    - name: Repositories to process
+      debug:
+        msg: "Repositories to process: {{ repo_data.repos | length }}"
+
+    # ------------------------------------------------------------------
+    # DRY-RUN STOP
+    # ------------------------------------------------------------------
     - name: Dry-run complete — stopping here
       meta: end_play
       when: dry_run | bool
 
     # ------------------------------------------------------------------
-    # CLONE / UPDATE  (dry_run=false only beyond this point)
+    # CLONE / UPDATE  (bare mirror, org-wise folder structure)
     # ------------------------------------------------------------------
-    - name: Create a directory per organization
+    - name: Ensure log directory exists
       file:
-        path: "{{ base_dir }}/{{ item }}"
+        path: "{{ log_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Create one directory per organization
+      file:
+        path: "{{ clone_dir }}/{{ item }}"
         state: directory
         mode: '0755'
       loop: "{{ repo_data.orgs }}"
@@ -106,7 +191,7 @@
     - name: Clone / update all repositories (bare mirror)
       shell: |
         set -e
-        cd "{{ base_dir }}/{{ item.org }}"
+        cd "{{ clone_dir }}/{{ item.org }}"
         if [ -d "{{ item.repo }}.git" ]; then
           git -C "{{ item.repo }}.git" remote update --prune
         else
@@ -119,23 +204,43 @@
       no_log: true
       ignore_errors: yes
 
+    # Only operate downstream on repos that actually cloned/updated cleanly.
+    - name: Build list of successfully cloned/updated repos
+      set_fact:
+        cloned_repos: >-
+          {{ git_clone_results.results
+             | selectattr('rc', 'defined')
+             | selectattr('rc', 'equalto', 0)
+             | map(attribute='item') | list }}
+
+    - name: Report clone/update failures (these are skipped downstream)
+      debug:
+        msg: >-
+          Clone/update FAILED for:
+          {{ git_clone_results.results
+             | selectattr('rc', 'defined')
+             | rejectattr('rc', 'equalto', 0)
+             | map(attribute='item')
+             | map(attribute='org') | list }}
+      when: (cloned_repos | length) < (repo_data.repos | length)
+
     # ------------------------------------------------------------------
-    # CODECOMMIT CREATE + CLASSIFY
+    # CREATE CODECOMMIT REPOS + CLASSIFY
     # ------------------------------------------------------------------
     - name: Create CodeCommit repositories (org_repo naming)
       shell: >
         aws codecommit create-repository
         --repository-name "{{ item.org }}_{{ item.repo }}"
         --region {{ region }}
-      loop: "{{ repo_data.repos }}"
+      loop: "{{ cloned_repos }}"
       loop_control:
         label: "{{ item.org }}_{{ item.repo }}"
       register: codecommit_create_results
       ignore_errors: yes
 
-    - name: Identify NEW CodeCommit repositories
+    - name: Identify NEW CodeCommit repositories (create succeeded -> empty)
       set_fact:
-        new_repos: "{{ new_repos | default([]) + [item.item] }}"
+        new_repos:      "{{ new_repos      | default([]) + [item.item] }}"
         new_repo_names: "{{ new_repo_names | default([]) + [item.item.org ~ '_' ~ item.item.repo] }}"
       loop: "{{ codecommit_create_results.results }}"
       loop_control:
@@ -152,9 +257,12 @@
         - item.rc != 0
         - "'RepositoryNameExistsException' in (item.stderr | default(''))"
 
-    - name: Identify FAILED CodeCommit creations (genuine errors)
+    - name: Identify FAILED creations (genuine errors — skipped + reported)
       set_fact:
-        failed_creates: "{{ failed_creates | default([]) + [{'repo': item.item.org ~ '_' ~ item.item.repo, 'stderr': item.stderr | default('')}] }}"
+        failed_creates: >-
+          {{ failed_creates | default([])
+             + [{'repo': item.item.org ~ '_' ~ item.item.repo,
+                 'stderr': item.stderr | default('')}] }}
       loop: "{{ codecommit_create_results.results }}"
       loop_control:
         label: "{{ item.item.org }}_{{ item.item.repo }}"
@@ -162,60 +270,129 @@
         - item.rc != 0
         - "'RepositoryNameExistsException' not in (item.stderr | default(''))"
 
-    - name: Display NEW repositories
-      debug:
-        msg: "New repos ({{ (new_repo_names | default([])) | length }}): {{ new_repo_names | default([]) }}"
+    # ------------------------------------------------------------------
+    # EMPTINESS CHECK  (the fix for the "exists-but-empty" trap)
+    # ------------------------------------------------------------------
+    - name: Check whether EXISTING CodeCommit repos are empty
+      shell: >
+        aws codecommit list-branches
+        --repository-name "{{ item.org }}_{{ item.repo }}"
+        --region {{ region }}
+        --query 'branches' --output text
+      loop: "{{ existing_repos | default([]) }}"
+      loop_control:
+        label: "{{ item.org }}_{{ item.repo }}"
+      register: branch_check
+      changed_when: false
+      ignore_errors: yes
 
-    - name: Display EXISTING repositories count
-      debug:
-        msg: "Existing repos to mirror-push: {{ (existing_repos | default([])) | length }}"
+    - name: Build list of EXISTING-but-EMPTY repos (need incremental push)
+      set_fact:
+        empty_existing_repos: "{{ empty_existing_repos | default([]) + [item.item] }}"
+      loop: "{{ branch_check.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.org }}_{{ item.item.repo }}"
+      when:
+        - item.rc == 0
+        - (item.stdout | default('') | trim) in ['', 'None']
 
-    - name: Warn about FAILED creations
+    # Targets for incremental push = brand-new repos + existing-empty repos.
+    - name: Build incremental push target list
+      set_fact:
+        incremental_targets: "{{ (new_repos | default([])) + (empty_existing_repos | default([])) }}"
+
+    - name: Display classification summary
       debug:
-        msg: "Failed creations (genuine errors): {{ failed_creates | default([]) }}"
-      when: (failed_creates | default([])) | length > 0
+        msg:
+          - "NEW repos          : {{ (new_repo_names | default([])) | length }} -> {{ new_repo_names | default([]) }}"
+          - "EXISTING repos     : {{ (existing_repos | default([])) | length }}"
+          - "  of which EMPTY   : {{ (empty_existing_repos | default([])) | length }}"
+          - "INCREMENTAL targets: {{ (incremental_targets | default([])) | length }}"
+          - "FAILED creations   : {{ failed_creates | default([]) }}"
 
     # ------------------------------------------------------------------
-    # PUSH — NEW repos: incremental | EXISTING repos: mirror
+    # PUSH STEP 1 — INCREMENTAL (empty repos only, via python script)
     # ------------------------------------------------------------------
-    - name: Push NEW repositories to CodeCommit (incremental migration)
+    - name: Incremental push for EMPTY repos (new + existing-empty)
       shell: |
         set -e
-        cp -f "{{ incremental_script_src }}" "{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git/incremental-repo-migration.py"
-        cd "{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git"
+        cd "{{ clone_dir }}/{{ item.org }}/{{ item.repo }}.git"
+        # always start from a clean remote (set -e safe cleanup)
+        git remote remove codecommit 2>/dev/null || true
+        cp -f "{{ incremental_script }}" ./incremental-repo-migration.py
         git remote add codecommit "https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item.org }}_{{ item.repo }}"
         python incremental-repo-migration.py
-        git remote remove codecommit
-      loop: "{{ new_repos | default([]) }}"
+        git remote remove codecommit 2>/dev/null || true
+      loop: "{{ incremental_targets | default([]) }}"
       loop_control:
         label: "{{ item.org }}_{{ item.repo }}"
       register: incremental_push_results
       no_log: true
       ignore_errors: yes
 
-    - name: Push EXISTING repositories to CodeCommit (mirror push)
+    - name: Report repos whose incremental push FAILED
+      debug:
+        msg: >-
+          Incremental push FAILED for:
+          {{ incremental_push_results.results | default([])
+             | selectattr('rc', 'defined')
+             | rejectattr('rc', 'equalto', 0)
+             | map(attribute='item')
+             | map(attribute='repo') | list }}
+      when:
+        - incremental_push_results.results is defined
+        - incremental_push_results.results
+           | selectattr('rc','defined')
+           | rejectattr('rc','equalto',0) | list | length > 0
+
+    # ------------------------------------------------------------------
+    # PUSH STEP 2 — FINAL MIRROR (every repo that exists in CodeCommit)
+    # Empty repos were seeded above; mirror now syncs all branches + tags.
+    # Optional feature-branch pruning is applied inline per prune_branches.
+    # ------------------------------------------------------------------
+    - name: Final mirror push (sync) of ALL repos to CodeCommit
       shell: |
         set -e
-        cd "{{ base_dir }}/{{ item.org }}/{{ item.repo }}.git"
+        cd "{{ clone_dir }}/{{ item.org }}/{{ item.repo }}.git"
         git fetch --prune
+        {% set key = item.org ~ '_' ~ item.repo %}
+        {% if key in prune_branches %}
+        {% for pat in prune_branches[key] %}
+        todel=$(git branch | grep '{{ pat }}' || true); if [ -n "$todel" ]; then git branch -D $todel; fi
+        {% endfor %}
+        {% endif %}
         git push --mirror "https://{{ codecommit_username }}:{{ codecommit_password }}@git-codecommit.{{ region }}.amazonaws.com/v1/repos/{{ item.org }}_{{ item.repo }}"
-      loop: "{{ existing_repos | default([]) }}"
+      loop: "{{ (new_repos | default([])) + (existing_repos | default([])) }}"
       loop_control:
         label: "{{ item.org }}_{{ item.repo }}"
       register: mirror_push_results
       no_log: true
       ignore_errors: yes
 
+    - name: Report repos whose mirror push FAILED
+      debug:
+        msg: >-
+          Mirror push FAILED for:
+          {{ mirror_push_results.results | default([])
+             | selectattr('rc', 'defined')
+             | rejectattr('rc', 'equalto', 0)
+             | map(attribute='item')
+             | map(attribute='repo') | list }}
+      when:
+        - mirror_push_results.results is defined
+        - mirror_push_results.results
+           | selectattr('rc','defined')
+           | rejectattr('rc','equalto',0) | list | length > 0
+
     # ------------------------------------------------------------------
-    # SNS NOTIFICATION
+    # SNS NOTIFICATION  (only when new repos were added)
     # ------------------------------------------------------------------
     - name: Send SNS notification for newly added repositories
       vars:
         sns_message: |-
           New repositories have been added to AWS CodeCommit from GitHub:
 
-          {{ new_repo_names | join('
-          ') }}
+          {{ new_repo_names | join('\n') }}
 
           Total new repositories: {{ new_repo_names | length }}
 
@@ -223,83 +400,37 @@
 
           Thanks,
           ITGS V3locity DevOps
-      shell: |
-        aws sns publish \
-          --topic-arn "{{ sns_topic_arn }}" \
-          --region "{{ sns_region }}" \
-          --subject "New Repositories Added To AWS CodeCommit" \
-          --message {{ sns_message | quote }}
+      shell: >
+        aws sns publish
+        --topic-arn "{{ sns_topic_arn }}"
+        --region "{{ sns_region }}"
+        --subject "New Repositories Added To AWS CodeCommit"
+        --message {{ sns_message | quote }}
       when: (new_repo_names | default([])) | length > 0
       ignore_errors: yes
 
     # ------------------------------------------------------------------
-    # LOGGING — sanitized (credentials masked, no raw cmd dumps)
+    # LOGS  (credentials masked before writing)
     # ------------------------------------------------------------------
-    - name: Build sanitized clone log
-      set_fact:
-        clone_log: "{{ clone_log | default([]) + [{'org': item.item.org, 'repo': item.item.repo, 'rc': item.rc | default('skipped'), 'stdout': (item.stdout | default('')) | regex_replace(cred_mask, '//***@'), 'stderr': (item.stderr | default('')) | regex_replace(cred_mask, '//***@')}] }}"
-      loop: "{{ git_clone_results.results | default([]) }}"
-      loop_control:
-        label: "{{ item.item.org }}/{{ item.item.repo }}"
-      no_log: true
-
-    - name: Build CodeCommit create log
-      set_fact:
-        create_log: "{{ create_log | default([]) + [{'repo': item.item.org ~ '_' ~ item.item.repo, 'rc': item.rc | default('skipped'), 'stdout': item.stdout | default(''), 'stderr': item.stderr | default('')}] }}"
-      loop: "{{ codecommit_create_results.results | default([]) }}"
-      loop_control:
-        label: "{{ item.item.org }}_{{ item.item.repo }}"
-      no_log: true
-
-    - name: Build incremental push log
-      set_fact:
-        incremental_log: "{{ incremental_log | default([]) + [{'repo': item.item.org ~ '_' ~ item.item.repo, 'rc': item.rc | default('skipped'), 'stdout': (item.stdout | default('')) | regex_replace(cred_mask, '//***@'), 'stderr': (item.stderr | default('')) | regex_replace(cred_mask, '//***@')}] }}"
-      loop: "{{ incremental_push_results.results | default([]) }}"
-      loop_control:
-        label: "{{ item.item.org }}_{{ item.item.repo }}"
-      no_log: true
-
-    - name: Build mirror push log
-      set_fact:
-        mirror_log: "{{ mirror_log | default([]) + [{'repo': item.item.org ~ '_' ~ item.item.repo, 'rc': item.rc | default('skipped'), 'stdout': (item.stdout | default('')) | regex_replace(cred_mask, '//***@'), 'stderr': (item.stderr | default('')) | regex_replace(cred_mask, '//***@')}] }}"
-      loop: "{{ mirror_push_results.results | default([]) }}"
-      loop_control:
-        label: "{{ item.item.org }}_{{ item.item.repo }}"
-      no_log: true
-
-    - name: Reset logs directory
-      file:
-        path: "{{ log_dir }}"
-        state: "{{ item }}"
-        mode: '0755'
-      loop:
-        - absent
-        - directory
-
-    - name: Save clone results log
+    - name: Save git clone/update log
       copy:
-        dest: "{{ log_dir }}/git_clone_results.json"
-        content: "{{ clone_log | default([]) | to_nice_json }}"
+        content: "{{ git_clone_results | to_nice_json | regex_replace(cred_mask, '//***@') }}"
+        dest: "{{ log_dir }}/git_clone_results.log"
 
-    - name: Save CodeCommit create results log
+    - name: Save CodeCommit create log
       copy:
-        dest: "{{ log_dir }}/codecommit_create_results.json"
-        content: "{{ create_log | default([]) | to_nice_json }}"
+        content: "{{ codecommit_create_results | to_nice_json | regex_replace(cred_mask, '//***@') }}"
+        dest: "{{ log_dir }}/codecommit_create_results.log"
 
-    - name: Save incremental (new repo) push log
+    - name: Save incremental push log
       copy:
-        dest: "{{ log_dir }}/incremental_push_results.json"
-        content: "{{ incremental_log | default([]) | to_nice_json }}"
+        content: "{{ incremental_push_results | default({}) | to_nice_json | regex_replace(cred_mask, '//***@') }}"
+        dest: "{{ log_dir }}/incremental_push_results.log"
 
-    - name: Save mirror (existing repo) push log
+    - name: Save mirror push log
       copy:
-        dest: "{{ log_dir }}/mirror_push_results.json"
-        content: "{{ mirror_log | default([]) | to_nice_json }}"
-
-    - name: Save summary log
-      copy:
-        dest: "{{ log_dir }}/summary.json"
-        content: "{{ {'run_mode': 'full', 'organizations': repo_data.orgs, 'total_repos': repo_data.repos | length, 'new_repos': new_repo_names | default([]), 'existing_repos_count': (existing_repos | default([])) | length, 'failed_creates': failed_creates | default([])} | to_nice_json }}"
+        content: "{{ mirror_push_results | default({}) | to_nice_json | regex_replace(cred_mask, '//***@') }}"
+        dest: "{{ log_dir }}/mirror_push_results.log"
 
     # ------------------------------------------------------------------
     # END
