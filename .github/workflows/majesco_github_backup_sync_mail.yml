@@ -1,0 +1,65 @@
+name: Check Sync between Majesco GitHub And AWS CodeCommit Repositories
+
+on:
+  workflow_dispatch:
+    inputs:
+
+      dry_run:
+        description: 'Dry run (print report, do not email)'
+        required: false
+        default: 'false'
+#  schedule:
+    # Daily at 02:00 UTC
+#    - cron: '0 2 * * *'
+
+jobs:
+  GitHub_CodeCommit_Sync:
+    #runs-on: ubuntu-24.04
+    runs-on: arc-codeql-runners
+
+    env:
+      # --- GitHub tokens (add more as GITHUB_TOKEN_3, _4, ... if needed) ---
+      GITHUB_TOKEN_1: ${{ secrets.MAJESCO_CLASSIC_PAT }}
+#      GITHUB_TOKEN_2: ${{ secrets.INFRA_FINE_GRAINED_PAT }}
+
+      # --- Sync-check options ---
+      # Orgs are auto-discovered from the tokens above.
+      # To pin them instead, set GITHUB_ORGS: "vitechsystems,vitechinfra"
+      EXCLUDED_ORGS: 'Majesco-UWB,Majesco-Exaxe'
+#      EXCLUDED_ORGS: ${{ github.event.inputs.excluded_orgs || '' }}
+      # Repos to skip: "repo" (any org) or "org/repo" (one org)
+      EXCLUDED_REPOS: 'hello-world,github-runner-testing'
+      SKIP_ARCHIVED: 'false'
+
+      # --- AWS / SES ---
+      AWS_REGION_CODECOMMIT: 'us-west-2'
+      AWS_REGION_SES: 'us-east-1'
+      SES_FROM: 'do-not-reply@vitechinc.com'
+      SES_TO: 'v3atlassianops@vitechinc.com'
+
+      # --- Behaviour ---
+      ALWAYS_SEND: 'false'   # 'true' -> email even when everything is in sync
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install boto3 requests
+
+      - name: Set up AWS CLI
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Run GitHub <-> CodeCommit sync check
+        run: python3 PYTHON_Script/github_codecommit_sync_check.py
+        
