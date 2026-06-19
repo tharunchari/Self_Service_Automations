@@ -298,7 +298,7 @@ def build_html_body(per_org_rows, summary):
     </style>
     """
     header = (
-        "<h2>GitHub vs CodeCommit Sync Report</h2>"
+        "<h2>Majesco GitHub vs CodeCommit Sync Report</h2>"
         f"<p>Generated: {time.strftime('%Y-%m-%d %H:%M:%S %Z')}</p>"
     )
 
@@ -414,10 +414,10 @@ def main():
 
     html_body = build_html_body(per_org_rows, summary)
     subject = (
-        f"GitHub Backup: {mismatch_count} sync mismatch(es) across "
+        f"Majesco GitHub Backup: {mismatch_count} sync mismatch(es) across "
         f"{len(org_sessions)} org(s)"
         if mismatch_count else
-        "GitHub Backup: All repositories in sync"
+        "Majesco GitHub Backup: All repositories in sync"
     )
 
     if DRY_RUN:
