@@ -28,7 +28,7 @@ jobs:
       EXCLUDED_ORGS: 'Majesco-UWB,Majesco-Exaxe'
 #      EXCLUDED_ORGS: ${{ github.event.inputs.excluded_orgs || '' }}
       # Repos to skip: "repo" (any org) or "org/repo" (one org)
-      EXCLUDED_REPOS: 'hello-world,github-runner-testing'
+#      EXCLUDED_REPOS: 'hello-world,github-runner-testing'
       SKIP_ARCHIVED: 'false'
 
       # --- AWS / SES ---
