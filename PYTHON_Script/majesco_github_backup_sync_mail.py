@@ -183,30 +183,47 @@ def get_github_commit_sha(session, org, repo, default_branch):
         return "NoDefaultBranch"
     url = f"{GITHUB_API_BASE}/repos/{org}/{repo}/commits/{default_branch}"
     resp = gh_get(session, url)
+    if resp.status_code == 409:
+        # GitHub returns 409 for an empty repository (no commits)
+        return "EmptyRepo"
     if resp.status_code != 200:
         return f"GitHubError:{resp.status_code}"
     return resp.json().get("sha", "UnknownSHA")
 
 
 # ---------------- CODECOMMIT ----------------
-def get_codecommit_sha(cc_client, cc_repo_name):
-    """(default_branch, commitId) for a CodeCommit repo named <org>_<repo>."""
+def get_codecommit_sha(cc_client, cc_repo_name, branch_name):
+    """Latest commit id of a SPECIFIC branch on a CodeCommit repo.
+
+    We deliberately query the branch by name (the GitHub default branch),
+    NOT CodeCommit's own defaultBranch. A `--mirror` push leaves CodeCommit's
+    default branch pointing at whatever ref landed first, so comparing
+    against it produces false mismatches. Comparing the same branch name on
+    both sides is apples-to-apples.
+
+    Returns (cc_branch_name, commitId_or_status).
+    """
+    if not branch_name:
+        return None, "NoGitHubBranch"
     try:
-        meta = cc_client.get_repository(
-            repositoryName=cc_repo_name
-        ).get("repositoryMetadata", {})
-        default_branch = meta.get("defaultBranch")
-        if not default_branch:
-            return None, "NoDefaultBranch"
-        br = cc_client.get_branch(
-            repositoryName=cc_repo_name, branchName=default_branch
-        )
-        return default_branch, br.get("branch", {}).get("commitId", "UnknownCommitId")
+        # Confirm the repo exists first (gives a clean NotFound status)
+        cc_client.get_repository(repositoryName=cc_repo_name)
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code", "")
         if code == "RepositoryDoesNotExistException":
             return None, "NotFound"
         return None, f"CCError:{code or str(e)}"
+
+    try:
+        br = cc_client.get_branch(
+            repositoryName=cc_repo_name, branchName=branch_name
+        )
+        return branch_name, br.get("branch", {}).get("commitId", "UnknownCommitId")
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "")
+        if code == "BranchDoesNotExistException":
+            return branch_name, "BranchNotFound"
+        return branch_name, f"CCError:{code or str(e)}"
 
 
 # ---------------- COMPARISON ----------------
@@ -233,15 +250,28 @@ def compare_org(session, cc_client, org):
         gh_branch = r["default_branch"]
         gh_sha = get_github_commit_sha(session, org, repo, gh_branch)
         cc_repo_name = f"{org}_{repo}"
-        cc_branch, cc_sha = get_codecommit_sha(cc_client, cc_repo_name)
+        # Compare the SAME branch name on CodeCommit (GitHub's default branch),
+        # not CodeCommit's own defaultBranch.
+        cc_branch, cc_sha = get_codecommit_sha(cc_client, cc_repo_name, gh_branch)
 
+        # Exact match on the same branch -> in sync
         if gh_sha == cc_sha:
-            continue  # in sync -> ignore
+            continue
+
+        # Both sides empty (no commits) -> treat as in sync, ignore
+        if gh_sha == "EmptyRepo" and cc_sha in ("BranchNotFound", "NotFound"):
+            continue
 
         # Classify the reason for the report
         if cc_sha == "NotFound":
             status = "Missing in CodeCommit"
-        elif str(gh_sha).startswith("GitHubError") or str(cc_sha).startswith("CCError"):
+        elif cc_sha == "BranchNotFound":
+            status = f"Branch '{gh_branch}' not in CodeCommit"
+        elif gh_sha == "EmptyRepo":
+            status = "GitHub repo empty"
+        elif (str(gh_sha).startswith("GitHubError")
+              or str(cc_sha).startswith("CCError")
+              or gh_sha in ("NoDefaultBranch", "UnknownSHA")):
             status = "Lookup error"
         else:
             status = "Commit mismatch"
@@ -267,7 +297,7 @@ def build_org_table(org, rows):
         return html + "<p>No mismatches found &#9989;</p>"
     html += (
         "<table>"
-        "<tr><th>Repository</th><th>Default Branch</th>"
+        "<tr><th>Repository</th><th>Branch Compared</th>"
         "<th>GitHub Commit</th><th>CodeCommit Commit</th><th>Status</th></tr>"
     )
     for repo, branch, gh, cc, status in rows:
@@ -436,4 +466,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
