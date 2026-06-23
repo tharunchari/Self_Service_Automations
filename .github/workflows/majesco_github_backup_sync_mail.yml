@@ -8,9 +8,8 @@ on:
         description: 'Dry run (print report, do not email)'
         required: false
         default: 'false'
-#  schedule:
-    # Daily at 02:00 UTC
-#    - cron: '0 2 * * *'
+  schedule:
+    - cron: '0 2 * * 1-5'
 
 jobs:
   GitHub_CodeCommit_Sync:
