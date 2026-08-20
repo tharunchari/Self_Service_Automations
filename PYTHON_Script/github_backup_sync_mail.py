@@ -20,8 +20,8 @@ from botocore.exceptions import ClientError
 AWS_REGION_CODECOMMIT = "us-west-2"
 AWS_REGION_SES = "us-east-1"
 
-SES_FROM = "do-not-reply@vitechinc.com"
-SES_TO = "v3atlassianops@vitechinc.com"
+SES_FROM = "do-not-reply@majesco.com"
+SES_TO = "ITGSV3locityDevOps@majesco.com"
 
 GITHUB_ORG_1 = "vitechsystems"
 GITHUB_ORG_2 = "vitechinfra"

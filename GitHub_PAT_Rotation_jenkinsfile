@@ -17,8 +17,8 @@ pipeline {
                 script {
                     sh '''
                     #echo "GIT-HUB PAT plan has been initiated, monitor here ${BUILD_URL}" | \
-                    #mailx -r "v3atlassianops@vitechinc.com" -s "GitHub PAT Rotation for Service Account" \
-                    #v3ops@vitechinc.com,SRE-Team@Vitechsg.onmicrosoft.com
+                    #mailx -r "ITGSV3locityDevOps@majesco.com" -s "GitHub PAT Rotation for Service Account" \
+                    #Vitech-v3ops@majesco.com,SRE-Team@Vitechsg.onmicrosoft.com
                     '''
                 }
             }
@@ -455,8 +455,8 @@ pipeline {
                 script {
                     sh '''
                     #echo "GIT-HUB PAT Update completed" | \
-                    #mailx -r "v3atlassianops@vitechinc.com" -s "GitHub PAT Rotation Completed" \
-                    #v3ops@vitechinc.com,SRE-Team@Vitechsg.onmicrosoft.com
+                    #mailx -r "ITGSV3locityDevOps@majesco.com" -s "GitHub PAT Rotation Completed" \
+                    #Vitech-v3ops@majesco.com,SRE-Team@Vitechsg.onmicrosoft.com
                     '''
                 }
             }

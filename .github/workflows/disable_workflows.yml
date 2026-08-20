@@ -1,0 +1,151 @@
+name: Disable GitHub Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      org_name:
+        description: 'Organization name (required)'
+        required: true
+        type: string
+      workflow_file_name:
+        description: 'Workflow file name (e.g., ci.yml) (required)'
+        required: true
+        type: string
+      repo_names:
+        description: 'Repository names comma-separated (optional: if empty, applies to all repos in org)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  disable-workflow:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Validate Inputs
+        run: |
+          if [ -z "${{ inputs.org_name }}" ]; then
+            echo "Error: org_name is required"
+            exit 1
+          fi
+          if [ -z "${{ inputs.workflow_file_name }}" ]; then
+            echo "Error: workflow_file_name is required"
+            exit 1
+          fi
+          echo "✓ Inputs validated"
+
+      - name: Disable Workflow
+        env:
+          PAT_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          ORG_NAME: ${{ inputs.org_name }}
+          WORKFLOW_FILE_NAME: ${{ inputs.workflow_file_name }}
+          REPO_NAMES: ${{ inputs.repo_names }}
+        run: |
+          set -e
+          
+          # Function to disable workflow in a repo
+          disable_workflow() {
+            local repo=$1
+            local api_url="https://api.github.com/repos/$ORG_NAME/$repo/actions/workflows/$WORKFLOW_FILE_NAME/disable"
+            
+            echo "  → Disabling workflow in '$repo'..." >&2
+            
+            response=$(curl -s -w "\n%{http_code}" -X PUT \
+              -H "Authorization: token $PAT_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "$api_url")
+            
+            http_code=$(echo "$response" | tail -n1)
+            
+            if [ "$http_code" = "204" ]; then
+              echo "    ✓ Successfully disabled" >&2
+              return 0
+            else
+              echo "    ✗ Failed (HTTP $http_code)" >&2
+              return 1
+            fi
+          }
+          
+          echo "Starting workflow disable operation..." >&2
+          echo "Organization: $ORG_NAME" >&2
+          echo "Workflow file: $WORKFLOW_FILE_NAME" >&2
+          echo "" >&2
+          
+          # Case 1: If repo_names is empty, get all repos in org
+          if [ -z "$REPO_NAMES" ]; then
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+            echo "CASE 1: Disabling across entire organization" >&2
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+            echo "" >&2
+            echo "  Fetching repositories with pagination (100 per page)..." >&2
+            
+            # Fetch all repos with pagination
+            repos_list=""
+            page=1
+            
+            while true; do
+              api_url="https://api.github.com/orgs/$ORG_NAME/repos?per_page=100&page=$page&type=all"
+              
+              echo "  Fetching page $page..." >&2
+              response=$(curl -s -H "Authorization: token $PAT_TOKEN" -H "Accept: application/vnd.github.v3+json" "$api_url")
+              
+              # Extract repo names using jq
+              page_repos=$(echo "$response" | jq -r '.[].name' 2>/dev/null || echo "")
+              
+              if [ -z "$page_repos" ]; then
+                echo "  No more repos found" >&2
+                break
+              fi
+              
+              repos_list="$repos_list"$'\n'"$page_repos"
+              
+              # Count repos in this page to check if we need to continue
+              repo_count_page=$(echo "$page_repos" | grep -c . || true)
+              if [ "$repo_count_page" -lt 100 ]; then
+                break
+              fi
+              
+              page=$((page + 1))
+            done
+            
+            # Clean up and create array
+            mapfile -t repos < <(echo "$repos_list" | grep -v '^$')
+            repo_count=${#repos[@]}
+            echo "Found $repo_count repositories" >&2
+            echo "" >&2
+          else
+            # Case 2: Parse comma-separated repo names and trim whitespace
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+            echo "CASE 2: Disabling in selected repositories" >&2
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+            echo "" >&2
+            echo "Processing specified repositories..." >&2
+            
+            mapfile -t repos < <(echo "$REPO_NAMES" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+            repo_count=${#repos[@]}
+            echo "Processing $repo_count repositories" >&2
+            echo "" >&2
+          fi
+          
+          # Counter for tracking
+          success=0
+          failed=0
+          
+          # Disable workflow in each repo
+          for repo in "${repos[@]}"; do
+            if [ -n "$repo" ]; then
+              if disable_workflow "$repo"; then
+                ((success++)) || true
+              else
+                ((failed++)) || true
+              fi
+            fi
+          done
+          
+          echo "" >&2
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2
+          echo "Operation Complete!" >&2
+          echo "Total processed: $repo_count" >&2
+          echo "Successful: $success" >&2
+          echo "Failed: $failed" >&2
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >&2

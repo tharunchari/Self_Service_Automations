@@ -22,7 +22,7 @@ on:
 
 jobs:
   update-pom:
-    runs-on: arc-codeql-runners
+    runs-on: majesco-arc-vrunners
     steps:
       - name: Free disk space
         run: |

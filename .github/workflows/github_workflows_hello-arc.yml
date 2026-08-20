@@ -5,7 +5,7 @@ on:
 
 jobs:
   hello:
-    runs-on: arc-codeql-runners 
+    runs-on: majesco-arc-vrunners 
     steps:
       - name: Checkout
         uses: actions/checkout@v4

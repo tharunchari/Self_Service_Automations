@@ -8,7 +8,7 @@ on:
 jobs:
   GitHub_Backup:
     #runs-on: ubuntu-24.04
-    runs-on: arc-codeql-runners
+    runs-on: majesco-arc-vrunners
     
     env:
       GITHUB_TOKEN_1: ${{ secrets.PROD_FINE_GRAINED_PAT }}

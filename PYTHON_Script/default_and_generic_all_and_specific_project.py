@@ -10,8 +10,8 @@ from email.mime.text import MIMEText
 # ---------------------- CONFIGURATION ----------------------
  
 GITHUB_TOKEN = os.environ["CLASSIC_PAT"]
-SENDER = "v3atlassianops@vitechinc.com"
-RECIPIENT = "v3atlassianops@vitechinc.com"
+SENDER = "ITGSV3locityDevOps@majesco.com"
+RECIPIENT = "ITGSV3locityDevOps@majesco.com"
 ORG_NAME = "vitechsystems"
 MODE = os.environ.get("MODE", "all")
 SPECIFIC_REPO = os.environ.get("REPO", "")

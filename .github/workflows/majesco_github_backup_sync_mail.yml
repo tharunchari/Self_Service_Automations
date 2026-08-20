@@ -14,7 +14,7 @@ on:
 jobs:
   GitHub_CodeCommit_Sync:
     #runs-on: ubuntu-24.04
-    runs-on: arc-codeql-runners
+    runs-on: majesco-arc-vrunners
 
     env:
       # --- GitHub tokens (add more as GITHUB_TOKEN_3, _4, ... if needed) ---
@@ -24,7 +24,7 @@ jobs:
       # --- Sync-check options ---
       # Orgs are auto-discovered from the tokens above.
       # To pin them instead, set GITHUB_ORGS: "vitechsystems,vitechinfra"
-      EXCLUDED_ORGS: 'Majesco-UWB,Majesco-Exaxe'
+      EXCLUDED_ORGS: 'Majesco-Exaxe'
 #      EXCLUDED_ORGS: ${{ github.event.inputs.excluded_orgs || '' }}
       # Repos to skip: "repo" (any org) or "org/repo" (one org)
 #      EXCLUDED_REPOS: 'hello-world,github-runner-testing'

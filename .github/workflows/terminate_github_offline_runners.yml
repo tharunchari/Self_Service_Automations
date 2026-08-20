@@ -9,7 +9,7 @@ on:
 jobs:
   Terminate_Runners:
     #runs-on: ubuntu-latest
-    runs-on: arc-codeql-runners
+    runs-on: majesco-arc-vrunners
     env:
       PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
     strategy:
@@ -27,6 +27,20 @@ jobs:
 
       - name: Install dependencies
         run: pip install boto3 requests python-dateutil
+
+      - name: Install AWS CLI if not present
+        run: |
+          if ! command -v aws &> /dev/null; then
+            echo "AWS CLI not found, installing..."
+            curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -q awscliv2.zip
+            sudo ./aws/install
+            rm -rf awscliv2.zip aws/
+            echo "AWS CLI installed: $(aws --version)"
+          else
+            echo "AWS CLI already present: $(aws --version)"
+          fi
+        
 
       - name: Set up AWS CLI
         uses: aws-actions/configure-aws-credentials@v4

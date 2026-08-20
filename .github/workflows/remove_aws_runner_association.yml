@@ -8,7 +8,7 @@ on:
 
 jobs:
   check_instances:
-    runs-on: ubuntu-latest
+    runs-on: majesco-arc-vrunners
  
     steps:
       - name: Checkout code
@@ -22,10 +22,23 @@ jobs:
       - name: Install dependencies
         run: pip install boto3 requests
 
+      - name: Install AWS CLI if not present
+        run: |
+          if ! command -v aws &> /dev/null; then
+            echo "AWS CLI not found, installing..."
+            curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -q awscliv2.zip
+            sudo ./aws/install
+            rm -rf awscliv2.zip aws/
+            echo "AWS CLI installed: $(aws --version)"
+          else
+            echo "AWS CLI already present: $(aws --version)"
+          fi
+
       - name: Set up AWS CLI
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
-      - run: python3 PYTHON_Script/Pythonrunnerassociation.py
+      - run: python3 PYTHON_Script/remove_aws_runner_association.py

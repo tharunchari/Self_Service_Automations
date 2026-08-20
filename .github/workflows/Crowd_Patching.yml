@@ -123,8 +123,8 @@ jobs:
 
           HTML_BODY=$(jq -Rs . < email_body.html)
           aws ses send-email \
-            --from "v3atlassianops@vitechinc.com" \
-            --destination "ToAddresses=v3atlassianops@vitechinc.com" \
+            --from "ITGSV3locityDevOps@majesco.com" \
+            --destination "ToAddresses=ITGSV3locityDevOps@majesco.com" \
             --message "Subject={Data='$SUBJECT_PREFIX'},Body={Html={Data=$HTML_BODY}}"
 
       - name: Get Auto Scaling Group Instances
@@ -324,8 +324,8 @@ jobs:
               echo "</body></html>" >> email_body.html
               EMAIL_BODY=$(jq -Rs . < email_body.html)
               aws ses send-email \
-                --from "v3atlassianops@vitechinc.com" \
-                --destination "ToAddresses=v3atlassianops@vitechinc.com" \
+                --from "ITGSV3locityDevOps@majesco.com" \
+                --destination "ToAddresses=ITGSV3locityDevOps@majesco.com" \
                 --message "Subject={Data='[${ENVIRONMENT}] crowd Node Successfully Patched - ${INSTANCE_ID} (${INSTANCE_PRIVATE_IP})'},Body={Html={Data=${EMAIL_BODY}}}"
             else
               aws sns publish \
@@ -390,4 +390,4 @@ jobs:
           aws sns publish \
             --topic-arn "$SNS_TOPIC" \
             --subject "Rolling $SUBJECT_PREFIX Completed" \
-            --message "$(printf "$BODY_PREFIX The patching has been completed successfully $URL. Please reach out to v3atlassianops@vitechinc.com for any issues.\\n\\n **Instance IDs:**\\n%s\\n" "$INSTANCE_IDS")"
+            --message "$(printf "$BODY_PREFIX The patching has been completed successfully $URL. Please reach out to ITGSV3locityDevOps@majesco.com for any issues.\\n\\n **Instance IDs:**\\n%s\\n" "$INSTANCE_IDS")"

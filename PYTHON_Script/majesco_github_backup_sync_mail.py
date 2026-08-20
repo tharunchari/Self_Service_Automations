@@ -30,8 +30,8 @@ Configuration (environment variables)
 
   AWS_REGION_CODECOMMIT   default us-west-2
   AWS_REGION_SES          default us-east-1
-  SES_FROM                default do-not-reply@vitechinc.com
-  SES_TO                  default v3atlassianops@vitechinc.com
+  SES_FROM                default do-not-reply@majesco.com
+  SES_TO                  default ITGSV3locityDevOps@majesco.com
                           (comma-separated for multiple recipients)
 
   ALWAYS_SEND         "true" to email even when everything is in sync
@@ -69,8 +69,8 @@ def env_list(name):
 AWS_REGION_CODECOMMIT = os.getenv("AWS_REGION_CODECOMMIT", "us-west-2")
 AWS_REGION_SES = os.getenv("AWS_REGION_SES", "us-east-1")
 
-SES_FROM = os.getenv("SES_FROM", "do-not-reply@vitechinc.com")
-SES_TO = env_list("SES_TO") or ["v3atlassianops@vitechinc.com"]
+SES_FROM = os.getenv("SES_FROM", "do-not-reply@majesco.com")
+SES_TO = env_list("SES_TO") or ["ITGSV3locityDevOps@majesco.com"]
 
 EXPLICIT_ORGS = env_list("GITHUB_ORGS")
 EXCLUDED_ORGS = set(env_list("EXCLUDED_ORGS"))

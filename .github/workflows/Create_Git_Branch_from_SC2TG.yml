@@ -37,7 +37,8 @@ on:
 
 jobs:
   create-branch-and-update-pom:
-    runs-on: ubuntu-latest
+    #runs-on: ubuntu-latest
+    runs-on: majesco-arc-vrunners
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -7,7 +7,7 @@ on:
 
 jobs:
   rerun-connection-error-jobs:
-    runs-on: arc-codeql-runners
+    runs-on: majesco-arc-vrunners
     steps:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq curl

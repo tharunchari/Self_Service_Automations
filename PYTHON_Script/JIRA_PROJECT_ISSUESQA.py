@@ -18,8 +18,8 @@ JIRA_PROJECT = os.environ.get("JIRA_PROJECT", "").strip()
 DURATION_MONTHS = os.environ.get("DURATION_MONTHS", "").strip()
 JIRA_JQL = os.environ.get("JIRA_JQL", "").strip()
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
-SES_SENDER = "v3atlassianops@vitechinc.com"
-SES_RECIPIENT = "v3atlassianops@vitechinc.com"
+SES_SENDER = "ITGSV3locityDevOps@majesco.com"
+SES_RECIPIENT = "ITGSV3locityDevOps@majesco.com"
 
 # -------------------- Jira Authentication --------------------
 jira = JIRA(server=JIRA_URL, basic_auth=(JIRA_USERNAME, JIRA_PASSWORD))

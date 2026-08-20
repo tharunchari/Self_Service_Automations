@@ -1,0 +1,61 @@
+name: Claude Enterprise - Daily Spend Limits Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (print report, do not email)'
+        required: false
+        default: 'false'
+      threshold:
+        description: 'Threshold percentage to flag (default 100)'
+        required: false
+        default: '100'
+  schedule:
+    # Runs every weekday at 9 AM EST (14:00 UTC)
+    # Monday-Friday, 9 AM EST = 2 PM UTC
+    - cron: '0 14 * * 1-5'
+
+jobs:
+  claude_spend_limits:
+    runs-on: ubuntu-latest
+    
+    env:
+      # AWS Configuration
+      AWS_REGION: 'us-east-1'
+      
+      # SNS Configuration
+      SNS_TOPIC_ARN: arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd
+
+      # SES Configuration (for HTML email rendering)
+      EMAIL_FROM: no-reply@majesco.com
+      EMAIL_TO: ITGSV3locityDevOps@majesco.com
+
+      # Claude API Configuration
+      ANTHROPIC_ADMIN_KEY: ${{ secrets.CLAUDE_ADMIN_API_KEY }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Python dependencies
+        run: |
+          pip install boto3 requests
+      
+      - name: Set up AWS CLI
+        uses: vitechsystems/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+      
+      - name: Run Claude Spend Limits Check
+        run: |
+          python3 PYTHON_Script/claude_spend_alert.py \
+            --threshold ${{ github.event.inputs.threshold || '100' }} \
+            --dry-run ${{ github.event.inputs.dry_run || 'false' }}

@@ -20,7 +20,8 @@ on:
         
 jobs:
   Check-Repository-type:
-    runs-on: ubuntu-latest
+    #runs-on: ubuntu-latest
+    runs-on: majesco-arc-vrunners
     steps:
       - name: Check if Repository type is valid
         run: |
@@ -30,7 +31,7 @@ jobs:
           fi
  
   Check-Repository-Existence:
-    runs-on: ubuntu-latest
+    runs-on: majesco-arc-vrunners
     permissions:
       id-token: write
       contents: read
@@ -48,7 +49,7 @@ jobs:
         fi
  
   Creating-Repository:
-    runs-on: ubuntu-latest
+    runs-on: majesco-arc-vrunners
     permissions:
       id-token: write
       contents: read

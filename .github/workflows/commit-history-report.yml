@@ -133,7 +133,7 @@ jobs:
           EMAILS="${{ github.event.inputs.email }}"
           REPORT_BODY=$(awk '{printf "%s", $0}' commit_report.html | sed 's/"/\\"/g')
           aws ses send-email \
-            --from "v3atlassianops@vitechinc.com" \
+            --from "ITGSV3locityDevOps@majesco.com" \
             --destination "ToAddresses=$(echo $EMAILS | tr -d ' ')" \
             --message "Subject={Data=\"$SUBJECT\"},Body={Html={Data=\"$REPORT_BODY\"}}" \
             --region $AWS_REGION

@@ -168,5 +168,5 @@ jobs:
           aws sns publish \
             --topic-arn ${{ env.SNS_TOPIC }} \
             --subject "Rolling ${{ env.SUBJECT_PREFIX }} Completed" \
-            --message "${{ env.BODY_PREFIX }} The Restarting has been completed successfully, check URL: ${{ env.URL }}. Please reach out v3atlassianops@vitechinc.com for any issues."           
+            --message "${{ env.BODY_PREFIX }} The Restarting has been completed successfully, check URL: ${{ env.URL }}. Please reach out ITGSV3locityDevOps@majesco.com for any issues."           
               

@@ -1,9 +1,9 @@
-name: Mirror Majesco GitHub Repositories to AWS CodeCommit
+name: Mirror Majesco GitHub Majesco-UWB ORG Repositories to AWS CodeCommit
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0/3 * * 1-5'
+    - cron: '50 0/12 * * 1-5'
 
 jobs:
   start-runner:
@@ -35,12 +35,12 @@ jobs:
             --codecommit-username "${{ secrets.AWS_CODECOMMIT_USERNAME }}" \
             --codecommit-password "${{ secrets.AWS_CODECOMMIT_PASSWORD }}" \
             --incremental-script "PYTHON_Script/incremental-repo-migration.py" \
-            --excluded-orgs "Majesco-UWB" \
+            --excluded-orgs "Majesco-Products,Majesco-LNAH,Majesco-PNC,Majesco-CoreConnect,Majesco-GCO,Majesco-tools-uwb,Majesco-TechService,Majesco-ClaimVantage,Majesco-LossControl,Majesco-EnterpriseRating,Majesco-Air,Majesco-NYL,Majesco-Exaxe,Majesco-CopilotBusiness,Majesco-CopilotEnterprise" \
             --workers 12
 
   stop-runner:
     needs: [start-runner, Majesco_GitHub_Backup]
-    if: always() && needs.start-runner.result == 'success'  # Ensures this job runs even if execute-job fails
+    if: always() && needs.start-runner.result == 'success' # Ensures this job runs even if execute-job fails
     uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
       runner_name: "Majesco_Github_Backup_Runner_2"

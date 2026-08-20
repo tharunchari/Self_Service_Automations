@@ -1,0 +1,39 @@
+name: Claude.ai Enterprise Budget Alert
+
+on:
+#  schedule:
+    # Run every day at 9 AM UTC
+    # - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  generate-budget-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas
+      
+      - name: Fetch Claude.ai spend limits
+        id: fetch-spend
+        env:
+          CLAUDE_ADMIN_API_KEY: ${{ secrets.CLAUDE_ADMIN_API_KEY }}
+        run: |
+          python scripts/fetch_claude_ai_spend_debug.py 2>&1 | tee debug_output.log
+      
+      - name: Upload report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: budget-report
+          path: reports/claude_ai_budget_alert_*.csv
+          retention-days: 1
