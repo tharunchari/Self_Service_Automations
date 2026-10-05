@@ -1,0 +1,73 @@
+name: Fetch GitHub Users Email
+
+on:
+  workflow_dispatch:
+    inputs:
+      Enterprise:
+        description: 'Enterprise name'
+        required: true
+        type: choice
+        default: 'majesco-emu'
+        options:
+          - 'majesco-emu'
+          - 'vitech'
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: 'us-east-1'
+      SNS_TOPIC_ARN: 'arn:aws:sns:us-east-1:389180911583:VitechToolsNVAProd'
+      EMAIL_FROM: 'no-reply@majesco.com'
+      EMAIL_TO: 'ITGSV3locityDevOps@majesco.com'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt boto3
+
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Determine PAT and CSV path
+        id: config
+        run: |
+          if [ "${{ github.event.inputs.Enterprise }}" = "majesco-emu" ]; then
+            echo "pat=${{ secrets.MAJESCO_CLASSIC_PAT }}" >> $GITHUB_OUTPUT
+            echo "csv_path=github/github_users_majesco-emu.csv" >> $GITHUB_OUTPUT
+          else
+            echo "pat=${{ secrets.VITECH_CLASSIC_PAT }}" >> $GITHUB_OUTPUT
+            echo "csv_path=github/github_users_vitech.csv" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run report script
+        run: |
+          python PYTHON_Script/github_email_fetcher.py \
+            --input ${{ steps.config.outputs.csv_path }} \
+            --enterprise ${{ github.event.inputs.Enterprise }} \
+            --token ${{ steps.config.outputs.pat }}
+
+      - name: Send email via SNS
+        run: |
+          CSV_FILE=$(ls github_emails_*.csv | head -1)
+          aws sns publish \
+            --topic-arn "${{ env.SNS_TOPIC_ARN }}" \
+            --subject "GitHub Users Email Report - ${{ github.event.inputs.Enterprise }}" \
+            --message "Attached is the GitHub users email report for ${{ github.event.inputs.Enterprise }}" \
+            --message-attributes "email_to={DataType=String,StringValue=${{ env.EMAIL_TO }}}," \
+            --region "${{ env.AWS_REGION }}"
+          
+          echo "✓ Email sent via SNS to ${{ env.EMAIL_TO }}"
+          echo "✓ CSV file: $CSV_FILE"

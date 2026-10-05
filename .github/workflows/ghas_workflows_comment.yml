@@ -1,0 +1,402 @@
+name: Comment Out GHAS Workflows
+
+on:
+  workflow_dispatch:
+    inputs:
+      orgName:
+        description: 'GitHub Organization Name'
+        required: true
+        type: string
+        default: ''
+        
+      useAllRepos:
+        description: 'Process all repos in organization?'
+        required: true
+        type: choice
+        default: 'false'
+        options:
+          - 'true'
+          - 'false'
+          
+      specificRepos:
+        description: 'Specific repos (comma-separated, if useAllRepos=false)'
+        required: false
+        type: string
+        
+      workflowFiles:
+        description: 'Workflow file names (comma-separated)'
+        required: true
+        type: string
+        default: ''
+        
+      workflowPath:
+        description: 'Path to workflow directory'
+        required: true
+        type: string
+        default: '.github/workflows/'
+        
+      branches:
+        description: 'Branch names (empty = all)'
+        required: false
+        type: string
+        
+      commentPullRequest:
+        description: 'Comment out pull_request?'
+        required: true
+        type: choice
+        default: 'true'
+        options:
+          - 'true'
+          - 'false'
+          
+      commentSchedule:
+        description: 'Comment out schedule?'
+        required: true
+        type: choice
+        default: 'true'
+        options:
+          - 'true'
+          - 'false'
+          
+      dryRun:
+        description: 'Dry run (no commits)?'
+        required: true
+        type: choice
+        default: 'false'
+        options:
+          - 'true'
+          - 'false'
+          
+      commitMessage:
+        description: 'Commit message'
+        required: true
+        type: string
+        default: 'GHAS: comment out pull_request and schedule triggers on GHAS workflows'
+
+permissions:
+  contents: write
+
+jobs:
+  process:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Create fixed service
+        run: |
+          cat > service.js << 'EOFSERVICE'
+          const https = require('https');
+
+          class WorkflowCommentService {
+              constructor(token, org) {
+                  this.token = token;
+                  this.org = org;
+                  this.stats = { processed: 0, modified: 0, skipped: 0, failed: 0 };
+              }
+
+              async request(method, path, body = null) {
+                  return new Promise((resolve, reject) => {
+                      const options = {
+                          hostname: 'api.github.com',
+                          path,
+                          method,
+                          headers: {
+                              'Authorization': `token ${this.token}`,
+                              'User-Agent': 'WorkflowCommenter/1.0',
+                          }
+                      };
+                      const req = https.request(options, (res) => {
+                          let data = '';
+                          res.on('data', chunk => data += chunk);
+                          res.on('end', () => {
+                              if (res.statusCode >= 400) {
+                                  reject(new Error(`${res.statusCode}: ${data}`));
+                              } else {
+                                  try {
+                                      resolve(JSON.parse(data));
+                                  } catch (e) {
+                                      resolve(data);
+                                  }
+                              }
+                          });
+                      });
+                      req.on('error', reject);
+                      if (body) req.write(JSON.stringify(body));
+                      req.end();
+                  });
+              }
+
+              async fetchAllRepositories() {
+                  const repos = [];
+                  let page = 1;
+                  while (true) {
+                      try {
+                          const data = await this.request('GET', `/orgs/${this.org}/repos?page=${page}&per_page=100&type=all`);
+                          if (!Array.isArray(data) || data.length === 0) break;
+                          repos.push(...data.map(r => r.name));
+                          if (data.length < 100) break;
+                          page++;
+                      } catch (e) {
+                          console.error(`Error fetching page ${page}:`, e.message);
+                          break;
+                      }
+                  }
+                  return repos;
+              }
+
+              async getBranches(repo) {
+                  try {
+                      const data = await this.request('GET', `/repos/${this.org}/${repo}/branches?per_page=100`);
+                      return Array.isArray(data) ? data.map(b => b.name) : [];
+                  } catch (e) {
+                      return [];
+                  }
+              }
+
+              async getFileContent(repo, filePath, branch) {
+                  try {
+                      const data = await this.request('GET', `/repos/${this.org}/${repo}/contents/${filePath}?ref=${branch}`);
+                      if (typeof data === 'string') return null; // Not JSON = not found
+                      const content = Buffer.from(data.content, 'base64').toString('utf-8');
+                      return { content, sha: data.sha };
+                  } catch (e) {
+                      return null;
+                  }
+              }
+
+              commentOutPatterns(content, options) {
+                  let modified = false;
+                  const lines = content.split('\n');
+                  let inOnSection = false;
+
+                  // FIXED: Better pattern matching for pull_request and schedule
+                  for (let i = 0; i < lines.length; i++) {
+                      const line = lines[i];
+                      const trimmed = line.trim();
+                      const isCommented = trimmed.startsWith('#');
+
+                      // Detect if we're in the 'on:' section
+                      if (trimmed === 'on:' || trimmed.startsWith('on:')) {
+                          inOnSection = true;
+                          continue;
+                      }
+
+                      // Exit on: section if we hit something at root level
+                      if (inOnSection && trimmed && !trimmed.startsWith('#') && !line.startsWith(' ') && !line.startsWith('\t')) {
+                          inOnSection = false;
+                      }
+
+                      if (!inOnSection) continue;
+
+                      // FIXED: Comment pull_request (with or without colon)
+                      if (options.commentPullRequest && !isCommented) {
+                          if (trimmed === 'pull_request' || trimmed === 'pull_request:') {
+                              console.log(`    [PATCH] Commenting: ${trimmed}`);
+                              lines[i] = line.replace(/^(\s*)/, '$1#  ');
+                              modified = true;
+                              continue;
+                          }
+                      }
+
+                      // FIXED: Comment schedule (with or without colon)
+                      if (options.commentSchedule && !isCommented) {
+                          if (trimmed === 'schedule' || trimmed === 'schedule:') {
+                              console.log(`    [PATCH] Commenting: ${trimmed}`);
+                              lines[i] = line.replace(/^(\s*)/, '$1#  ');
+                              modified = true;
+
+                              // Also comment following cron lines
+                              let nextIdx = i + 1;
+                              while (nextIdx < lines.length) {
+                                  const nextLine = lines[nextIdx];
+                                  const nextTrimmed = nextLine.trim();
+
+                                  // Stop if we hit another trigger at same level
+                                  if (nextTrimmed && !nextTrimmed.startsWith('#') && 
+                                      !nextTrimmed.startsWith('-') && 
+                                      !nextTrimmed.startsWith('cron') &&
+                                      !nextLine.match(/^\s{2,}/)) {
+                                      break;
+                                  }
+
+                                  if (nextTrimmed && !nextTrimmed.startsWith('#')) {
+                                      console.log(`    [PATCH] Commenting cron: ${nextTrimmed.substring(0, 40)}...`);
+                                      lines[nextIdx] = nextLine.replace(/^(\s*)/, '$1#  ');
+                                      modified = true;
+                                  }
+                                  nextIdx++;
+                              }
+                              continue;
+                          }
+                      }
+                  }
+
+                  return { content: lines.join('\n'), modified };
+              }
+
+              async updateFileContent(repo, filePath, newContent, sha, branch, message) {
+                  try {
+                      await this.request('PUT', `/repos/${this.org}/${repo}/contents/${filePath}`, {
+                          message,
+                          content: Buffer.from(newContent).toString('base64'),
+                          sha,
+                          branch
+                      });
+                      return { success: true };
+                  } catch (e) {
+                      throw e;
+                  }
+              }
+
+              async processFile(repo, filePath, branch, options, dryRun) {
+                  const fileData = await this.getFileContent(repo, filePath, branch);
+                  if (!fileData) return { status: 'skipped', reason: 'not found' };
+
+                  const result = this.commentOutPatterns(fileData.content, options);
+                  if (!result.modified) return { status: 'skipped', reason: 'no changes' };
+
+                  if (!dryRun) {
+                      try {
+                          await this.updateFileContent(repo, filePath, result.content, fileData.sha, branch, options.message);
+                      } catch (e) {
+                          return { status: 'error', error: e.message };
+                      }
+                  }
+
+                  return { status: 'success', modified: true };
+              }
+
+              async processRepository(repo, options) {
+                  let branches = options.branches && options.branches.length > 0 
+                      ? options.branches 
+                      : await this.getBranches(repo);
+                  
+                  if (branches.length === 0) return { status: 'error', repo };
+
+                  console.log(`\n📦 ${repo}`);
+                  let modified = 0;
+
+                  for (const branch of branches) {
+                      let branchModified = 0;
+                      for (const file of options.files) {
+                          const result = await this.processFile(repo, options.path + file, branch, options, options.dryRun);
+                          if (result.modified) {
+                              modified++;
+                              branchModified++;
+                          }
+                      }
+                      if (branchModified > 0) {
+                          console.log(`  ✓ ${branch}: ${branchModified} file(s) modified`);
+                      }
+                  }
+
+                  this.stats.processed++;
+                  if (modified > 0) this.stats.modified++;
+                  return { status: 'success', repo, modified };
+              }
+
+              async execute(options) {
+                  console.log(`\n🚀 Starting Workflow Commenter`);
+                  console.log(`📋 Configuration:`);
+                  console.log(`  Organization: ${this.org}`);
+                  console.log(`  Dry run: ${options.dryRun}`);
+                  console.log(`  Comment PR: ${options.commentPullRequest}`);
+                  console.log(`  Comment schedule: ${options.commentSchedule}`);
+                  console.log(`  Files: ${options.files.join(', ')}`);
+                  console.log(`\n`);
+
+                  try {
+                      let repos = options.useAll 
+                          ? await this.fetchAllRepositories() 
+                          : options.repos;
+                      
+                      if (repos.length === 0) throw new Error('No repos found');
+
+                      console.log(`Processing ${repos.length} repo(s)...\n`);
+
+                      for (const repo of repos) {
+                          try {
+                              await this.processRepository(repo, options);
+                          } catch (e) {
+                              this.stats.failed++;
+                              console.error(`❌ ${repo}: ${e.message}`);
+                          }
+                      }
+
+                      console.log(`\n📊 Summary:`);
+                      console.log(`  Processed: ${this.stats.processed}`);
+                      console.log(`  Modified: ${this.stats.modified}`);
+                      console.log(`  Failed: ${this.stats.failed}`);
+
+                      return { success: true, stats: this.stats };
+                  } catch (e) {
+                      console.error('❌ Fatal error:', e.message);
+                      return { success: false, error: e.message };
+                  }
+              }
+          }
+
+          module.exports = WorkflowCommentService;
+          EOFSERVICE
+
+      - name: Run workflow commenter
+        env:
+          GITHUB_TOKEN: ${{ secrets.MAJESCO_CALSSIC_PAT }}
+        run: |
+          cat > cli.js << 'EOFCLI'
+          const Service = require('./service');
+
+          const args = {
+              org: process.argv[2],
+              useAll: process.argv[3] === 'true',
+              repos: process.argv[4] ? process.argv[4].split(',').map(r => r.trim()).filter(r => r) : [],
+              files: process.argv[5].split(',').map(f => f.trim()).filter(f => f),
+              path: process.argv[6],
+              branches: process.argv[7] ? process.argv[7].split(',').map(b => b.trim()).filter(b => b) : [],
+              commentPullRequest: process.argv[8] === 'true',
+              commentSchedule: process.argv[9] === 'true',
+              dryRun: process.argv[10] === 'true',
+              message: process.argv[11]
+          };
+
+          console.log('Arguments received:');
+          console.log(`  arg[2] org: ${process.argv[2]}`);
+          console.log(`  arg[3] useAll: ${process.argv[3]}`);
+          console.log(`  arg[8] commentPullRequest: ${process.argv[8]}`);
+          console.log(`  arg[9] commentSchedule: ${process.argv[9]}`);
+          console.log(`  arg[10] dryRun: ${process.argv[10]}`);
+          console.log('');
+
+          const service = new Service(process.env.GITHUB_TOKEN, args.org);
+          service.execute(args).then(result => {
+              process.exit(result.success ? 0 : 1);
+          }).catch(e => {
+              console.error('Fatal:', e);
+              process.exit(1);
+          });
+          EOFCLI
+
+          node cli.js \
+            "${{ inputs.orgName }}" \
+            "${{ inputs.useAllRepos }}" \
+            "${{ inputs.specificRepos }}" \
+            "${{ inputs.workflowFiles }}" \
+            "${{ inputs.workflowPath }}" \
+            "${{ inputs.branches }}" \
+            "${{ inputs.commentPullRequest }}" \
+            "${{ inputs.commentSchedule }}" \
+            "${{ inputs.dryRun }}" \
+            "${{ inputs.commitMessage }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## ✅ Workflow Complete" >> $GITHUB_STEP_SUMMARY
+          echo "**Org:** ${{ inputs.orgName }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Files:** ${{ inputs.workflowFiles }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Comment PR:** ${{ inputs.commentPullRequest }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Comment Schedule:** ${{ inputs.commentSchedule }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry Run:** ${{ inputs.dryRun }}" >> $GITHUB_STEP_SUMMARY

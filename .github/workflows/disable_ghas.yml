@@ -15,7 +15,7 @@ on:
 
 jobs:
   disable-ghas:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     
     steps:
       - name: Validate Inputs
@@ -28,7 +28,7 @@ jobs:
 
       - name: Disable GHAS
         env:
-          PAT_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+          PAT_TOKEN: ${{ secrets.TK_MAJESCO_CALSSIC_PAT }}
           ORG_NAME: ${{ inputs.org_name }}
           REPO_NAMES: ${{ inputs.repo_names }}
         run: |

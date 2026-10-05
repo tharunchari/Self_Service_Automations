@@ -1,0 +1,580 @@
+name: Claude Enterprise - Month-End Revert to Initial Groups
+
+on:
+  workflow_dispatch:
+    inputs:
+      send_mail_to_users:
+        description: 'Send revert email to users (true) or team only (false)?'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      dry_run:
+        description: 'Dry run - validate only, no changes?'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+  # 5:00 AM EST = 10:00 UTC
+  schedule:
+  - cron: '0 10 1 * *'
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  CSV_PATH: "claude_budgets/claude_group_upgrades.csv"
+
+jobs:
+  revert_users:
+    runs-on: ubuntu-24.04
+
+    steps:
+      # ============================================================
+      # SETUP
+      # ============================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install boto3
+
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # ============================================================
+      # STEP 1: READ CSV AND BUILD REVERT PLAN
+      # ============================================================
+      - name: "Step 1: Read CSV and build revert plan"
+        id: plan
+        env:
+          CSV_PATH: ${{ env.CSV_PATH }}
+        run: |
+          python3 << 'PYEOF'
+          import csv, json, os
+
+          CSV_PATH = os.environ.get('CSV_PATH', 'claude_budgets/claude_group_upgrades.csv')
+
+          if not os.path.exists(CSV_PATH):
+              print(f"❌ CSV not found: {CSV_PATH}")
+              with open('revert_plan.json', 'w') as f:
+                  json.dump({"total": 0, "users": []}, f)
+              exit(0)
+
+          users = []
+          with open(CSV_PATH, 'r', newline='') as f:
+              for row in csv.DictReader(f):
+                  email = row.get('email', '').strip()
+                  initial_gid = row.get('initial_group_id', '').strip()
+                  initial_gname = row.get('initial_group_name', '').strip()
+                  current_gid = row.get('new_group_id', '').strip()
+                  current_gname = row.get('new_group', '').strip()
+                  
+                  if not email or not initial_gid:
+                      print(f"  ⚠ Skip {email} - missing initial_group_id")
+                      continue
+                  
+                  # Only revert if user is NOT already in initial group
+                  if current_gid == initial_gid:
+                      print(f"  ⚠ Skip {email} - already in initial group ({initial_gname})")
+                      continue
+                  
+                  users.append({
+                      'email': email,
+                      'name': row.get('name', ''),
+                      'is_executive': row.get('is_executive', ''),
+                      'current_group': current_gname,
+                      'current_group_id': current_gid,
+                      'current_limit': row.get('new_limit', ''),
+                      'initial_group': initial_gname,
+                      'initial_group_id': initial_gid,
+                      'initial_limit': row.get('initial_limit', ''),
+                      'upgrade_count': row.get('upgrade_count', ''),
+                      'first_upgrade_date': row.get('first_upgrade_date', ''),
+                      'last_upgrade_date': row.get('last_upgrade_date', ''),
+                  })
+                  print(f"  ✓ {email}: {current_gname} → {initial_gname} (revert)")
+
+          plan = {"total": len(users), "users": users}
+          with open('revert_plan.json', 'w') as f:
+              json.dump(plan, f, indent=2)
+
+          print(f"\n✓ Revert plan: {len(users)} users to revert")
+          PYEOF
+
+      - name: "Step 1b: Check revert plan"
+        id: check
+        run: |
+          TOTAL=$(python3 -c "import json; print(json.load(open('revert_plan.json')).get('total', 0))" 2>/dev/null || echo "0")
+          if [ "$TOTAL" -gt 0 ] 2>/dev/null; then
+            echo "has_reverts=true" >> $GITHUB_OUTPUT
+            echo "total=$TOTAL" >> $GITHUB_OUTPUT
+            echo "✓ $TOTAL users to revert"
+          else
+            echo "has_reverts=false" >> $GITHUB_OUTPUT
+            echo "total=0" >> $GITHUB_OUTPUT
+            echo "No users to revert"
+          fi
+
+      - name: "Step 1c: Display revert plan"
+        if: steps.check.outputs.has_reverts == 'true'
+        run: |
+          echo "### 📉 Month-End Revert Plan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          python3 << 'EOF'
+          import json
+          plan = json.load(open('revert_plan.json'))
+          print(f"**Users to revert:** {plan['total']}")
+          print(f"**Dry run:** ${{ github.event.inputs.dry_run || 'false' }}")
+          print("")
+          print("| Email | Current Group | Revert To | Upgrades |")
+          print("|-------|--------------|-----------|----------|")
+          for u in plan['users']:
+              print(f"| {u['email']} | {u['current_group']} | {u['initial_group']} | {u['upgrade_count']} |")
+          EOF
+
+      # ============================================================
+      # STEP 2: MOVE USERS BACK TO INITIAL GROUPS
+      # ============================================================
+      - name: "Step 2: Revert users to initial groups"
+        if: steps.check.outputs.has_reverts == 'true' && github.event.inputs.dry_run != 'true'
+        shell: pwsh
+        env:
+          ENTRA_TENANT_ID: ${{ secrets.ENTRA_TENANT_ID }}
+          ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+          ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $GraphUrl = "https://graph.microsoft.com/v1.0"
+          
+          $plan = Get-Content -Path "revert_plan.json" -Raw | ConvertFrom-Json
+          
+          Write-Host "`n============================================================"
+          Write-Host "MONTH-END REVERT: $($plan.users.Count) USERS" -ForegroundColor Cyan
+          Write-Host "============================================================"
+          
+          # ---- AUTHENTICATE ----
+          Write-Host "`nAuthenticating..." -ForegroundColor Cyan
+          $TokenUri = "https://login.microsoftonline.com/$env:ENTRA_TENANT_ID/oauth2/v2.0/token"
+          $TokenResponse = Invoke-RestMethod -Method POST -Uri $TokenUri `
+              -ContentType "application/x-www-form-urlencoded" `
+              -Body @{
+                  client_id     = $env:ENTRA_CLIENT_ID
+                  client_secret = $env:ENTRA_CLIENT_SECRET
+                  scope         = "https://graph.microsoft.com/.default"
+                  grant_type    = "client_credentials"
+              }
+          Write-Host "✓ Authenticated" -ForegroundColor Green
+          
+          $Headers = @{
+              Authorization  = "Bearer $($TokenResponse.access_token)"
+              Accept         = "application/json"
+          }
+          $WriteHeaders = @{
+              Authorization  = "Bearer $($TokenResponse.access_token)"
+              Accept         = "application/json"
+              "Content-Type" = "application/json"
+          }
+          
+          # ---- PROCESS EACH USER ----
+          $Results = [System.Collections.ArrayList]::new()
+          
+          foreach ($u in $plan.users) {
+              $UserEmail = $u.email
+              $SelectParams = "id,displayName,userPrincipalName,mail,accountEnabled"
+              
+              Write-Host "`n------------------------------------------------------------"
+              Write-Host "Reverting: $UserEmail" -ForegroundColor Yellow
+              Write-Host "  $($u.current_group) -> $($u.initial_group)"
+              Write-Host "------------------------------------------------------------"
+              
+              $Result = [ordered]@{
+                  email          = $UserEmail
+                  name           = $u.name
+                  from_group     = $u.current_group
+                  to_group       = $u.initial_group
+                  initial_limit  = $u.initial_limit
+                  upgrade_count  = $u.upgrade_count
+                  status         = "Failed"
+                  details        = ""
+              }
+              
+              try {
+                  # ---- A: RESOLVE USER ----
+                  Write-Host "  A: Resolving user..." -ForegroundColor Cyan
+                  $User = $null
+                  
+                  try {
+                      $DirectUri = "$GraphUrl/users/$([System.Uri]::EscapeDataString($UserEmail))?`$select=$SelectParams"
+                      $User = Invoke-RestMethod -Method GET -Uri $DirectUri -Headers $Headers -ErrorAction Stop
+                      Write-Host "     ✓ Found by direct UPN" -ForegroundColor Green
+                  }
+                  catch {
+                      $SC = $null; try { $SC = $_.Exception.Response.StatusCode.value__ } catch { }
+                      if ($SC -eq 404 -or $SC -eq 400) {
+                          $SafeEmail = $UserEmail.Replace("'", "''")
+                          $Filter = [System.Uri]::EscapeDataString("userPrincipalName eq '$SafeEmail' or mail eq '$SafeEmail'")
+                          $SearchResult = Invoke-RestMethod -Method GET `
+                              -Uri "$GraphUrl/users?`$filter=$Filter&`$select=$SelectParams" `
+                              -Headers $Headers -ErrorAction Stop
+                          if (@($SearchResult.value).Count -eq 1) {
+                              $User = $SearchResult.value[0]
+                              Write-Host "     ✓ Found by mail search" -ForegroundColor Green
+                          } else { throw "User not found: $UserEmail" }
+                      } else { throw $_ }
+                  }
+                  if (-not $User.id) { throw "No Object ID" }
+                  Write-Host "     ID: $($User.id) | UPN: $($User.userPrincipalName)" -ForegroundColor DarkGray
+                  
+                  # ---- B: ADD TO INITIAL GROUP ----
+                  Write-Host "  B: Adding to $($u.initial_group)..." -ForegroundColor Cyan
+                  $Body = @{ "@odata.id" = "$GraphUrl/directoryObjects/$($User.id)" } | ConvertTo-Json -Compress
+                  try {
+                      Invoke-RestMethod -Method POST `
+                          -Uri "$GraphUrl/groups/$($u.initial_group_id)/members/`$ref" `
+                          -Headers $WriteHeaders -Body $Body -ErrorAction Stop
+                      Write-Host "     ✓ Added" -ForegroundColor Green
+                  } catch {
+                      if ($_.ErrorDetails.Message -match "already.*member|already.*exist") {
+                          Write-Host "     ⚠ Already member" -ForegroundColor Yellow
+                      } else { throw "Add failed: $($_.Exception.Message)" }
+                  }
+                  Start-Sleep -Seconds 2
+                  
+                  # ---- C: VERIFY INITIAL GROUP MEMBERSHIP ----
+                  Write-Host "  C: Verifying initial group..." -ForegroundColor Cyan
+                  $OK = $false
+                  for ($i = 1; $i -le 15; $i++) {
+                      try {
+                          Invoke-RestMethod -Method GET `
+                              -Uri "$GraphUrl/groups/$($u.initial_group_id)/members/$($User.id)" `
+                              -Headers $Headers -ErrorAction Stop | Out-Null
+                          Write-Host "     ✓ Verified (attempt $i)" -ForegroundColor Green
+                          $OK = $true; break
+                      } catch { if ($i -lt 15) { Start-Sleep -Seconds 2 } }
+                  }
+                  if (-not $OK) { throw "Initial group verification timeout" }
+                  
+                  # ---- D: REMOVE FROM CURRENT (UPGRADED) GROUP ----
+                  Write-Host "  D: Removing from $($u.current_group)..." -ForegroundColor Cyan
+                  try {
+                      Invoke-RestMethod -Method DELETE `
+                          -Uri "$GraphUrl/groups/$($u.current_group_id)/members/$($User.id)/`$ref" `
+                          -Headers $Headers -ErrorAction Stop
+                      Write-Host "     ✓ Removed" -ForegroundColor Green
+                  } catch {
+                      if ($_.ErrorDetails.Message -match "does not exist|not found") {
+                          Write-Host "     ⚠ Not in upgraded group" -ForegroundColor Yellow
+                      } else { throw "Remove failed: $($_.Exception.Message)" }
+                  }
+                  Start-Sleep -Seconds 5
+                  
+                  # ---- E: VERIFY REMOVAL ----
+                  Write-Host "  E: Verifying removal..." -ForegroundColor Cyan
+                  $RmOK = $false
+                  for ($i = 1; $i -le 20; $i++) {
+                      try {
+                          Invoke-RestMethod -Method GET `
+                              -Uri "$GraphUrl/groups/$($u.current_group_id)/members/$($User.id)" `
+                              -Headers $Headers -ErrorAction Stop | Out-Null
+                          if ($i -lt 20) { Start-Sleep -Seconds 3 }
+                      } catch {
+                          Write-Host "     ✓ Verified removed (attempt $i)" -ForegroundColor Green
+                          $RmOK = $true; break
+                      }
+                  }
+                  if (-not $RmOK) { throw "Removal verification timeout" }
+                  
+                  # ---- F: FINAL CHECK ----
+                  Write-Host "  F: Final check..." -ForegroundColor Cyan
+                  $InOld = $false; $InNew = $false
+                  try { Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$($u.current_group_id)/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null; $InOld = $true } catch { }
+                  try { Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$($u.initial_group_id)/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null; $InNew = $true } catch { }
+                  
+                  if ($InNew -and -not $InOld) {
+                      Write-Host "  ✓ REVERT SUCCESSFUL!" -ForegroundColor Green
+                      $Result.status = "Reverted"
+                  } else { throw "Final: InInitial=$InNew InUpgraded=$InOld" }
+              }
+              catch {
+                  $Result.status = "Failed"
+                  $Result.details = $_.Exception.Message
+                  Write-Host "  ✗ FAILED: $($_.Exception.Message)" -ForegroundColor Red
+              }
+              
+              [void]$Results.Add([PSCustomObject]$Result)
+          }
+          
+          @($Results) | ConvertTo-Json -Depth 10 -AsArray | Out-File -Path "revert_results.json" -Encoding utf8
+          
+          $OK = ($Results | Where-Object { $_.status -eq "Reverted" }).Count
+          $FAIL = ($Results | Where-Object { $_.status -eq "Failed" }).Count
+          Write-Host "`n============================================================"
+          Write-Host "REVERT DONE: $OK reverted, $FAIL failed" -ForegroundColor Cyan
+          Write-Host "============================================================"
+
+      # ============================================================
+      # STEP 3: SEND EMAILS & TEAM SUMMARY
+      # ============================================================
+      - name: "Step 3: Send revert emails & team summary"
+        if: steps.check.outputs.has_reverts == 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          CSV_PATH: ${{ env.CSV_PATH }}
+        run: |
+          python3 << 'PYEOF'
+          import json, boto3, os
+          from datetime import datetime
+
+          ses = boto3.client('ses', region_name='us-east-1')
+          EMAIL_FROM = 'no-reply@majesco.com'
+          EMAIL_TEAM = 'ITGSV3locityDevOps@majesco.com'
+          SEND_TO_USERS = "${{ github.event.inputs.send_mail_to_users || 'false' }}" == "true"
+          CSV_PATH = os.environ.get('CSV_PATH', 'claude_budgets/claude_group_upgrades.csv')
+          ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+
+          with open('revert_plan.json') as f:
+              plan = json.load(f)
+
+          with open('revert_results.json') as f:
+              raw = json.load(f)
+              results_list = raw if isinstance(raw, list) else [raw]
+
+          status_map = {r.get('email', ''): r.get('status', 'Unknown') for r in results_list}
+
+          # ============================================================
+          # INDIVIDUAL EMAILS (per user or per user to team)
+          # ============================================================
+          print("\n📧 Sending individual revert notifications...")
+
+          for u in plan.get('users', []):
+              email = u['email']
+              status = status_map.get(email, 'Unknown')
+
+              if status != 'Reverted':
+                  print(f"  ⚠ Skip {email} - status: {status}")
+                  continue
+
+              name = u.get('name', '')
+              from_grp = u.get('current_group', '')
+              to_grp = u.get('initial_group', '')
+              init_limit = u.get('initial_limit', '')
+
+              if SEND_TO_USERS:
+                  to_addr = email
+                  subject = "📉 Claude Enterprise - Monthly Budget Reset"
+                  body = f"""<html><body style="font-family:Segoe UI,Arial,sans-serif;background:#f5f5f5;">
+          <div style="max-width:600px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;">
+          <h2 style="color:#ff6f00;">📉 Your Claude Spend Limit Has Been Reset</h2>
+          <p>Hi {name},</p>
+          <p>As part of our monthly budget management process, your Claude Enterprise spend limit has been reset to your initial tier.</p>
+          <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Previous Group</b></td><td style="padding:10px;border:1px solid #ddd;">{from_grp}</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>Reset To</b></td><td style="padding:10px;border:1px solid #ddd;">{to_grp}</td></tr>
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Your Limit</b></td><td style="padding:10px;border:1px solid #ddd;">${float(init_limit):,.2f}</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>Reset Date</b></td><td style="padding:10px;border:1px solid #ddd;">{ts}</td></tr>
+          </table>
+          <div style="background:#fff3e0;border-left:4px solid #ff9800;padding:12px;margin:20px 0;border-radius:4px;">
+          <b>⏳ Note:</b> It may take up to 30 minutes for the change to be reflected in Azure. If you exhaust your budget next month, you will be upgraded again automatically.</div>
+          <p><b>What this means:</b></p>
+          <ul><li>Your spend limit is now ${float(init_limit):,.2f}/month</li>
+          <li>This is a routine monthly reset</li>
+          <li>No action required on your part</li></ul>
+          <p style="font-size:12px;color:#888;">Claude Enterprise - Automated Spend Management<br>ITGS V3locity DevOps | Majesco Technologies</p>
+          </div></body></html>"""
+              else:
+                  to_addr = EMAIL_TEAM
+                  subject = f"User Reverted: {email} → {to_grp}"
+                  body = f"""<html><body style="font-family:Segoe UI,Arial,sans-serif;background:#f5f5f5;">
+          <div style="max-width:700px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;">
+          <h2 style="color:#0a3d62;">📉 User Reverted: {email}</h2>
+          <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Email</b></td><td style="padding:10px;border:1px solid #ddd;">{email}</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>Name</b></td><td style="padding:10px;border:1px solid #ddd;">{name}</td></tr>
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>From</b></td><td style="padding:10px;border:1px solid #ddd;">{from_grp}</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>Reverted To</b></td><td style="padding:10px;border:1px solid #ddd;">{to_grp}</td></tr>
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Initial Limit</b></td><td style="padding:10px;border:1px solid #ddd;">${float(init_limit):,.2f}</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>Upgrades This Month</b></td><td style="padding:10px;border:1px solid #ddd;">{u.get('upgrade_count','')}</td></tr>
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Status</b></td><td style="padding:10px;border:1px solid #ddd;color:green;"><b>✓ Reverted</b></td></tr>
+          </table></div></body></html>"""
+
+              try:
+                  ses.send_email(
+                      Source=EMAIL_FROM,
+                      Destination={'ToAddresses': [to_addr]},
+                      Message={
+                          'Subject': {'Data': subject, 'Charset': 'UTF-8'},
+                          'Body': {'Html': {'Data': body, 'Charset': 'UTF-8'}}
+                      }
+                  )
+                  print(f"  ✓ Sent to {to_addr} for {email}")
+              except Exception as e:
+                  print(f"  ✗ Failed for {email}: {e}")
+
+          # ============================================================
+          # FINAL SUMMARY EMAIL TO TEAM (always sent to team)
+          # ============================================================
+          print("\n📧 Sending team summary email...")
+
+          reverted = [r for r in results_list if r.get('status') == 'Reverted']
+          failed = [r for r in results_list if r.get('status') == 'Failed']
+
+          # Build user rows for summary table
+          user_rows = ""
+          for r in results_list:
+              status_color = "green" if r.get('status') == 'Reverted' else "red"
+              status_icon = "✓" if r.get('status') == 'Reverted' else "✗"
+              detail = f" - {r.get('details','')}" if r.get('details') else ""
+              user_rows += f"""<tr>
+                  <td style="padding:10px;border:1px solid #ddd;">{r.get('email','')}</td>
+                  <td style="padding:10px;border:1px solid #ddd;">{r.get('name','')}</td>
+                  <td style="padding:10px;border:1px solid #ddd;">{r.get('from_group','')}</td>
+                  <td style="padding:10px;border:1px solid #ddd;">{r.get('to_group','')}</td>
+                  <td style="padding:10px;border:1px solid #ddd;">${float(r.get('initial_limit',0)):,.2f}</td>
+                  <td style="padding:10px;border:1px solid #ddd;">{r.get('upgrade_count','')}</td>
+                  <td style="padding:10px;border:1px solid #ddd;color:{status_color};font-weight:bold;">{status_icon} {r.get('status','')}{detail}</td>
+              </tr>"""
+
+          summary_subject = f"[MONTH-END] Claude Revert Complete: {len(reverted)} reverted, {len(failed)} failed"
+          summary_body = f"""<html><body style="font-family:Segoe UI,Arial,sans-serif;background:#f5f5f5;">
+          <div style="max-width:900px;margin:0 auto;background:#fff;padding:40px;border-radius:8px;">
+          <h2 style="color:#0a3d62;border-bottom:3px solid #0073e6;padding-bottom:10px;">
+              📉 Claude Enterprise - Month-End Revert Summary
+          </h2>
+          <div style="color:#666;font-size:13px;margin:15px 0;">Generated: {ts}</div>
+
+          <div style="background:#f0f8ff;border-left:4px solid #0073e6;padding:15px;margin:20px 0;border-radius:4px;">
+              <b>Total Processed:</b> {len(results_list)} &nbsp;|&nbsp;
+              <b style="color:green;">Reverted:</b> {len(reverted)} &nbsp;|&nbsp;
+              <b style="color:red;">Failed:</b> {len(failed)} &nbsp;|&nbsp;
+              <b>User Emails Sent:</b> {'Yes' if SEND_TO_USERS else 'No (team only)'}
+          </div>
+
+          <h3 style="color:#0a3d62;border-bottom:2px solid #0073e6;padding-bottom:8px;">All Users</h3>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <tr>
+              <th style="background:#0073e6;color:white;padding:12px;text-align:left;border:1px solid #ddd;">Email</th>
+              <th style="background:#0073e6;color:white;padding:12px;text-align:left;border:1px solid #ddd;">Name</th>
+              <th style="background:#0073e6;color:white;padding:12px;text-align:left;border:1px solid #ddd;">From</th>
+              <th style="background:#0073e6;color:white;padding:12px;text-align:left;border:1px solid #ddd;">Reverted To</th>
+              <th style="background:#0073e6;color:white;padding:12px;text-align:left;border:1px solid #ddd;">Limit</th>
+              <th style="background:#0073e6;color:white;padding:12px;text-align:left;border:1px solid #ddd;">Upgrades</th>
+              <th style="background:#0073e6;color:white;padding:12px;text-align:left;border:1px solid #ddd;">Status</th>
+          </tr>
+          {user_rows}
+          </table>
+
+          <div style="background:#e8f5e9;border-left:4px solid #4caf50;padding:15px;margin:20px 0;border-radius:4px;">
+              <b>📋 What Happened:</b>
+              <ul>
+                  <li>All upgraded users moved back to their initial budget groups</li>
+                  <li>CSV audit trail at <code>{CSV_PATH}</code> has been cleared</li>
+                  <li>New month cycle begins - users can be upgraded again if needed</li>
+                  <li>Azure group sync may take up to 30 minutes</li>
+              </ul>
+          </div>
+
+          <div style="font-size:12px;color:#888;margin-top:30px;padding-top:15px;border-top:1px solid #ddd;">
+              <b>Claude Enterprise - Automated Spend Management</b><br>
+              ITGS V3locity DevOps | Majesco Technologies<br>
+              This is an automated report. Do not reply.
+          </div>
+          </div></body></html>"""
+
+          try:
+              ses.send_email(
+                  Source=EMAIL_FROM,
+                  Destination={'ToAddresses': [EMAIL_TEAM]},
+                  Message={
+                      'Subject': {'Data': summary_subject, 'Charset': 'UTF-8'},
+                      'Body': {'Html': {'Data': summary_body, 'Charset': 'UTF-8'}}
+                  }
+              )
+              print(f"  ✓ Team summary sent to {EMAIL_TEAM}")
+          except Exception as e:
+              print(f"  ✗ Team summary failed: {e}")
+          PYEOF
+
+      # ============================================================
+      # STEP 4: CLEAR CSV FOR NEW MONTH & PUSH
+      # ============================================================
+      - name: "Step 4: Clear CSV for new month & push"
+        if: steps.check.outputs.has_reverts == 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          CSV_PATH: ${{ env.CSV_PATH }}
+        run: |
+          # Archive current CSV with month stamp
+          MONTH=$(date '+%Y-%m')
+          ARCHIVE_PATH="claude_budgets/archive/claude_group_upgrades_${MONTH}.csv"
+          mkdir -p claude_budgets/archive
+          cp "${{ env.CSV_PATH }}" "$ARCHIVE_PATH"
+          echo "✓ Archived to $ARCHIVE_PATH"
+
+          # Clear CSV (keep header only)
+          python3 << 'EOF'
+          import os
+          CSV_PATH = os.environ.get('CSV_PATH', 'claude_budgets/claude_group_upgrades.csv')
+          FIELDS = 'email,name,is_executive,initial_group_id,initial_group_name,initial_limit,current_group,current_group_id,current_limit,new_group,new_group_id,new_limit,spent,percentage,upgrade_count,first_upgrade_date,last_upgrade_date,status'
+          with open(CSV_PATH, 'w') as f:
+              f.write(FIELDS + '\n')
+          print(f"✓ CSV cleared for new month: {CSV_PATH}")
+          EOF
+
+          # Commit and push
+          git config user.email "devops-automation@majesco.com"
+          git config user.name "DevOps Automation"
+          git add "${{ env.CSV_PATH }}" "$ARCHIVE_PATH" revert_plan.json revert_results.json
+          git commit -m "Month-end: Revert complete - $(date '+%Y-%m-%d') - ${{ steps.check.outputs.total }} users reverted"
+          git push
+
+      # ============================================================
+      # STEP 5: SUMMARY
+      # ============================================================
+      - name: "Step 5: Summary"
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            echo "### 🧪 DRY RUN - No changes made" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check.outputs.has_reverts }}" == "true" ]; then
+            python3 << 'EOF'
+          import json
+          try:
+              with open('revert_results.json') as f:
+                  raw = json.load(f)
+                  results = raw if isinstance(raw, list) else [raw]
+              ok = sum(1 for r in results if r.get('status') == 'Reverted')
+              fail = sum(1 for r in results if r.get('status') == 'Failed')
+              print(f"### ✅ Month-End Revert Results")
+              print(f"**Reverted:** ✓ {ok} | **Failed:** ✗ {fail}")
+              print("")
+              print("| Email | From | Reverted To | Status |")
+              print("|-------|------|-------------|--------|")
+              for r in results:
+                  s = "✓" if r.get('status') == 'Reverted' else f"✗ {r.get('details','')[:30]}"
+                  print(f"| {r.get('email','')} | {r.get('from_group','')} | {r.get('to_group','')} | {s} |")
+          except:
+              pass
+          EOF
+          else
+            echo "### ℹ️ No users to revert this month" >> $GITHUB_STEP_SUMMARY
+          fi

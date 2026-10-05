@@ -3,19 +3,20 @@ name: Mirror Majesco GitHub Majesco-UWB ORG Repositories to AWS CodeCommit
 on:
   workflow_dispatch:
   schedule:
-    - cron: '50 0/12 * * 1-5'
+    - cron: '30 23 * * 1-5'
+    - cron: '30 11 * * 1-5'
 
 jobs:
   start-runner:
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
-      runner_name: "Majesco_Github_Backup_Runner_2"
+      runner_name: "Majesco_Github_Backup_Runner"
     secrets: inherit
 
   Majesco_GitHub_Backup:
     needs: start-runner
     name: Run Python Backup Script
-    runs-on: Majesco_Github_Backup_Runner_2
+    runs-on: Majesco_Github_Backup_Runner
     timeout-minutes: 7200  # 5 days (maximum 5 days for self-hosted runners)
 
     steps:
@@ -35,13 +36,13 @@ jobs:
             --codecommit-username "${{ secrets.AWS_CODECOMMIT_USERNAME }}" \
             --codecommit-password "${{ secrets.AWS_CODECOMMIT_PASSWORD }}" \
             --incremental-script "PYTHON_Script/incremental-repo-migration.py" \
-            --excluded-orgs "Majesco-Products,Majesco-LNAH,Majesco-PNC,Majesco-CoreConnect,Majesco-GCO,Majesco-tools-uwb,Majesco-TechService,Majesco-ClaimVantage,Majesco-LossControl,Majesco-EnterpriseRating,Majesco-Air,Majesco-NYL,Majesco-Exaxe,Majesco-CopilotBusiness,Majesco-CopilotEnterprise" \
+            --excluded-orgs "Majesco-Products,Majesco-LNAH,Majesco-PNC,Majesco-CoreConnect,Majesco-GCO,Majesco-tools-uwb,Majesco-TechService,Majesco-ClaimVantage,Majesco-LossControl,Majesco-EnterpriseRating,Majesco-Air,Majesco-NYL,Majesco-Exaxe,Majesco-CopilotBusiness,Majesco-CopilotEnterprise,Majesco-Test,Majesco-ITGS-Infra-DevOps,Majesco-PNC-LOB,Majesco-V3locity,Majesco-V3locityInfra,Majesco-V3locity-Testing-Dry-Run-1,Majesco-V3locity-Testing-Dry-Run-2,Majesco-Training" \
             --workers 12
 
   stop-runner:
     needs: [start-runner, Majesco_GitHub_Backup]
     if: always() && needs.start-runner.result == 'success' # Ensures this job runs even if execute-job fails
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
-      runner_name: "Majesco_Github_Backup_Runner_2"
+      runner_name: "Majesco_Github_Backup_Runner"
     secrets: inherit

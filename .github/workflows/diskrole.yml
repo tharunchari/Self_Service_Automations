@@ -7,7 +7,7 @@ on:
  
 jobs:
   start-runner:
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
@@ -21,8 +21,8 @@ jobs:
       - name: Checkout this repo
         uses: actions/checkout@v4
 
-      - name: Set up AWS CLI
-        uses: vitechsystems/configure-aws-credentials@v1.0
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
@@ -43,7 +43,7 @@ jobs:
   stop-runner:
     needs: Monitering
     if: always()  # Ensures this job runs even if execute-job fails
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit

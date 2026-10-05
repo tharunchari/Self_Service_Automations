@@ -1,0 +1,469 @@
+name: Manual - Move Single User (IT Team Enhanced - FIXED)
+
+on:
+  workflow_dispatch:
+    inputs:
+      user_email:
+        description: 'User email address (UPN or mail)'
+        required: true
+        type: string
+        default: ''
+      
+      source_group_id:
+        description: 'Source group Object ID'
+        required: true
+        type: string
+      
+      target_group_id:
+        description: 'Target group Object ID'
+        required: true
+        type: string
+      
+      execute_changes:
+        description: 'Execute move (true) or validate only (false)?'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  move_user_enhanced:
+    runs-on: ubuntu-latest
+    
+    env:
+      ENTRA_TENANT_ID: ${{ secrets.ENTRA_TENANT_ID }}
+      ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+      ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Display Parameters
+        run: |
+          echo "=========================================="
+          echo "MOVE USER - ENHANCED (FIXED v2)"
+          echo "=========================================="
+          echo ""
+          echo "User Email:        ${{ github.event.inputs.user_email }}"
+          echo "Source Group:      ${{ github.event.inputs.source_group_id }}"
+          echo "Target Group:      ${{ github.event.inputs.target_group_id }}"
+          echo "Execute Changes:   ${{ github.event.inputs.execute_changes }}"
+          echo ""
+
+      - name: Execute User Move (Fixed)
+        shell: pwsh
+        run: |
+          $TenantId = "$env:ENTRA_TENANT_ID"
+          $ClientId = "$env:ENTRA_CLIENT_ID"
+          $ClientSecret = "$env:ENTRA_CLIENT_SECRET"
+          
+          $UserEmail = "${{ github.event.inputs.user_email }}"
+          $SourceGroupId = "${{ github.event.inputs.source_group_id }}"
+          $TargetGroupId = "${{ github.event.inputs.target_group_id }}"
+          $ExecuteChanges = [System.Convert]::ToBoolean("${{ github.event.inputs.execute_changes }}")
+          
+          $GraphUrl = "https://graph.microsoft.com/v1.0"
+          
+          # ============================================================
+          # AUTHENTICATE
+          # ============================================================
+          Write-Host ""
+          Write-Host "============================================================"
+          Write-Host "MOVE USER - ENHANCED (FIXED VERSION v2)" -ForegroundColor Cyan
+          Write-Host "============================================================"
+          
+          Write-Host ""
+          Write-Host "STEP 1: Authenticating to Azure..." -ForegroundColor Cyan
+          
+          try {
+              $TokenUri = "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token"
+              $TokenResponse = Invoke-RestMethod `
+                  -Method POST `
+                  -Uri $TokenUri `
+                  -ContentType "application/x-www-form-urlencoded" `
+                  -Body @{
+                      client_id     = $ClientId
+                      client_secret = $ClientSecret
+                      scope         = "https://graph.microsoft.com/.default"
+                      grant_type    = "client_credentials"
+                  }
+              
+              Write-Host "✓ Authenticated successfully" -ForegroundColor Green
+          }
+          catch {
+              Write-Host "✗ Authentication failed!" -ForegroundColor Red
+              Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+              exit 1
+          }
+          
+          $Headers = @{
+              Authorization  = "Bearer $($TokenResponse.access_token)"
+              Accept         = "application/json"
+          }
+          
+          $WriteHeaders = @{
+              Authorization  = "Bearer $($TokenResponse.access_token)"
+              Accept         = "application/json"
+              "Content-Type" = "application/json"
+          }
+          
+          # ============================================================
+          # RESOLVE USER - FIXED URI SYNTAX
+          # ============================================================
+          Write-Host ""
+          Write-Host "STEP 2: Resolving user..." -ForegroundColor Cyan
+          
+          $User = $null
+          
+          $SelectParams = "id,displayName,userPrincipalName,mail,accountEnabled"
+          
+          Write-Host "  Attempt 1: Direct UPN lookup for '$UserEmail'" -ForegroundColor DarkGray
+          
+          try {
+              $DirectUri = "$GraphUrl/users/$([System.Uri]::EscapeDataString($UserEmail))?`$select=$SelectParams"
+              
+              Write-Host "    URI: $DirectUri" -ForegroundColor Gray
+              
+              $User = Invoke-RestMethod `
+                  -Method GET `
+                  -Uri $DirectUri `
+                  -Headers $Headers `
+                  -ErrorAction Stop
+              
+              Write-Host "  ✓ Found by direct lookup" -ForegroundColor Green
+          }
+          catch {
+              $StatusCode = $null
+              try { $StatusCode = $_.Exception.Response.StatusCode.value__ } catch { }
+              
+              Write-Host "  Status: $StatusCode - Not found by direct lookup, searching..." -ForegroundColor Yellow
+              
+              if ($StatusCode -eq 404 -or $StatusCode -eq 400) {
+                  Write-Host "  Attempt 2: Search by UPN or mail address" -ForegroundColor DarkGray
+                  
+                  $SafeEmail = $UserEmail.Replace("'", "''")
+                  $FilterExpression = "userPrincipalName eq '$SafeEmail' or mail eq '$SafeEmail'"
+                  $FilterEncoded = [System.Uri]::EscapeDataString($FilterExpression)
+                  
+                  $SearchUri = "$GraphUrl/users?`$filter=$FilterEncoded&`$select=$SelectParams"
+                  
+                  Write-Host "    URI: $SearchUri" -ForegroundColor Gray
+                  
+                  try {
+                      $SearchResult = Invoke-RestMethod `
+                          -Method GET `
+                          -Uri $SearchUri `
+                          -Headers $Headers `
+                          -ErrorAction Stop
+                  }
+                  catch {
+                      Write-Host "  ✗ Search failed!" -ForegroundColor Red
+                      Write-Host "    Error: $($_.Exception.Message)" -ForegroundColor Red
+                      exit 1
+                  }
+                  
+                  $MatchCount = @($SearchResult.value).Count
+                  
+                  if ($MatchCount -eq 1) {
+                      $User = $SearchResult.value[0]
+                      Write-Host "  ✓ Found by search" -ForegroundColor Green
+                  }
+                  elseif ($MatchCount -gt 1) {
+                      Write-Host "  ✗ Multiple users found!" -ForegroundColor Red
+                      exit 1
+                  }
+                  else {
+                      Write-Host "  ✗ User not found!" -ForegroundColor Red
+                      exit 1
+                  }
+              }
+              else {
+                  Write-Host "  ✗ Unexpected error!" -ForegroundColor Red
+                  Write-Host "    Status: $StatusCode" -ForegroundColor Red
+                  Write-Host "    Error: $($_.Exception.Message)" -ForegroundColor Red
+                  exit 1
+              }
+          }
+          
+          if (-not $User.id) {
+              Write-Host "✗ User has no Object ID" -ForegroundColor Red
+              exit 1
+          }
+          
+          if ($User.accountEnabled -ne $true) {
+              Write-Host "✗ User account is disabled" -ForegroundColor Red
+              exit 1
+          }
+          
+          Write-Host ""
+          Write-Host "✓ User resolved:" -ForegroundColor Green
+          Write-Host "  Name: $($User.displayName)"
+          Write-Host "  UPN: $($User.userPrincipalName)"
+          Write-Host "  Mail: $($User.mail)"
+          Write-Host "  ID: $($User.id)"
+          
+          # ============================================================
+          # VALIDATE SOURCE GROUP
+          # ============================================================
+          Write-Host ""
+          Write-Host "STEP 3: Validating source group..." -ForegroundColor Cyan
+          
+          try {
+              $SourceUri = "$GraphUrl/groups/$SourceGroupId"
+              $SourceGroup = Invoke-RestMethod -Method GET -Uri $SourceUri -Headers $Headers -ErrorAction Stop
+              Write-Host "✓ Source group: $($SourceGroup.displayName)" -ForegroundColor Green
+          }
+          catch {
+              Write-Host "✗ Source group not found!" -ForegroundColor Red
+              exit 1
+          }
+          
+          # ============================================================
+          # VALIDATE TARGET GROUP
+          # ============================================================
+          Write-Host ""
+          Write-Host "STEP 4: Validating target group..." -ForegroundColor Cyan
+          
+          try {
+              $TargetUri = "$GraphUrl/groups/$TargetGroupId"
+              $TargetGroup = Invoke-RestMethod -Method GET -Uri $TargetUri -Headers $Headers -ErrorAction Stop
+              Write-Host "✓ Target group: $($TargetGroup.displayName)" -ForegroundColor Green
+          }
+          catch {
+              Write-Host "✗ Target group not found!" -ForegroundColor Red
+              exit 1
+          }
+          
+          # ============================================================
+          # CHECK CURRENT STATE
+          # ============================================================
+          Write-Host ""
+          Write-Host "STEP 5: Checking current membership..." -ForegroundColor Cyan
+          
+          $IsSourceMember = $false
+          $IsTargetMember = $false
+          
+          try {
+              Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$SourceGroupId/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null
+              $IsSourceMember = $true
+          }
+          catch { }
+          
+          try {
+              Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$TargetGroupId/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null
+              $IsTargetMember = $true
+          }
+          catch { }
+          
+          Write-Host "  Source member: $IsSourceMember" -ForegroundColor DarkGray
+          Write-Host "  Target member: $IsTargetMember" -ForegroundColor DarkGray
+          
+          # ============================================================
+          # VALIDATION MODE
+          # ============================================================
+          if (-not $ExecuteChanges) {
+              Write-Host ""
+              Write-Host "============================================================" -ForegroundColor Yellow
+              Write-Host "VALIDATION MODE - NO CHANGES MADE" -ForegroundColor Yellow
+              Write-Host "============================================================" -ForegroundColor Yellow
+              
+              Write-Host ""
+              Write-Host "Current State:"
+              Write-Host "  User: $($User.displayName)"
+              Write-Host "  In source group: $IsSourceMember"
+              Write-Host "  In target group: $IsTargetMember"
+              
+              if ($IsSourceMember -and -not $IsTargetMember) {
+                  Write-Host ""
+                  Write-Host "✓ Ready to move" -ForegroundColor Green
+              }
+              
+              exit 0
+          }
+          
+          # ============================================================
+          # ADD TO TARGET GROUP
+          # ============================================================
+          Write-Host ""
+          Write-Host "STEP 6: Adding user to target group..." -ForegroundColor Cyan
+          
+          if ($IsTargetMember) {
+              Write-Host "  ⚠ User already in target group" -ForegroundColor Yellow
+          }
+          else {
+              try {
+                  $AddUri = "$GraphUrl/groups/$TargetGroupId/members/`$ref"
+                  $AddBody = @{ "@odata.id" = "$GraphUrl/directoryObjects/$($User.id)" } | ConvertTo-Json -Compress
+                  
+                  Invoke-RestMethod -Method POST -Uri $AddUri -Headers $WriteHeaders -Body $AddBody -ErrorAction Stop
+                  Write-Host "  ✓ Added to target group" -ForegroundColor Green
+                  
+                  Start-Sleep -Seconds 2
+              }
+              catch {
+                  Write-Host "  ✗ Failed to add!" -ForegroundColor Red
+                  Write-Host "    Error: $($_.Exception.Message)" -ForegroundColor Red
+                  exit 1
+              }
+          }
+          
+          # ============================================================
+          # VERIFY TARGET MEMBERSHIP
+          # ============================================================
+          Write-Host ""
+          Write-Host "STEP 7: Verifying target membership..." -ForegroundColor Cyan
+          
+          $VerifyAttempts = 0
+          $MaxAttempts = 15
+          $TargetVerified = $false
+          
+          while ($VerifyAttempts -lt $MaxAttempts) {
+              $VerifyAttempts++
+              Write-Host "  Attempt $VerifyAttempts/$MaxAttempts..." -ForegroundColor DarkGray
+              
+              try {
+                  Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$TargetGroupId/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null
+                  Write-Host "    ✓ Verified in target group" -ForegroundColor Green
+                  $TargetVerified = $true
+                  break
+              }
+              catch {
+                  if ($VerifyAttempts -lt $MaxAttempts) {
+                      Write-Host "    ⏳ Not yet, waiting..." -ForegroundColor Gray
+                      Start-Sleep -Seconds 2
+                  }
+              }
+          }
+          
+          if (-not $TargetVerified) {
+              Write-Host "  ✗ Verification timeout!" -ForegroundColor Red
+              exit 1
+          }
+          
+          # ============================================================
+          # REMOVE FROM SOURCE GROUP
+          # ============================================================
+          Write-Host ""
+          Write-Host "STEP 8: Removing user from source group..." -ForegroundColor Cyan
+          
+          if (-not $IsSourceMember) {
+              Write-Host "  ⚠ User not in source group" -ForegroundColor Yellow
+          }
+          else {
+              try {
+                  $DeleteUri = "$GraphUrl/groups/$SourceGroupId/members/$($User.id)/`$ref"
+                  Invoke-RestMethod -Method DELETE -Uri $DeleteUri -Headers $Headers -ErrorAction Stop
+                  Write-Host "  ✓ Removal request sent" -ForegroundColor Green
+                  
+                  # FIXED: Increased wait time before verification (5 seconds instead of 2)
+                  Start-Sleep -Seconds 5
+              }
+              catch {
+                  Write-Host "  ✗ Failed to remove!" -ForegroundColor Red
+                  Write-Host "    Error: $($_.Exception.Message)" -ForegroundColor Red
+                  exit 1
+              }
+          }
+          
+          # ============================================================
+          # VERIFY REMOVAL FROM SOURCE GROUP (NEW - WITH RETRY)
+          # ============================================================
+          Write-Host ""
+          Write-Host "STEP 8b: Verifying removal from source group..." -ForegroundColor Cyan
+          
+          $RemovalVerified = $false
+          $RemovalVerifyAttempts = 0
+          $MaxRemovalVerifyAttempts = 20
+          
+          while ($RemovalVerifyAttempts -lt $MaxRemovalVerifyAttempts) {
+              $RemovalVerifyAttempts++
+              Write-Host "  Attempt $RemovalVerifyAttempts/$MaxRemovalVerifyAttempts..." -ForegroundColor DarkGray
+              
+              try {
+                  Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$SourceGroupId/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null
+                  
+                  # User still in group, wait and retry
+                  if ($RemovalVerifyAttempts -lt $MaxRemovalVerifyAttempts) {
+                      Write-Host "    ⏳ Still in source group, waiting..." -ForegroundColor Gray
+                      Start-Sleep -Seconds 3
+                  }
+              }
+              catch {
+                  # Expected - user should NOT be found
+                  Write-Host "    ✓ Verified removed from source group" -ForegroundColor Green
+                  $RemovalVerified = $true
+                  break
+              }
+          }
+          
+          if (-not $RemovalVerified) {
+              Write-Host "  ✗ Removal verification timeout!" -ForegroundColor Red
+              Write-Host "  User still appears in source group after ~60 seconds" -ForegroundColor Red
+              exit 1
+          }
+          
+          # ============================================================
+          # FINAL VERIFICATION
+          # ============================================================
+          Write-Host ""
+          Write-Host "STEP 9: Final verification..." -ForegroundColor Cyan
+          
+          $FinalSourceMember = $false
+          $FinalTargetMember = $false
+          
+          try {
+              Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$SourceGroupId/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null
+              $FinalSourceMember = $true
+          }
+          catch { }
+          
+          try {
+              Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$TargetGroupId/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null
+              $FinalTargetMember = $true
+          }
+          catch { }
+          
+          Write-Host "  Final target state: $FinalTargetMember"
+          Write-Host "  Final source state: $FinalSourceMember"
+          
+          # ============================================================
+          # RESULT
+          # ============================================================
+          Write-Host ""
+          Write-Host "============================================================" -ForegroundColor Cyan
+          Write-Host "FINAL RESULT" -ForegroundColor Cyan
+          Write-Host "============================================================"
+          
+          Write-Host ""
+          Write-Host "User: $($User.displayName)" -ForegroundColor White
+          Write-Host "Source: $($SourceGroup.displayName) - $FinalSourceMember"
+          Write-Host "Target: $($TargetGroup.displayName) - $FinalTargetMember"
+          
+          if ($FinalTargetMember -and -not $FinalSourceMember) {
+              Write-Host ""
+              Write-Host "============================================================" -ForegroundColor Green
+              Write-Host "✓ USER MOVE COMPLETED SUCCESSFULLY" -ForegroundColor Green
+              Write-Host "============================================================" -ForegroundColor Green
+          }
+          else {
+              Write-Host ""
+              Write-Host "============================================================" -ForegroundColor Red
+              Write-Host "✗ VERIFICATION FAILED" -ForegroundColor Red
+              Write-Host "============================================================" -ForegroundColor Red
+              exit 1
+          }
+
+      - name: Create Summary
+        if: always()
+        run: |
+          echo "## Manual User Move - Enhanced (Fixed v2)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**User Email:** \`${{ github.event.inputs.user_email }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Execute Changes:** ${{ github.event.inputs.execute_changes }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Check logs above for results." >> $GITHUB_STEP_SUMMARY

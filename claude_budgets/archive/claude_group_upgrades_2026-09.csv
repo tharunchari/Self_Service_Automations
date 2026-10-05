@@ -1,0 +1,2 @@
+email,name,is_executive,initial_group_id,initial_group_name,initial_limit,current_group,current_group_id,current_limit,new_group,new_group_id,new_limit,spent,percentage,upgrade_count,first_upgrade_date,last_upgrade_date,status
+subramaniyan.mohan@majesco.com,Subramaniyan Mohan,True,4bb117fa-eed6-4ca8-b46e-6ae4ecfa2154,Majesco-Claude-OIDC-300,300.0,Majesco-Claude-OIDC-300,4bb117fa-eed6-4ca8-b46e-6ae4ecfa2154,300.0,Majesco-Claude-OIDC-500,3ea9c6d1-8745-42b8-8584-84862bee113a,500,300.02629,100.00876333333333,1,2026-09-29T11:12:21.612783,2026-09-29T11:12:21.612783,Completed

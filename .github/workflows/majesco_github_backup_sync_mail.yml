@@ -13,8 +13,8 @@ on:
 
 jobs:
   GitHub_CodeCommit_Sync:
-    #runs-on: ubuntu-24.04
-    runs-on: majesco-arc-vrunners
+    runs-on: ubuntu-24.04
+ #   runs-on: majesco-arc-vrunners
 
     env:
       # --- GitHub tokens (add more as GITHUB_TOKEN_3, _4, ... if needed) ---
@@ -33,7 +33,7 @@ jobs:
       # --- AWS / SES ---
       AWS_REGION_CODECOMMIT: 'us-west-2'
       AWS_REGION_SES: 'us-east-1'
-      SES_FROM: 'do-not-reply@vitechinc.com'
+      SES_FROM: 'do-not-reply@majesco.com'
       SES_TO: 'ITGSV3locityDevOps@majesco.com'
 
       # --- Behaviour ---
@@ -53,7 +53,7 @@ jobs:
         run: pip install boto3 requests
 
       - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}

@@ -7,19 +7,19 @@ on:
 
 jobs:
   team-access:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Generate Team Access Report
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
-          ORG: vitechsystems
+          ORG: Majesco-V3locity
         run: |
           echo " Starting team access audit for organization: $ORG"
           > repo-access.txt
@@ -120,7 +120,7 @@ jobs:
 
           sender = "do-not-reply@majesco.com"
           recipient = "ITGSV3locityDevOps@majesco.com"
-          subject = "[GitHub Audit] vitechsystems – CoDev Repo Access Summary"
+          subject = "[GitHub Audit] Majesco-V3locity – CoDev Repo Access Summary"
 
           with open("codev-summary.txt", "r") as f:
               body_text = f.read()

@@ -1,4 +1,4 @@
-name: Create Repository
+name: Create Repository in Majesco-V3locity ORG
 on:
   workflow_dispatch:
     inputs:
@@ -21,7 +21,7 @@ on:
 jobs:
   Check-Repository-type:
     #runs-on: ubuntu-latest
-    runs-on: majesco-arc-vrunners
+    runs-on: ubuntu-24.04
     steps:
       - name: Check if Repository type is valid
         run: |
@@ -31,7 +31,7 @@ jobs:
           fi
  
   Check-Repository-Existence:
-    runs-on: majesco-arc-vrunners
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: read
@@ -41,7 +41,7 @@ jobs:
       run: |
         response=$(curl -s -o /dev/null -w "%{http_code}" -X GET \
           -H "Authorization: token ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
-          "https://api.github.com/repos/vitechsystems/${{ inputs.REPO_NAME }}")
+          "https://api.github.com/repos/Majesco-V3locity/${{ inputs.REPO_NAME }}")
  
         if [ "$response" -eq "200" ]; then
           echo "Repository already exists. Stopping the workflow."
@@ -49,7 +49,7 @@ jobs:
         fi
  
   Creating-Repository:
-    runs-on: majesco-arc-vrunners
+    runs-on: ubuntu-24.04
     permissions:
       id-token: write
       contents: read

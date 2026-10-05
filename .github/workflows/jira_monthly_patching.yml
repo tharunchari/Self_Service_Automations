@@ -1,10 +1,10 @@
 name: Monthly JIRA Patch Schedule
 
 on:
-  #workflow_dispatch:
-  schedule:
+  workflow_dispatch:
+ # schedule:
     # All candidate days in the last week of the month (Mon-Sat, 22-31 @ 2AM UTC)
-    - cron: '0 2 22,23,24,25,26,27,28,29,30,31 * *'
+ #   - cron: '0 2 22,23,24,25,26,27,28,29,30,31 * *'
 
 permissions:
   id-token: write
@@ -14,7 +14,7 @@ jobs:
 
   determine_patch_day:
     name: Determine which patching/notification job to run
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       patch_type: ${{ steps.type.outputs.patch_type }}
     steps:
@@ -47,12 +47,12 @@ jobs:
     if: needs.determine_patch_day.outputs.patch_type == 'nonprod'
     runs-on: ubuntu-latest
     steps:
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Notify via SNS for NON-PROD
         run: |
@@ -71,7 +71,7 @@ jobs:
       actions: read
       pull-requests: read
       security-events: write
-    uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
+    uses: Majesco-V3locity/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraqa"
     secrets:
@@ -90,7 +90,7 @@ jobs:
       actions: read
       pull-requests: read
       security-events: write
-    uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
+    uses: Majesco-V3locity/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraupg"
     secrets:
@@ -102,14 +102,14 @@ jobs:
   notify_failure_jiraqa:
     needs: trigger_nonprod_jiraqa
     if: needs.trigger_nonprod_jiraqa.result == 'failure'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Notify failure via SNS for JIRAQA
         run: |
@@ -121,14 +121,14 @@ jobs:
   notify_failure_jiraupg:
     needs: trigger_nonprod_jiraupg
     if: needs.trigger_nonprod_jiraupg.result == 'failure'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Notify failure via SNS for JIRAUPG
         run: |
@@ -141,14 +141,14 @@ jobs:
     name: Notify PROD Patching (Last Friday)
     needs: determine_patch_day
     if: needs.determine_patch_day.outputs.patch_type == 'prod_notify'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Notify via SNS for PROD
         run: |
@@ -167,7 +167,7 @@ jobs:
       actions: read
       pull-requests: read
       security-events: write
-    uses: vitechsystems/Internal-Tools/.github/workflows/Jira_Patching.yml@main
+    uses: Majesco-V3locity/Internal-Tools/.github/workflows/Jira_Patching.yml@main
     with:
       environment: "jiraprod"
     secrets:
@@ -182,12 +182,12 @@ jobs:
     if: needs.trigger_prod.result == 'failure'
     runs-on: ubuntu-latest
     steps:
-      - name: Configure AWS
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Notify failure via SNS for JIRAPROD
         run: |

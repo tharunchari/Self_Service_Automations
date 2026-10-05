@@ -5,18 +5,18 @@ on:
 
 jobs:
   fetch-usage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Fetch and Process Usage for Multiple Organizations
         run: |
           total_usage=0
 
           declare -A ORG_PAT=(
-            [vitechsystems]="${{ secrets.PROD_FINE_GRAINED_PAT }}"
-            [VitechInfra]="${{ secrets.INFRA_FINE_GRAINED_PAT }}"
+            [Majesco-V3locity]="${{ secrets.PROD_FINE_GRAINED_PAT }}"
+            [Majesco-V3locityInfra]="${{ secrets.INFRA_FINE_GRAINED_PAT }}"
           )
 
-          for ORG in vitechsystems VitechInfra; do
+          for ORG in Majesco-V3locity Majesco-V3locityInfra; do
             echo "Fetching usage for organization: $ORG"
 
             response=$(curl -L \
@@ -42,6 +42,6 @@ jobs:
 
       - name: Print Individual and Grand Total Usage
         run: |
-          echo "Total minutes used in vitechsystems: ${{ env.VITECHSYSTEMS_TOTAL_MINUTES_USED }}"
-          echo "Total minutes used in VitechInfra: ${{ env.VITECHINFRA_TOTAL_MINUTES_USED }}"
+          echo "Total minutes used in Majesco-V3locity: ${{ env.VITECHSYSTEMS_TOTAL_MINUTES_USED }}"
+          echo "Total minutes used in Majesco-V3locityInfra: ${{ env.VITECHINFRA_TOTAL_MINUTES_USED }}"
           echo "Grand total minutes used: ${{ env.TOTAL_MINUTES_USED }}"

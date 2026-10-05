@@ -48,7 +48,7 @@ jobs:
           pip install boto3 requests
       
       - name: Set up AWS CLI
-        uses: vitechsystems/configure-aws-credentials@v1.0
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}

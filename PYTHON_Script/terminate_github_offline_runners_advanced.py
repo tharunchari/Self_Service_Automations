@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 # ==============================
 # Configurable variables
 # ==============================
-GITHUB_ORG = "vitechsystems"
+GITHUB_ORG = "Majesco-V3locity"
 GITHUB_TOKEN = os.environ.get("PROD_FINE_GRAINED_PAT")
 THRESHOLD_MINUTES = 60
 TAG_KEY = "Name"

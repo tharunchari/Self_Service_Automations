@@ -2,12 +2,12 @@ name: Rerun PRs With Self-hosted Runner Connection Errors
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '*/30 * * * 1-5'  
+#  schedule:
+#    - cron: '*/30 * * * 1-5'  
 
 jobs:
   rerun-connection-error-jobs:
-    runs-on: majesco-arc-vrunners
+    runs-on: ubuntu-24.04
     steps:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq curl
@@ -17,7 +17,7 @@ jobs:
           PROD_FINE_GRAINED_PAT: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           TOKEN="${PROD_FINE_GRAINED_PAT}"
-          OWNER="vitechsystems"
+          OWNER="Majesco-V3locity"
           REPO="CoreAdmin"
           
           # Multiple error signatures for runner connection issues

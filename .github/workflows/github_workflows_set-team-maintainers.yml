@@ -1,0 +1,95 @@
+name: Set Team Maintainers
+
+on:
+  workflow_dispatch:
+    inputs:
+      org:
+        description: "GitHub organization name"
+        required: true
+      usernames:
+        description: "Comma-separated list of GitHub usernames"
+        required: true
+
+jobs:
+  set-maintainer-role:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set users as Maintainer in every team
+        env:
+          GH_TOKEN: ${{ secrets.MAJESCO_CLASSIC_PAT }}
+        run: |
+          set +e
+          ORG="${{ github.event.inputs.org }}"
+          IFS=',' read -ra USERS <<< "${{ github.event.inputs.usernames }}"
+
+          echo "Fetching all teams in org $ORG..."
+          TEAMS=$(gh api "/orgs/$ORG/teams" --paginate --jq '.[].slug')
+
+          if [ -z "$TEAMS" ]; then
+            echo "No teams found in org $ORG."
+            exit 0
+          fi
+
+          RESULTS_FILE="results.csv"
+          echo "team,user,previous_role,final_role,status" > "$RESULTS_FILE"
+
+          while IFS= read -r team_trimmed; do
+            [ -z "$team_trimmed" ] && continue
+            for user in "${USERS[@]}"; do
+              user_trimmed=$(echo "$user" | xargs)
+              echo "Checking $user_trimmed in team $team_trimmed..."
+
+              current_role=$(gh api \
+                "/orgs/$ORG/teams/$team_trimmed/memberships/$user_trimmed" \
+                --jq '.role' 2>/dev/null)
+              get_exit=$?
+
+              if [ $get_exit -ne 0 ]; then
+                current_role="none"
+              fi
+
+              if [ "$current_role" == "maintainer" ]; then
+                echo "  Already Maintainer. Skipping."
+                echo "$team_trimmed,$user_trimmed,maintainer,maintainer,ok" >> "$RESULTS_FILE"
+                continue
+              fi
+
+              echo "  Setting role to Maintainer (was: $current_role)..."
+              error_output=$(gh api \
+                --method PUT \
+                "/orgs/$ORG/teams/$team_trimmed/memberships/$user_trimmed" \
+                -f role=maintainer 2>&1 >/dev/null)
+              put_exit=$?
+
+              if [ $put_exit -ne 0 ]; then
+                if echo "$error_output" | grep -q "managed at the enterprise level"; then
+                  echo "  SKIPPED: team is enterprise-managed."
+                  echo "$team_trimmed,$user_trimmed,$current_role,skipped,skipped: enterprise-managed team (403)" >> "$RESULTS_FILE"
+                else
+                  echo "  ERROR: $error_output"
+                  echo "$team_trimmed,$user_trimmed,$current_role,error,error: $error_output" >> "$RESULTS_FILE"
+                fi
+                continue
+              fi
+
+              echo "$team_trimmed,$user_trimmed,$current_role,maintainer,ok" >> "$RESULTS_FILE"
+            done
+          done <<< "$TEAMS"
+
+          echo "RESULTS_FILE=$RESULTS_FILE" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Print summary
+        if: always()
+        run: |
+          echo "## Maintainer Role Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Team | User | Previous Role | Final Role | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|------|----------------|------------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          tail -n +2 "$RESULTS_FILE" | while IFS=',' read -r team user prev final status; do
+            echo "| $team | $user | $prev | $final | $status |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          echo "----- Console output -----"
+          column -t -s',' "$RESULTS_FILE"

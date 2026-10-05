@@ -83,14 +83,14 @@ jobs:
           mkdir Branch_creation
           cd Branch_creation
           # Checking if the target branch already exists
-          if git ls-remote --heads "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
+          if git ls-remote --heads "https://${{ secrets.MAJESCO_FINE_GRAINED_PAT }}@github.com/Majesco-V3locity/${TARGET_REPO_NAME}.git" $TARGET_BRANCH | grep -q $TARGET_BRANCH; then
             echo "Error: Branch $TARGET_BRANCH already exists. Please discard the existing one or create with a different name."
             exit 2
           else
             echo "Branch $TARGET_BRANCH doesn't exist. Proceeding with branch creation..."
           fi
           # Clone source branch only
-          git clone "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${SOURCE_REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
+          git clone "https://${{ secrets.MAJESCO_FINE_GRAINED_PAT }}@github.com/Majesco-V3locity/${SOURCE_REPO_NAME}.git" --single-branch --branch=$SOURCE_BRANCH
           cd $SOURCE_REPO_NAME
           # Prepare branch from commit or HEAD
           if [ "$COMMIT_NUMBER" != "HEAD" ]; then
@@ -102,7 +102,7 @@ jobs:
           # Prepare for later push
           git config --local user.name "V3OPS_USER"
           git config --local user.email "v3ops@vitechinc.com"
-          git remote set-url origin "https://${{ secrets.PROD_FINE_GRAINED_PAT }}@github.com/vitechsystems/${TARGET_REPO_NAME}.git"
+          git remote set-url origin "https://${{ secrets.MAJESCO_FINE_GRAINED_PAT }}@github.com/Majesco-V3locity/${TARGET_REPO_NAME}.git"
           # Update pom.xml files if needed
           if [[ -n "$SOURCE_CLIENT_VERSION" && -n "$TARGET_CLIENT_VERSION" ]]; then
             echo "Updating client versions: $SOURCE_CLIENT_VERSION → $TARGET_CLIENT_VERSION"
@@ -127,9 +127,9 @@ jobs:
         run: |
           cat <<'EOF' > push-large-repo.sh
           #!/bin/bash
-          GITHUB_PAT="${{ secrets.PROD_FINE_GRAINED_PAT }}"
+          GITHUB_PAT="${{ secrets.MAJESCO_FINE_GRAINED_PAT }}"
           PATH_TO_REPO=$(pwd)
-          ORG_NAME=vitechsystems
+          ORG_NAME=Majesco-V3locity
           REPO_NAME="${{ inputs.TARGET_REPO_NAME }}"
           BRANCH_NAME="${{ inputs.TARGET_BRANCH }}"
           STEP_SIZE=1000

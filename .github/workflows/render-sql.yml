@@ -18,13 +18,13 @@ on:
 
 jobs:
   render-sql:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout target repo
         uses: actions/checkout@v4
         with:
-          repository: vitechsystems/${{ inputs.repo }}
+          repository: Majesco-V3locity/${{ inputs.repo }}
           ref: ${{ inputs.branch }}
           path: target_repo
           token: ${{ secrets.PROD_FINE_GRAINED_PAT }}
@@ -35,12 +35,12 @@ jobs:
       - name: Fetch Repo Variables from GitHub
         id: fetch_repo_vars
         run: |
-          echo "Fetching repo-level variables from: vitechsystems/${{ inputs.repo }}"
+          echo "Fetching repo-level variables from: Majesco-V3locity/${{ inputs.repo }}"
           curl -s -L \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/vitechsystems/${{ inputs.repo }}/actions/variables" \
+            "https://api.github.com/repos/Majesco-V3locity/${{ inputs.repo }}/actions/variables" \
             -o repo_vars.json
           echo "Repo variables received:"
           jq '.variables[].name' repo_vars.json

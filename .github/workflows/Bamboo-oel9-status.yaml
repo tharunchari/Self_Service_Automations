@@ -3,12 +3,12 @@ name: "Bamboo_OEL9_Agents_Status"
 on:
   schedule:
     # This will run the workflow every 2 hours
-    - cron: "0 * * * *"
+    - cron: "0 * * * 1-5"
   workflow_dispatch:
 
 jobs:
   check_instances:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     
     env:
       CLASSIC_PAT: ${{ secrets.CLASSIC_PAT }}
@@ -26,19 +26,17 @@ jobs:
         run: |
           pip install boto3 requests
           
-      - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Install Ansible
         run: |
           sudo apt update
           sudo apt install -y ansible
-
-
 
       - name: Send the Mail Notification 
         env:

@@ -5,17 +5,17 @@ on:
 jobs:
   Creating-Amazon-Linux-AMI:
     if: github.event.repository.fork == false
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       genrun: ${{ steps.gen_step.outputs.INSTANCE_ID }}
  
     steps:
-      - name: Set up AWS CLI
-        uses: vitechsystems/configure-aws-credentials@v1.0
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION_US_WEST_2 }}
+          aws-region: ${{ vars.AWS_REGION }}
  
       - name: Step 1 - Find the latest Amazon Linux 2023 AMI
         id: find_ami
@@ -105,14 +105,14 @@ jobs:
 
       - name: Step 8 - Retrieve Current AMI ID from GitHub
         run: |
-          export CURRENT_AMI_ID=$(curl -s -X GET https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI_DR \
+          export CURRENT_AMI_ID=$(curl -s -X GET https://api.github.com/orgs/Majesco-V3locity/actions/variables/SELF_HOSTED_RUNNER_AMI_DR \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             -H "Accept: application/vnd.github+json" | jq -r '.value')
           echo "CURRENT_AMI_ID=$CURRENT_AMI_ID" >> $GITHUB_ENV
 
       - name: Step 9 - Update the new AMI ID in GitHub organization variables
         run: |
-          curl -X PATCH https://api.github.com/orgs/vitechsystems/actions/variables/SELF_HOSTED_RUNNER_AMI_DR \
+          curl -X PATCH https://api.github.com/orgs/Majesco-V3locity/actions/variables/SELF_HOSTED_RUNNER_AMI_DR \
             -H "Authorization: Bearer ${{ secrets.PROD_FINE_GRAINED_PAT }}" \
             -H "Accept: application/vnd.github+json" \
             -d '{"value": "${{ env.AMI_ID }}"}'

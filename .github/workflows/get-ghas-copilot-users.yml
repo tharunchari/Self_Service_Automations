@@ -5,30 +5,40 @@ on:
 
 jobs:
   export-users:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Get GHAS users (org members of vitechsystems)
+      - name: Get GHAS users (org members of Majesco-V3locity)
         env:
           GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
         run: |
           curl -s -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/orgs/vitechsystems/members" > org_members.json
+            "https://api.github.com/orgs/Majesco-V3locity/members" > org_members.json
           echo "login" > ghas_users.csv
           jq -r '.[] | [.login] | @csv' org_members.json >> ghas_users.csv
 
-      - name: Get Copilot users (seats in VitechCopilot)
+      - name: Get Copilot users (seats in Majesco-CopilotBusiness)
         env:
-          GH_TOKEN: ${{ secrets.PROD_CLASSIC_PAT }}
+          GH_TOKEN: ${{ secrets.MAJESCO_CALSSIC_PAT }}
         run: |
           curl -s -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/orgs/VitechCopilot/members" > copilot_members.json        
-           echo "login" > copilot_users.csv
-           jq -r '.[] | [.login] | @csv' copilot_members.json >> copilot_users.csv
+            "https://api.github.com/orgs/Majesco-CopilotBusiness/members" > copilot_business_members.json        
+           echo "login" > copilot_business_users.csv
+           jq -r '.[] | [.login] | @csv' copilot_business_members.json >> copilot_businesst_users.csv
+
+      - name: Get Copilot users (seats in Majesco-CopilotEnterprise)
+        env:
+          GH_TOKEN: ${{ secrets.MAJESCO_CALSSIC_PAT }}
+        run: |
+          curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/Majesco-CopilotEnterprise/members" > copilot_enterprise_members.json        
+           echo "login" > copilot_enterprise_users.csv
+           jq -r '.[] | [.login] | @csv' copilot_enterprise_members.json >> copilot_enterprise_users.csv
 
       - name: Upload CSVs
         uses: actions/upload-artifact@v4
@@ -36,4 +46,5 @@ jobs:
           name: ghas-and-copilot-users
           path: |
             ghas_users.csv
-            copilot_users.csv
+            copilot_enterprise_users.csv
+            copilot_business_users.csv

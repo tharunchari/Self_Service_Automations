@@ -22,7 +22,7 @@ on:
 
         required: true
 
-        default: 'vitechsystems'
+        default: 'Majesco-V3locity'
 
       REPOS:
 
@@ -36,19 +36,19 @@ jobs:
 
   create-ruleset:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
 
     - name: Check out repository
 
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
  
     - name: Change directories and execute script
 
       env:
 
-        GITHUB_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
+        GITHUB_TOKEN: ${{ secrets.MAJESCO_CLASSIC_PAT }}
 
         ORG_NAME: ${{ github.event.inputs.ORG_NAME }}
 

@@ -1,0 +1,511 @@
+name: Claude Enterprise - Daily Spend with Executive Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      only_execute:
+        description: 'Upgrade only executives (true) or all users (false)?'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      send_mail_to_users:
+        description: 'Send email to upgraded users (true) or team only (false)?'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      threshold:
+        description: 'Threshold percentage (default 100)'
+        required: false
+        default: '100'
+
+  # 6:00 AM EST = 11:00 UTC
+  schedule:
+    - cron: '0 11 * * 1-5'
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  EXECUTIVE_LEADERS: "Adam.Elster@majesco.com,Alicia.Kilburn@majesco.com,Dean.Bogarde@majesco.com,Denise.Garth@majesco.com,Joe.Aho@majesco.com,Keith.Palmieri@majesco.com,Lori.Stanley@majesco.com,Manish.Shah@majesco.com,Manoj.Palakkal@majesco.com,John.Brown@majesco.com"
+  CSV_PATH: "claude_budgets/claude_group_upgrades.csv"
+
+jobs:
+  claude_spend_management:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: 'us-east-1'
+      ANTHROPIC_ADMIN_KEY: ${{ secrets.CLAUDE_ADMIN_API_KEY }}
+
+    steps:
+      # ============================================================
+      # SETUP
+      # ============================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install boto3 requests
+
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
+        with:
+          aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # ============================================================
+      # STEP 1: DETECT EXHAUSTED USERS & SEND INITIAL ALERT
+      # ============================================================
+      - name: "Step 1: Detect exhausted users & send initial alert"
+        env:
+          EMAIL_FROM: 'no-reply@majesco.com'
+          EMAIL_TO_TEAM: 'ITGSV3locityDevOps@majesco.com'
+        run: |
+          python3 PYTHON_Script/claude_spend_alert_enhanced.py \
+            --threshold ${{ github.event.inputs.threshold || '100' }} \
+            --only-executives ${{ github.event.inputs.only_execute || 'true' }} \
+            --send-mail-to-users ${{ github.event.inputs.send_mail_to_users || 'false' }} \
+            --executives "${{ env.EXECUTIVE_LEADERS }}"
+
+      # ============================================================
+      # STEP 2: CHECK IF ANY UPGRADES ARE NEEDED
+      # ============================================================
+      - name: "Step 2: Check if upgrades needed"
+        id: check
+        run: |
+          if [ -f "upgrade_instructions.json" ]; then
+            TOTAL=$(python3 -c "import json; print(json.load(open('upgrade_instructions.json')).get('total_users', 0))" 2>/dev/null || echo "0")
+            if [ "$TOTAL" -gt 0 ] 2>/dev/null; then
+              echo "has_upgrades=true" >> $GITHUB_OUTPUT
+              echo "total=$TOTAL" >> $GITHUB_OUTPUT
+              echo "✓ $TOTAL users to upgrade"
+            else
+              echo "has_upgrades=false" >> $GITHUB_OUTPUT
+              echo "total=0" >> $GITHUB_OUTPUT
+              echo "No users to upgrade"
+            fi
+          else
+            echo "has_upgrades=false" >> $GITHUB_OUTPUT
+            echo "total=0" >> $GITHUB_OUTPUT
+            echo "No upgrade_instructions.json - nothing to do"
+          fi
+
+      # ============================================================
+      # STEP 3: MOVE USERS IN AZURE AD (only if upgrades found)
+      # ============================================================
+      - name: "Step 3: Move users between Azure groups"
+        if: steps.check.outputs.has_upgrades == 'true'
+        shell: pwsh
+        env:
+          ENTRA_TENANT_ID: ${{ secrets.ENTRA_TENANT_ID }}
+          ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+          ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $GraphUrl = "https://graph.microsoft.com/v1.0"
+          
+          $upgrades = Get-Content -Path "upgrade_instructions.json" -Raw | ConvertFrom-Json
+          
+          Write-Host "`n============================================================"
+          Write-Host "MOVING $($upgrades.upgrades.Count) USERS TO NEW TIERS" -ForegroundColor Cyan
+          Write-Host "============================================================"
+          
+          # ---- AUTHENTICATE ----
+          Write-Host "`nAuthenticating..." -ForegroundColor Cyan
+          $TokenUri = "https://login.microsoftonline.com/$env:ENTRA_TENANT_ID/oauth2/v2.0/token"
+          $TokenResponse = Invoke-RestMethod -Method POST -Uri $TokenUri `
+              -ContentType "application/x-www-form-urlencoded" `
+              -Body @{
+                  client_id     = $env:ENTRA_CLIENT_ID
+                  client_secret = $env:ENTRA_CLIENT_SECRET
+                  scope         = "https://graph.microsoft.com/.default"
+                  grant_type    = "client_credentials"
+              }
+          Write-Host "✓ Authenticated" -ForegroundColor Green
+          
+          $Headers = @{
+              Authorization  = "Bearer $($TokenResponse.access_token)"
+              Accept         = "application/json"
+          }
+          $WriteHeaders = @{
+              Authorization  = "Bearer $($TokenResponse.access_token)"
+              Accept         = "application/json"
+              "Content-Type" = "application/json"
+          }
+          
+          # ---- PROCESS EACH USER ----
+          $Results = [System.Collections.ArrayList]::new()
+          
+          foreach ($upgrade in $upgrades.upgrades) {
+              $UserEmail = $upgrade.email
+              $SelectParams = "id,displayName,userPrincipalName,mail,accountEnabled"
+              
+              Write-Host "`n------------------------------------------------------------"
+              Write-Host "User: $UserEmail" -ForegroundColor Yellow
+              Write-Host "Move: $($upgrade.current_group) -> $($upgrade.new_group)"
+              Write-Host "------------------------------------------------------------"
+              
+              $Result = [ordered]@{
+                  email      = $UserEmail
+                  name       = $upgrade.name
+                  user_type  = if($upgrade.is_executive) { "Executive" } else { "Regular" }
+                  from_group = $upgrade.current_group
+                  to_group   = $upgrade.new_group
+                  status     = "Failed"
+                  details    = ""
+              }
+              
+              try {
+                  # ---- A: RESOLVE USER (direct UPN then search by mail) ----
+                  Write-Host "  A: Resolving user..." -ForegroundColor Cyan
+                  $User = $null
+                  
+                  try {
+                      $DirectUri = "$GraphUrl/users/$([System.Uri]::EscapeDataString($UserEmail))?`$select=$SelectParams"
+                      $User = Invoke-RestMethod -Method GET -Uri $DirectUri -Headers $Headers -ErrorAction Stop
+                      Write-Host "     ✓ Found by direct UPN" -ForegroundColor Green
+                  }
+                  catch {
+                      $SC = $null; try { $SC = $_.Exception.Response.StatusCode.value__ } catch { }
+                      if ($SC -eq 404 -or $SC -eq 400) {
+                          $SafeEmail = $UserEmail.Replace("'", "''")
+                          $Filter = [System.Uri]::EscapeDataString("userPrincipalName eq '$SafeEmail' or mail eq '$SafeEmail'")
+                          $SearchResult = Invoke-RestMethod -Method GET `
+                              -Uri "$GraphUrl/users?`$filter=$Filter&`$select=$SelectParams" `
+                              -Headers $Headers -ErrorAction Stop
+                          if (@($SearchResult.value).Count -eq 1) {
+                              $User = $SearchResult.value[0]
+                              Write-Host "     ✓ Found by mail search" -ForegroundColor Green
+                          } else { throw "User not found: $UserEmail" }
+                      } else { throw $_ }
+                  }
+                  if (-not $User.id) { throw "No Object ID for $UserEmail" }
+                  Write-Host "     ID: $($User.id) | UPN: $($User.userPrincipalName)" -ForegroundColor DarkGray
+                  
+                  # ---- B: ADD TO TARGET GROUP ----
+                  Write-Host "  B: Adding to $($upgrade.new_group)..." -ForegroundColor Cyan
+                  $Body = @{ "@odata.id" = "$GraphUrl/directoryObjects/$($User.id)" } | ConvertTo-Json -Compress
+                  try {
+                      Invoke-RestMethod -Method POST `
+                          -Uri "$GraphUrl/groups/$($upgrade.new_group_id)/members/`$ref" `
+                          -Headers $WriteHeaders -Body $Body -ErrorAction Stop
+                      Write-Host "     ✓ Added" -ForegroundColor Green
+                  } catch {
+                      if ($_.ErrorDetails.Message -match "already.*member|already.*exist") {
+                          Write-Host "     ⚠ Already member" -ForegroundColor Yellow
+                      } else { throw "Add failed: $($_.Exception.Message)" }
+                  }
+                  Start-Sleep -Seconds 2
+                  
+                  # ---- C: VERIFY TARGET (retry) ----
+                  Write-Host "  C: Verifying target..." -ForegroundColor Cyan
+                  $OK = $false
+                  for ($i = 1; $i -le 15; $i++) {
+                      try {
+                          Invoke-RestMethod -Method GET `
+                              -Uri "$GraphUrl/groups/$($upgrade.new_group_id)/members/$($User.id)" `
+                              -Headers $Headers -ErrorAction Stop | Out-Null
+                          Write-Host "     ✓ Verified (attempt $i)" -ForegroundColor Green
+                          $OK = $true; break
+                      } catch { if ($i -lt 15) { Start-Sleep -Seconds 2 } }
+                  }
+                  if (-not $OK) { throw "Target verification timeout" }
+                  
+                  # ---- D: REMOVE FROM SOURCE ----
+                  Write-Host "  D: Removing from $($upgrade.current_group)..." -ForegroundColor Cyan
+                  try {
+                      Invoke-RestMethod -Method DELETE `
+                          -Uri "$GraphUrl/groups/$($upgrade.current_group_id)/members/$($User.id)/`$ref" `
+                          -Headers $Headers -ErrorAction Stop
+                      Write-Host "     ✓ Removed" -ForegroundColor Green
+                  } catch {
+                      if ($_.ErrorDetails.Message -match "does not exist|not found") {
+                          Write-Host "     ⚠ Not in source" -ForegroundColor Yellow
+                      } else { throw "Remove failed: $($_.Exception.Message)" }
+                  }
+                  Start-Sleep -Seconds 5
+                  
+                  # ---- E: VERIFY REMOVAL (retry) ----
+                  Write-Host "  E: Verifying removal..." -ForegroundColor Cyan
+                  $RmOK = $false
+                  for ($i = 1; $i -le 20; $i++) {
+                      try {
+                          Invoke-RestMethod -Method GET `
+                              -Uri "$GraphUrl/groups/$($upgrade.current_group_id)/members/$($User.id)" `
+                              -Headers $Headers -ErrorAction Stop | Out-Null
+                          if ($i -lt 20) { Start-Sleep -Seconds 3 }
+                      } catch {
+                          Write-Host "     ✓ Verified removed (attempt $i)" -ForegroundColor Green
+                          $RmOK = $true; break
+                      }
+                  }
+                  if (-not $RmOK) { throw "Removal verification timeout" }
+                  
+                  # ---- F: FINAL CHECK ----
+                  Write-Host "  F: Final check..." -ForegroundColor Cyan
+                  $InSrc = $false; $InTgt = $false
+                  try { Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$($upgrade.current_group_id)/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null; $InSrc = $true } catch { }
+                  try { Invoke-RestMethod -Method GET -Uri "$GraphUrl/groups/$($upgrade.new_group_id)/members/$($User.id)" -Headers $Headers -ErrorAction Stop | Out-Null; $InTgt = $true } catch { }
+                  
+                  if ($InTgt -and -not $InSrc) {
+                      Write-Host "  ✓ MOVE SUCCESSFUL!" -ForegroundColor Green
+                      $Result.status = "Completed"
+                  } else { throw "Final: InTarget=$InTgt InSource=$InSrc" }
+              }
+              catch {
+                  $Result.status = "Failed"
+                  $Result.details = $_.Exception.Message
+                  Write-Host "  ✗ FAILED: $($_.Exception.Message)" -ForegroundColor Red
+              }
+              
+              [void]$Results.Add([PSCustomObject]$Result)
+          }
+          
+          # ---- SAVE RESULTS (always as array) ----
+          @($Results) | ConvertTo-Json -Depth 10 -AsArray | Out-File -Path "upgrade_results.json" -Encoding utf8
+          
+          $OK = ($Results | Where-Object { $_.status -eq "Completed" }).Count
+          $FAIL = ($Results | Where-Object { $_.status -eq "Failed" }).Count
+          Write-Host "`n============================================================"
+          Write-Host "DONE: $OK success, $FAIL failed" -ForegroundColor Cyan
+          Write-Host "============================================================"
+
+      # ============================================================
+      # STEP 4: SEND EMAILS & UPDATE CSV (only if upgrades found)
+      # ============================================================
+      - name: "Step 4: Send emails & update CSV"
+        if: steps.check.outputs.has_upgrades == 'true'
+        env:
+          CSV_PATH: ${{ env.CSV_PATH }}
+        run: |
+          python3 << 'PYEOF'
+          import json, csv, os, boto3
+          from datetime import datetime
+          from collections import OrderedDict
+          
+          ses = boto3.client('ses', region_name='us-east-1')
+          EMAIL_FROM = 'no-reply@majesco.com'
+          EMAIL_TEAM = 'ITGSV3locityDevOps@majesco.com'
+          SEND_TO_USERS = "${{ github.event.inputs.send_mail_to_users || 'false' }}" == "true"
+          CSV_PATH = os.environ.get('CSV_PATH', 'claude_budgets/claude_group_upgrades.csv')
+          
+          with open('upgrade_instructions.json') as f:
+              instructions = json.load(f)
+          
+          with open('upgrade_results.json') as f:
+              raw = json.load(f)
+              results_list = raw if isinstance(raw, list) else [raw]
+          
+          move_status = {r.get('email', ''): r.get('status', 'Unknown') for r in results_list}
+          
+          # ============================================================
+          # SEND EMAILS (only for Completed moves)
+          # ============================================================
+          print("\n📧 Sending notification emails...")
+          
+          for u in instructions.get('upgrades', []):
+              email = u['email']
+              status = move_status.get(email, 'Unknown')
+              
+              if status != 'Completed':
+                  print(f"  ⚠ Skip {email} - move status: {status}")
+                  continue
+              
+              name = u.get('name', '')
+              from_grp = u.get('current_group', '')
+              to_grp = u.get('new_group', '')
+              old_lim = u.get('current_limit', 0)
+              new_lim = u.get('new_limit', 0)
+              spent = u.get('spent', 0)
+              pct = u.get('percentage', 0)
+              is_exec = u.get('is_executive', False)
+              ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')
+              
+              if SEND_TO_USERS:
+                  to_addr = email
+                  subject = "✅ Claude Enterprise Spend Limit Upgraded"
+                  body = f"""<html><body style="font-family:Segoe UI,Arial,sans-serif;background:#f5f5f5;">
+          <div style="max-width:600px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;">
+          <h2 style="color:#4caf50;">✅ Your Claude Spend Limit Has Been Upgraded</h2>
+          <p>Hi {name},</p>
+          <p>Your Claude Enterprise spend limit was automatically upgraded because you reached your previous limit.</p>
+          <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Previous</b></td><td style="padding:10px;border:1px solid #ddd;">${old_lim:,.2f} ({from_grp})</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>New</b></td><td style="padding:10px;border:1px solid #ddd;">${new_lim:,.2f} ({to_grp})</td></tr>
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Date</b></td><td style="padding:10px;border:1px solid #ddd;">{ts}</td></tr>
+          </table>
+          <div style="background:#fff3e0;border-left:4px solid #ff9800;padding:12px;margin:20px 0;border-radius:4px;">
+          <b>⏳ Note:</b> It may take up to 30 minutes for the change to be fully reflected in Azure.</div>
+          <p>No action required on your part.</p>
+          <p style="font-size:12px;color:#888;">Claude Enterprise - Automated Spend Management</p>
+          </div></body></html>"""
+              else:
+                  to_addr = EMAIL_TEAM
+                  subject = f"User Moved: {email} → {to_grp}"
+                  body = f"""<html><body style="font-family:Segoe UI,Arial,sans-serif;background:#f5f5f5;">
+          <div style="max-width:700px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;">
+          <h2 style="color:#0a3d62;">📈 User Upgraded: {email}</h2>
+          <table style="width:100%;border-collapse:collapse;margin:20px 0;">
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Email</b></td><td style="padding:10px;border:1px solid #ddd;">{email}</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>Name</b></td><td style="padding:10px;border:1px solid #ddd;">{name}</td></tr>
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Type</b></td><td style="padding:10px;border:1px solid #ddd;">{'Executive' if is_exec else 'Regular'}</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>Spend</b></td><td style="padding:10px;border:1px solid #ddd;">${spent:,.2f} / ${old_lim:,.2f} ({pct:.1f}%)</td></tr>
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>From</b></td><td style="padding:10px;border:1px solid #ddd;">{from_grp}</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>To</b></td><td style="padding:10px;border:1px solid #ddd;">{to_grp}</td></tr>
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>New Limit</b></td><td style="padding:10px;border:1px solid #ddd;">${new_lim:,.2f}</td></tr>
+          <tr><td style="padding:10px;border:1px solid #ddd;"><b>Status</b></td><td style="padding:10px;border:1px solid #ddd;color:green;"><b>✓ Completed</b></td></tr>
+          <tr style="background:#f5f5f5;"><td style="padding:10px;border:1px solid #ddd;"><b>Time</b></td><td style="padding:10px;border:1px solid #ddd;">{ts}</td></tr>
+          </table>
+          <div style="background:#fff3e0;border-left:4px solid #ff9800;padding:12px;margin:15px 0;border-radius:4px;">
+          <b>⏳ Note:</b> Azure group sync may take up to 30 minutes to reflect.</div>
+          <p><b>Audit:</b> Recorded in {CSV_PATH} for month-end revert.</p>
+          </div></body></html>"""
+              
+              try:
+                  ses.send_email(
+                      Source=EMAIL_FROM,
+                      Destination={'ToAddresses': [to_addr]},
+                      Message={
+                          'Subject': {'Data': subject, 'Charset': 'UTF-8'},
+                          'Body': {'Html': {'Data': body, 'Charset': 'UTF-8'}}
+                      }
+                  )
+                  print(f"  ✓ Email sent to {to_addr} for {email}")
+              except Exception as e:
+                  print(f"  ✗ Email failed for {email}: {e}")
+          
+          # ============================================================
+          # UPDATE CSV (UPSERT: one row per user, initial_group preserved)
+          # ============================================================
+          print(f"\n💾 Updating CSV: {CSV_PATH}")
+          
+          FIELDS = [
+              'email', 'name', 'is_executive',
+              'initial_group_id', 'initial_group_name', 'initial_limit',
+              'current_group', 'current_group_id', 'current_limit',
+              'new_group', 'new_group_id', 'new_limit',
+              'spent', 'percentage',
+              'upgrade_count', 'first_upgrade_date', 'last_upgrade_date',
+              'status'
+          ]
+          
+          os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
+          
+          # Load existing
+          existing = OrderedDict()
+          if os.path.exists(CSV_PATH):
+              with open(CSV_PATH, 'r', newline='') as f:
+                  for row in csv.DictReader(f):
+                      key = row.get('email', '').lower().strip()
+                      if key:
+                          existing[key] = row
+              print(f"  Loaded {len(existing)} existing records")
+          
+          now = datetime.now().isoformat()
+          
+          for u in instructions.get('upgrades', []):
+              email = u['email'].lower().strip()
+              status = move_status.get(u['email'], 'unknown')
+              
+              if email in existing:
+                  row = existing[email]
+                  # UPDATE - keep initial_group unchanged
+                  row['current_group'] = u.get('current_group', '')
+                  row['current_group_id'] = u.get('current_group_id', '')
+                  row['current_limit'] = u.get('current_limit', '')
+                  row['new_group'] = u.get('new_group', '')
+                  row['new_group_id'] = u.get('new_group_id', '')
+                  row['new_limit'] = u.get('new_limit', '')
+                  row['spent'] = u.get('spent', '')
+                  row['percentage'] = u.get('percentage', '')
+                  row['upgrade_count'] = int(row.get('upgrade_count', 0)) + 1
+                  row['last_upgrade_date'] = now
+                  row['status'] = status
+                  row['name'] = u.get('name', row.get('name', ''))
+                  row['is_executive'] = u.get('is_executive', row.get('is_executive', ''))
+                  print(f"  ✓ UPDATED: {email} (#{row['upgrade_count']}) initial preserved: {row.get('initial_group_name','')}")
+              else:
+                  existing[email] = {
+                      'email': email, 'name': u.get('name', ''),
+                      'is_executive': u.get('is_executive', False),
+                      'initial_group_id': u.get('current_group_id', ''),
+                      'initial_group_name': u.get('current_group', ''),
+                      'initial_limit': u.get('current_limit', ''),
+                      'current_group': u.get('current_group', ''),
+                      'current_group_id': u.get('current_group_id', ''),
+                      'current_limit': u.get('current_limit', ''),
+                      'new_group': u.get('new_group', ''),
+                      'new_group_id': u.get('new_group_id', ''),
+                      'new_limit': u.get('new_limit', ''),
+                      'spent': u.get('spent', ''), 'percentage': u.get('percentage', ''),
+                      'upgrade_count': 1,
+                      'first_upgrade_date': now, 'last_upgrade_date': now,
+                      'status': status
+                  }
+                  print(f"  ✓ CREATED: {email} initial: {u.get('current_group','')}")
+          
+          with open(CSV_PATH, 'w', newline='') as f:
+              writer = csv.DictWriter(f, fieldnames=FIELDS, extrasaction='ignore')
+              writer.writeheader()
+              for row in existing.values():
+                  writer.writerow(row)
+          
+          print(f"  ✓ CSV written: {len(existing)} records at {CSV_PATH}")
+          PYEOF
+
+      # ============================================================
+      # STEP 5: SUMMARY & PUSH TO GITHUB
+      # ============================================================
+      - name: "Step 5: Summary"
+        if: always()
+        run: |
+          echo "### Claude Enterprise Daily Spend Management" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check.outputs.has_upgrades }}" == "true" ]; then
+            echo "**Upgrades:** ${{ steps.check.outputs.total }} users processed" >> $GITHUB_STEP_SUMMARY
+            python3 << 'EOF'
+          import json
+          try:
+              with open('upgrade_results.json') as f:
+                  raw = json.load(f)
+                  results = raw if isinstance(raw, list) else [raw]
+              ok = sum(1 for r in results if r.get('status') == 'Completed')
+              fail = sum(1 for r in results if r.get('status') == 'Failed')
+              print(f"**Success:** ✓ {ok} | **Failed:** ✗ {fail}")
+              print("")
+              print("| Email | From | To | Status |")
+              print("|-------|------|-----|--------|")
+              for r in results:
+                  s = "✓" if r.get('status') == 'Completed' else f"✗ {r.get('details','')}"
+                  print(f"| {r.get('email','')} | {r.get('from_group','')} | {r.get('to_group','')} | {s} |")
+          except Exception as e:
+              print(f"Error: {e}")
+          EOF
+          else
+            echo "**No upgrades needed today.**" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: "Step 6: Push changes to GitHub"
+        if: steps.check.outputs.has_upgrades == 'true'
+        run: |
+          git config user.email "ITGSV3locityDevOps@majesco.com"
+          git config user.name "ITGS V3locity Automation"
+          git add ${{ env.CSV_PATH }}
+          git commit -m "Daily: Claude upgrades - $(date '+%Y-%m-%d') - ${{ steps.check.outputs.total }} users" || echo "No changes"
+          git push

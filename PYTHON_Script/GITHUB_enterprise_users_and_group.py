@@ -18,7 +18,7 @@ from botocore.exceptions import ClientError
 
 GITHUB_TOKEN = os.environ["CLASSIC_PAT"]  # Replace with actual token
 
-ENTERPRISE = "vitech"  # Replace with your GitHub enterprise name
+ENTERPRISE = "majesco-emu"  # Replace with your GitHub enterprise name
  
 AWS_REGION = "us-east-1"  # Replace as needed
 

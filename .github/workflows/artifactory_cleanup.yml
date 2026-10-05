@@ -10,7 +10,7 @@ jobs:
   # 1. Simple initial check — allows conditional workflows
   # ------------------------------------------------------
   check-schedule:
-    runs-on: majesco-arc-vrunners
+    runs-on: ubuntu-24.04
     outputs:
       should_proceed: ${{ steps.check.outputs.should_proceed }}
     steps:
@@ -23,7 +23,7 @@ jobs:
   start-runner:
     needs: check-schedule
     if: needs.check-schedule.outputs.should_proceed == 'true'
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
@@ -121,7 +121,7 @@ jobs:
   stop-runner:
     needs: cleanup-artifacts
     if: always()
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit

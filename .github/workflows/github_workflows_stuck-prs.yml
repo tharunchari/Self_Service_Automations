@@ -10,7 +10,7 @@ on:
 
 jobs:
   check-schedule:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_proceed: ${{ steps.check.outputs.should_proceed }}
     steps:
@@ -20,7 +20,7 @@ jobs:
   start-runner:
     needs: check-schedule
     if: needs.check-schedule.outputs.should_proceed == 'true'
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit
@@ -30,10 +30,10 @@ jobs:
     if: needs.check-schedule.outputs.should_proceed == 'true'
     runs-on: [self-hosted, Internal_Tools_Automation_Server]
     env:
-      ORG_NAME: vitechsystems
+      ORG_NAME: Majesco-V3locity
       SES_FROM: do-not-reply@majesco.com
       SES_TO: ITGSV3locityDevOps@majesco.com
-      SES_SUBJECT: 'Vitechsystems Org Open PRs >1hr Status Report'
+      SES_SUBJECT: 'Majesco-V3locity Org Open PRs >1hr Status Report'
       GH_TOKEN: ${{ secrets.PROD_FINE_GRAINED_PAT }}
       REPO_NAME: ${{ github.event.inputs.repo_name }}
     steps:
@@ -58,12 +58,12 @@ jobs:
             fi
           fi
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: Majesco-V3locity/configure-aws-credentials@v1.0
         with:
           aws-access-key-id: ${{ secrets.CORP_CLD_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.CORP_CLD_AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Get repos to check
         run: |
@@ -168,7 +168,7 @@ jobs:
   stop-runner:
     needs: [pr-status-report]
     if: always()
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
       runner_name: "Internal_Tools_Automation_Server"
     secrets: inherit

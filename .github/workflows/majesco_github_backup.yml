@@ -7,15 +7,15 @@ on:
 
 jobs:
   start-runner:
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/start_runner.yml@main
     with:
-      runner_name: "Majesco_Github_Backup_Runner_2"
+      runner_name: "Majesco_Github_Backup_Runner"
     secrets: inherit
 
   Majesco_GitHub_Backup:
     needs: start-runner
     name: Run Python Backup Script
-    runs-on: Majesco_Github_Backup_Runner_2
+    runs-on: Majesco_Github_Backup_Runner
     timeout-minutes: 7200  # 5 days (maximum 5 days for self-hosted runners)
 
     steps:
@@ -35,13 +35,13 @@ jobs:
             --codecommit-username "${{ secrets.AWS_CODECOMMIT_USERNAME }}" \
             --codecommit-password "${{ secrets.AWS_CODECOMMIT_PASSWORD }}" \
             --incremental-script "PYTHON_Script/incremental-repo-migration.py" \
-            --excluded-orgs "Majesco-UWB" \
+            --excluded-orgs "Majesco-UWB,Majesco-V3locity,Majesco-V3locityInfra,Majesco-V3locity-Testing-Dry-Run-1,Majesco-V3locity-Testing-Dry-Run-2" \
             --workers 12
 
   stop-runner:
     needs: [start-runner, Majesco_GitHub_Backup]
     if: always() && needs.start-runner.result == 'success'  # Ensures this job runs even if execute-job fails
-    uses: vitechsystems/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
+    uses: Majesco-V3locity/Internal-Tools_sub_workflows/.github/workflows/stop_runner.yml@main
     with:
-      runner_name: "Majesco_Github_Backup_Runner_2"
+      runner_name: "Majesco_Github_Backup_Runner"
     secrets: inherit

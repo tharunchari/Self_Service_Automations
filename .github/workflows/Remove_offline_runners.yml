@@ -7,15 +7,15 @@ on:
  
 jobs:
   cleanup-runners:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
  
       - name: Remove Offline Runners
         env:
-          GITHUB_TOKEN: ${{ secrets.CLASSIC_PAT }}
-          ORG: "vitechsystems"
+          GITHUB_TOKEN: ${{ secrets.MAJESCO_CLASSIC_PAT }}
+          ORG: "Majesco-V3locity"
         run: |
           PAGE=1
           ALL_RUNNERS="[]"

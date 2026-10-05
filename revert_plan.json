@@ -1,0 +1,19 @@
+{
+  "total": 1,
+  "users": [
+    {
+      "email": "subramaniyan.mohan@majesco.com",
+      "name": "Subramaniyan Mohan",
+      "is_executive": "True",
+      "current_group": "Majesco-Claude-OIDC-500",
+      "current_group_id": "3ea9c6d1-8745-42b8-8584-84862bee113a",
+      "current_limit": "500",
+      "initial_group": "Majesco-Claude-OIDC-300",
+      "initial_group_id": "4bb117fa-eed6-4ca8-b46e-6ae4ecfa2154",
+      "initial_limit": "300.0",
+      "upgrade_count": "1",
+      "first_upgrade_date": "2026-09-29T11:12:21.612783",
+      "last_upgrade_date": "2026-09-29T11:12:21.612783"
+    }
+  ]
+}
